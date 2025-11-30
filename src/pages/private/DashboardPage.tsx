@@ -1,23 +1,30 @@
+import { GRAPHQL_URI } from '../../graphql/client';
+import { useServerInfoQuery } from '../../graphql/generated';
+
 type DashboardPageProps = {
   onLogout: () => void;
 };
 
 const widgets = [
   {
-    title: 'Статус',
-    description: 'Усі системи працюють стабільно.',
+    title: 'Статус системи',
+    description: 'Усі модулі працюють стабільно. Додайте сюди свої показники.',
   },
   {
     title: 'Останні зміни',
-    description: 'Додайте тут оновлення продукту або активність користувача.',
+    description: 'Опишіть недавні оновлення продукту або активність користувачів.',
   },
   {
     title: 'Наступні кроки',
-    description: 'Сформулюйте задачі чи посилання на розділи, що важливі.',
+    description: 'Сформулюйте задачі та посилання на розділи, що важливі команді.',
   },
 ];
 
 export function DashboardPage({ onLogout }: DashboardPageProps) {
+  const { data, loading, error } = useServerInfoQuery({
+    fetchPolicy: 'network-only',
+  });
+
   return (
     <main className="page">
       <section className="panel dashboard">
@@ -31,6 +38,24 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         </div>
 
         <div className="widgets">
+          <article className="card widget">
+            <h3>GraphQL підключення</h3>
+            <p className="muted">Endpoint: {GRAPHQL_URI}</p>
+            {loading && <p>Завантаження...</p>}
+            {error && (
+              <p className="error">
+                Помилка підключення: {error.message}
+              </p>
+            )}
+            {!loading && !error && data?.serverInfo && (
+              <p>
+                Підключено. Версія: <strong>{data.serverInfo.version}</strong>,
+                статус: <strong>{data.serverInfo.status}</strong>, аптайм:{' '}
+                <strong>{data.serverInfo.uptimeSeconds}s</strong>.
+              </p>
+            )}
+          </article>
+
           {widgets.map((widget) => (
             <article key={widget.title} className="card widget">
               <h3>{widget.title}</h3>

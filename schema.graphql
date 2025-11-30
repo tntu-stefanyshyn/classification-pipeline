@@ -1,0 +1,13 @@
+schema {
+  query: Query
+}
+
+type Query {
+  serverInfo: ServerInfo!
+}
+
+type ServerInfo {
+  version: String!
+  status: String!
+  uptimeSeconds: Int!
+}

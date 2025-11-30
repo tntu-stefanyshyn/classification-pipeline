@@ -155,6 +155,15 @@ h1 {
   line-height: 1.5;
 }
 
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: #f87171;
+  font-weight: 700;
+}
+
 .dashboard {
   display: flex;
   flex-direction: column;

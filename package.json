@@ -10,7 +10,7 @@
     "start:desktop": "npm run start --workspace desktop",
     "lint:desktop": "npm run lint --workspace desktop",
     "codegen": "npm run codegen --workspace desktop",
-    "dev:backend": "npm run dev --workspace backend",
+    "start:backend": "npm run start --workspace backend",
     "build:backend": "npm run build --workspace backend"
   }
 }

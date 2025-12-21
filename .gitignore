@@ -95,3 +95,15 @@ desktop/out/
 
 # Workspace builds
 backend/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+aws-jobs/.venv/
+aws-jobs/.python-version
+aws-jobs/.coverage
+aws-jobs/.pytest_cache/

@@ -94,7 +94,16 @@ out/
 desktop/out/
 
 # Workspace builds
-backend/dist/
+dist/
+
+# GraphQL codegen outputs
+generated/
+*.generated.*
+
+.env
+.eslintcache
+
+
 
 # Python
 __pycache__/
@@ -107,6 +116,3 @@ aws-jobs/.venv/
 aws-jobs/.python-version
 aws-jobs/.coverage
 aws-jobs/.pytest_cache/
-
-# GraphQL codegen outputs
-desktop/src/graphql/**/generated/

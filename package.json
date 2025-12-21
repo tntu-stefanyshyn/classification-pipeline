@@ -26,8 +26,5 @@
     "codegen": "npm run codegen --workspace desktop",
     "start:backend": "npm run start --workspace backend",
     "build:backend": "npm run build --workspace backend"
-  },
-  "devDependencies": {
-    "@tsconfig/node22": "^22.0.5"
   }
 }

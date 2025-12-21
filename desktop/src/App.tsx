@@ -5,14 +5,9 @@ import { ApolloProvider } from '@apollo/client/react';
 import { apolloClient } from './graphql/client';
 
 export function App() {
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem('auth_token'),
-  );
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('auth_token'));
   const isAuthenticated = Boolean(token);
 
-
-
-  
   useEffect(() => {
     if (token) {
       localStorage.setItem('auth_token', token);

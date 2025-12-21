@@ -3,16 +3,12 @@
     "incremental": true,
     "target": "esnext",
     "module": "esnext",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "declaration": true,
     "sourceMap": true,
     "composite": true,
-    "types": ["vite/client", "vite-plugin-svgr/client"],
+    "types": ["vite/client"],
     "strict": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
@@ -24,7 +20,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "downlevelIteration": true,
-    "noEmit": false,
+    "noEmit": false
   },
   "include": ["./src"],
   "exclude": ["node_modules"],

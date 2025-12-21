@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# Format staged files with Prettier before committing.
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.js' '*.jsx' '*.ts' '*.tsx' '*.json' '*.css' '*.scss' '*.md' '*.graphql' '*.gql')
+
+if [ -z "$staged_files" ]; then
+  exit 0
+fi
+
+echo "Formatting staged files with Prettier..."
+npx --no-install prettier --write --log-level warn $staged_files
+git add $staged_files

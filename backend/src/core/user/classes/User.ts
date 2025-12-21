@@ -1,4 +1,4 @@
-import { getModelForClass, index, modelOptions, prop } from '@typegoose/typegoose';
+import { index, modelOptions, prop } from '@typegoose/typegoose';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 
@@ -26,5 +26,3 @@ export class User {
   @Field({ nullable: true })
   updatedAt?: Date;
 }
-
-export const UserModel = getModelForClass(User);

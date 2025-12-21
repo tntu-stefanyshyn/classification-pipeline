@@ -1,5 +1,6 @@
-import { FormEvent, useState } from 'react';
+import { useFormik } from 'formik';
 import { useNavigate } from 'react-router-dom';
+import * as Yup from 'yup';
 import { useLoginMutation } from '../../graphql/mutations/generated/login';
 
 type WelcomePageProps = {
@@ -9,40 +10,45 @@ type WelcomePageProps = {
 const features = [
   {
     title: 'Миттєвий старт',
-    description:
-      'Запускайте застосунок за секунди завдяки Vite та швидкій збірці.',
+    description: 'Запускайте застосунок за секунди завдяки Vite та швидкій збірці.',
   },
   {
     title: 'Готовий до роботи',
-    description:
-      'Electron забезпечує кросплатформність, а React — гнучкий інтерфейс.',
+    description: 'Electron забезпечує кросплатформність, а React — гнучкий інтерфейс.',
   },
   {
     title: 'Дружній до розробника',
-    description:
-      'Підтримка TypeScript, гаряче оновлення та зручний доступ до DevTools.',
+    description: 'Підтримка TypeScript, гаряче оновлення та зручний доступ до DevTools.',
   },
 ];
 
 export function WelcomePage({ onLoginSuccess }: WelcomePageProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const navigate = useNavigate();
   const [loginMutation, { loading, error }] = useLoginMutation();
 
-  const handleLogin = async (event: FormEvent) => {
-    event.preventDefault();
+  const formik = useFormik({
+    initialValues: {
+      email: '',
+      password: '',
+    },
+    validationSchema: Yup.object({
+      email: Yup.string().trim().email('Некоректна пошта').required('Обовʼязково'),
+      password: Yup.string().min(6, 'Мінімум 6 символів').required('Обовʼязково'),
+    }),
+    onSubmit: async (values, { setSubmitting }) => {
+      const result = await loginMutation({
+        variables: values,
+      });
 
-    const result = await loginMutation({
-      variables: { email, password },
-    });
+      const token = result.data?.login.token;
+      if (token) {
+        onLoginSuccess(token);
+        navigate('/app', { replace: true });
+      }
 
-    const token = result.data?.login.token;
-    if (token) {
-      onLoginSuccess(token);
-      navigate('/app', { replace: true });
-    }
-  };
+      setSubmitting(false);
+    },
+  });
 
   return (
     <main className="page">
@@ -50,38 +56,47 @@ export function WelcomePage({ onLoginSuccess }: WelcomePageProps) {
         <p className="badge">New • Electron + React</p>
         <h1>Вітаємо у десктопному застосунку</h1>
         <p className="subtitle">
-          Це стартова сторінка на React. Використовуйте її як основу для вашого
-          інтерфейсу, додавайте компоненти та інтегруйте бізнес-логіку.
+          Це стартова сторінка на React. Використовуйте її як основу для вашого інтерфейсу,
+          додавайте компоненти та інтегруйте бізнес-логіку.
         </p>
         <div className="actions">
-          <form className="card" onSubmit={handleLogin}>
+          <form className="card" onSubmit={formik.handleSubmit} noValidate>
             <h3>Увійти</h3>
             <div className="form-group">
               <label htmlFor="email">Email</label>
               <input
                 id="email"
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
+                value={formik.values.email}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
                 placeholder="user@example.com"
               />
+              {formik.touched.email && formik.errors.email && (
+                <p className="error">{formik.errors.email}</p>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="password">Пароль</label>
               <input
                 id="password"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
+                value={formik.values.password}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
                 placeholder="••••••••"
               />
+              {formik.touched.password && formik.errors.password && (
+                <p className="error">{formik.errors.password}</p>
+              )}
             </div>
             {error && <p className="error">Помилка: {error.message}</p>}
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? 'Вхід...' : 'Увійти'}
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={loading || formik.isSubmitting || !formik.isValid}
+            >
+              {loading || formik.isSubmitting ? 'Вхід...' : 'Увійти'}
             </button>
           </form>
           <a

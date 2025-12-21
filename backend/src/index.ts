@@ -6,10 +6,10 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { buildSchema } from 'type-graphql';
 
-import { User } from './entities/User';
-import { AuthResolver } from './resolvers/auth';
-import { HealthResolver } from './resolvers/health';
-import { ServerInfoResolver } from './resolvers/serverInfo';
+import { User } from './core/user';
+import { AuthResolver } from './modules/auth/graphql/auth.resolver';
+import { HealthResolver } from './graphql/health.resolver';
+import { ServerInfoResolver } from './graphql/serverInfo.resolver';
 import { config } from './config/config';
 
 async function bootstrap() {
@@ -26,7 +26,7 @@ async function bootstrap() {
   const app = express();
   app.use(cors());
   app.use(express.json());
-  apollo.applyMiddleware({ app, path: '/graphql' });
+  apollo.applyMiddleware({ app: app as any, path: '/graphql' });
 
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);

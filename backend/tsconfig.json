@@ -1,9 +1,11 @@
 {
   "compilerOptions": {
+    "esModuleInterop": true,
+    "outDir": "./dist",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
   "include": ["./src"],
-   "exclude": ["node_modules"],
+  "exclude": ["node_modules"],
   "extends": "@tsconfig/node22/tsconfig.json"
 }

@@ -4,8 +4,6 @@ export const config = {
   main: {
     nodeEnv,
     isDev: nodeEnv === 'development',
-    devServerUrl: process.env.MAIN_WINDOW_VITE_DEV_SERVER_URL,
-    rendererName: process.env.MAIN_WINDOW_VITE_NAME || 'main_window',
   },
   renderer: {
     graphqlEndpoint: import.meta.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:4000/graphql',

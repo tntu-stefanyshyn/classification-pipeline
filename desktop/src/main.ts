@@ -4,6 +4,10 @@ import started from 'electron-squirrel-startup';
 
 import { config } from './config/config';
 
+
+declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
+declare const MAIN_WINDOW_VITE_NAME: string;
+
 if (config.main.isDev) {
   // Hot-reload main process during development
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -14,7 +18,6 @@ if (config.main.isDev) {
 if (started) {
   app.quit();
 }
-
 
 
 const createWindow = () => {
@@ -28,11 +31,11 @@ const createWindow = () => {
   });
 
   // and load the index.html of the app.
-  if (config.main.devServerUrl) {
-    mainWindow.loadURL(config.main.devServerUrl);
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${config.main.rendererName}/index.html`),
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
   }
 

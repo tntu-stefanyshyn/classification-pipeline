@@ -2,6 +2,19 @@
   "name": "workspace",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "workspaces": [
     "desktop",
     "backend"

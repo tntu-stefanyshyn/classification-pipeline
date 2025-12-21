@@ -2,6 +2,12 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
+if (process.env.NODE_ENV === 'development') {
+  // Hot-reload main process during development
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('electron-reloader')(module, { ignore: [/\.vite/] });
+}
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();

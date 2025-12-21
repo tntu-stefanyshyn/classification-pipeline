@@ -2,6 +2,19 @@
   "name": "backend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
   "main": "dist/index.js",
   "scripts": {
     "start": "ts-node-dev --respawn --transpile-only src/index.ts",

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './index.css';
 import { AppRouter } from './router/AppRouter';
-import { ApolloProvider } from '@apollo/client';
+import { ApolloProvider } from '@apollo/client/react';
 import { apolloClient } from './graphql/client';
 
 export function App() {

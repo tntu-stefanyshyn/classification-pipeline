@@ -13,8 +13,6 @@ const config: CodegenConfig = {
    'src/graphql/types.generated.ts': {
       plugins: ['typescript'],
       config: {
-        apolloClientVersion: 4,
-        reactApolloVersion: 4,
         declarationKind: {
           type: 'type',
           input: 'interface',
@@ -43,10 +41,7 @@ const config: CodegenConfig = {
         preResolveTypes: true,
         dedupeOperationSuffix: true,
         withRefetchFn: true,
-        reactApolloVersion: 4,
-        apolloReactCommonImportFrom: '@apollo/client/react/hooks',
-        apolloReactHooksImportFrom: '@apollo/client/react/hooks',
-        experimentalFragmentVariables: true,
+       experimentalFragmentVariables: true,
         dedupeFragments: false,
         namingConvention: {
           typeNames: 'keep',

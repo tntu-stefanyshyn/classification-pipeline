@@ -4,8 +4,8 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 
 import { User, UserModel } from '../entities/User';
+import { config } from '../config/config';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const TOKEN_TTL = '7d';
 
 @ObjectType()
@@ -39,7 +39,9 @@ class RegisterInput {
 }
 
 function buildToken(user: User): string {
-  return jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  return jwt.sign({ sub: user.id, email: user.email }, config.jwtSecret, {
+    expiresIn: TOKEN_TTL,
+  });
 }
 
 function assertDbConnected() {

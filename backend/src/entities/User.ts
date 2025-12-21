@@ -7,11 +7,6 @@ import { Field, ID, ObjectType } from 'type-graphql';
 @index({ email: 1 }, { unique: true })
 export class User {
   @Field(() => ID)
-  get id(): string {
-    return this._id.toHexString();
-  }
-
-  @prop({ type: () => Types.ObjectId })
   _id!: Types.ObjectId;
 
   @Field()

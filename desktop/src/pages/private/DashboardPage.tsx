@@ -1,4 +1,3 @@
-import { GRAPHQL_URI } from '../../graphql/client';
 import { useServerInfoQuery } from '../../graphql/queries/generated/serverInfo';
 
 type DashboardPageProps = {
@@ -40,7 +39,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         <div className="widgets">
           <article className="card widget">
             <h3>GraphQL підключення</h3>
-            <p className="muted">Endpoint: {GRAPHQL_URI}</p>
             {loading && <p>Завантаження...</p>}
             {error && (
               <p className="error">

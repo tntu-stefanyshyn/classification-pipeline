@@ -1,15 +1,19 @@
-schema {
-  query: Query
-  mutation: Mutation
+type User {
+  id: ID!
+  email: String!
+  name: String
+  createdAt: DateTimeISO
+  updatedAt: DateTimeISO
 }
+
+"""
+A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
+"""
+scalar DateTimeISO
 
 type Query {
+  health: String!
   serverInfo: ServerInfo!
-}
-
-type Mutation {
-  login(input: LoginInput!): AuthPayload!
-  register(input: RegisterInput!): AuthPayload!
 }
 
 type ServerInfo {
@@ -18,12 +22,9 @@ type ServerInfo {
   uptimeSeconds: Int!
 }
 
-type User {
-  id: ID!
-  email: String!
-  name: String
-  createdAt: String
-  updatedAt: String
+type Mutation {
+  register(input: RegisterInput!): AuthPayload!
+  login(input: LoginInput!): AuthPayload!
 }
 
 type AuthPayload {
@@ -31,13 +32,13 @@ type AuthPayload {
   user: User!
 }
 
-input LoginInput {
-  email: String!
-  password: String!
-}
-
 input RegisterInput {
   email: String!
   password: String!
   name: String
+}
+
+input LoginInput {
+  email: String!
+  password: String!
 }

@@ -10,6 +10,9 @@ export function App() {
   );
   const isAuthenticated = Boolean(token);
 
+
+
+  
   useEffect(() => {
     if (token) {
       localStorage.setItem('auth_token', token);

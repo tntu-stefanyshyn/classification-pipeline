@@ -2,7 +2,9 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
-if (process.env.NODE_ENV === 'development') {
+import { config } from './config/config';
+
+if (config.main.isDev) {
   // Hot-reload main process during development
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   require('electron-reloader')(module, { ignore: [/\.vite/] });
@@ -12,6 +14,8 @@ if (process.env.NODE_ENV === 'development') {
 if (started) {
   app.quit();
 }
+
+
 
 const createWindow = () => {
   // Create the browser window.
@@ -24,11 +28,11 @@ const createWindow = () => {
   });
 
   // and load the index.html of the app.
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  if (config.main.devServerUrl) {
+    mainWindow.loadURL(config.main.devServerUrl);
   } else {
     mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      path.join(__dirname, `../renderer/${config.main.rendererName}/index.html`),
     );
   }
 

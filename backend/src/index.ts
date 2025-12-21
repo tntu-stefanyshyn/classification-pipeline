@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import 'reflect-metadata';
-import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@apollo/server/express4';
+import { ApolloServer } from 'apollo-server-express';
 import cors from 'cors';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -10,12 +10,14 @@ import { User } from './entities/User';
 import { AuthResolver } from './resolvers/auth';
 import { HealthResolver } from './resolvers/health';
 import { ServerInfoResolver } from './resolvers/serverInfo';
+import { config } from './config/config';
 
 async function bootstrap() {
   const schema = await buildSchema({
     resolvers: [HealthResolver, AuthResolver, ServerInfoResolver],
     orphanedTypes: [User],
     validate: false,
+    ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),
   });
 
   const apollo = new ApolloServer({ schema });
@@ -23,19 +25,18 @@ async function bootstrap() {
 
   const app = express();
   app.use(cors());
-  app.use('/graphql', express.json(), expressMiddleware(apollo));
+  app.use(express.json());
+  apollo.applyMiddleware({ app, path: '/graphql' });
 
-  const mongoUri = process.env.MONGODB_URI;
-  if (mongoUri) {
-    await mongoose.connect(mongoUri);
+  if (config.mongoUri) {
+    await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
   } else {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
 
-  const port = Number(process.env.PORT) || 4000;
-  app.listen(port, () => {
-    console.log(`🚀 GraphQL ready at http://localhost:${port}/graphql`);
+  app.listen(config.port, () => {
+    console.log(`🚀 GraphQL ready at http://localhost:${config.port}${apollo.graphqlPath}`);
   });
 }
 

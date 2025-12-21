@@ -1,17 +1,32 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
+    "incremental": true,
+    "target": "esnext",
     "module": "esnext",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
-    "jsx": "react-jsx",
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "noImplicitAny": true,
+    "declaration": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "outDir": "dist",
-    "moduleResolution": "bundler",
+    "composite": true,
+    "types": ["vite/client", "vite-plugin-svgr/client"],
+    "strict": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "allowSyntheticDefaultImports": true,
+    "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"]
-  }
+    "isolatedModules": true,
+    "downlevelIteration": true,
+    "noEmit": false,
+  },
+  "include": ["./src"],
+  "exclude": ["node_modules"],
+  "extends": "@tsconfig/node22/tsconfig.json"
 }

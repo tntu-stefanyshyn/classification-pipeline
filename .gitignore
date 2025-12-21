@@ -87,6 +87,11 @@ typings/
 
 # Vite
 .vite/
+**/.vite/
 
 # Electron-Forge
 out/
+desktop/out/
+
+# Workspace builds
+backend/dist/

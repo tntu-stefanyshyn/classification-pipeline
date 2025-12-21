@@ -1,0 +1,7 @@
+query ServerInfo {
+  serverInfo {
+    version
+    status
+    uptimeSeconds
+  }
+}

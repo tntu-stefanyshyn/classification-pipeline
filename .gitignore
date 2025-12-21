@@ -107,3 +107,6 @@ aws-jobs/.venv/
 aws-jobs/.python-version
 aws-jobs/.coverage
 aws-jobs/.pytest_cache/
+
+# GraphQL codegen outputs
+desktop/src/graphql/**/generated/

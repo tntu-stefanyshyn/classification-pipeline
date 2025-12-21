@@ -5,19 +5,22 @@ import { WelcomePage } from '../pages/public/WelcomePage';
 
 type AppRouterProps = {
   isAuthenticated: boolean;
-  onLogin: () => void;
+  onLoginSuccess: (token: string) => void;
   onLogout: () => void;
 };
 
 export function AppRouter({
   isAuthenticated,
-  onLogin,
+  onLoginSuccess,
   onLogout,
 }: AppRouterProps) {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/welcome" element={<WelcomePage onLogin={onLogin} />} />
+        <Route
+          path="/welcome"
+          element={<WelcomePage onLoginSuccess={onLoginSuccess} />}
+        />
         <Route
           path="/app"
           element={

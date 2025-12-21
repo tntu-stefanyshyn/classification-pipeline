@@ -1,7 +1,9 @@
+import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLoginMutation } from '../../graphql/mutations/generated/login';
 
 type WelcomePageProps = {
-  onLogin: () => void;
+  onLoginSuccess: (token: string) => void;
 };
 
 const features = [
@@ -22,12 +24,24 @@ const features = [
   },
 ];
 
-export function WelcomePage({ onLogin }: WelcomePageProps) {
+export function WelcomePage({ onLoginSuccess }: WelcomePageProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const navigate = useNavigate();
+  const [loginMutation, { loading, error }] = useLoginMutation();
 
-  const handleLogin = () => {
-    onLogin();
-    navigate('/app', { replace: true });
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const result = await loginMutation({
+      variables: { email, password },
+    });
+
+    const token = result.data?.login.token;
+    if (token) {
+      onLoginSuccess(token);
+      navigate('/app', { replace: true });
+    }
   };
 
   return (
@@ -40,9 +54,36 @@ export function WelcomePage({ onLogin }: WelcomePageProps) {
           інтерфейсу, додавайте компоненти та інтегруйте бізнес-логіку.
         </p>
         <div className="actions">
-          <button className="btn primary" type="button" onClick={handleLogin}>
-            Увійти як демо
-          </button>
+          <form className="card" onSubmit={handleLogin}>
+            <h3>Увійти</h3>
+            <div className="form-group">
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="user@example.com"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="password">Пароль</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                placeholder="••••••••"
+              />
+            </div>
+            {error && <p className="error">Помилка: {error.message}</p>}
+            <button className="btn primary" type="submit" disabled={loading}>
+              {loading ? 'Вхід...' : 'Увійти'}
+            </button>
+          </form>
           <a
             className="btn ghost"
             href="https://www.electronjs.org/"

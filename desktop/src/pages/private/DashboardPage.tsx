@@ -1,5 +1,5 @@
 import { GRAPHQL_URI } from '../../graphql/client';
-import { useServerInfoQuery } from '../../graphql/generated';
+import { useServerInfoQuery } from '../../graphql/queries/generated/serverInfo';
 
 type DashboardPageProps = {
   onLogout: () => void;

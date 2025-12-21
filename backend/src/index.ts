@@ -7,11 +7,13 @@ import mongoose from 'mongoose';
 import { buildSchema } from 'type-graphql';
 
 import { User } from './entities/User';
+import { AuthResolver } from './resolvers/auth';
 import { HealthResolver } from './resolvers/health';
+import { ServerInfoResolver } from './resolvers/serverInfo';
 
 async function bootstrap() {
   const schema = await buildSchema({
-    resolvers: [HealthResolver],
+    resolvers: [HealthResolver, AuthResolver, ServerInfoResolver],
     orphanedTypes: [User],
     validate: false,
   });

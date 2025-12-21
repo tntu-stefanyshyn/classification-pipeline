@@ -20,6 +20,7 @@
     "backend"
   ],
   "scripts": {
+    "postinstall": "npm run codegen --workspace desktop",
     "start:desktop": "npm run start --workspace desktop",
     "lint:desktop": "npm run lint --workspace desktop",
     "codegen": "npm run codegen --workspace desktop",

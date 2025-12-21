@@ -19,12 +19,14 @@
   "description": "My Electron application description",
   "main": ".vite/build/main.js",
   "scripts": {
+    "prestart": "npm run codegen",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "codegen": "graphql-codegen --config codegen.ts"
+    "codegen:clean": "find src -type d -name generated -prune -exec rm -rf {} +",
+    "codegen": "npm run codegen:clean && graphql-codegen --config codegen.ts"
   },
   "keywords": [],
   "author": "ivans",
@@ -39,10 +41,10 @@
     "@electron-forge/plugin-fuses": "^7.10.2",
     "@electron-forge/plugin-vite": "^7.10.2",
     "@electron/fuses": "^1.8.0",
-    "electron-reloader": "^1.2.3",
     "@graphql-codegen/cli": "^6.1.0",
-    "@graphql-codegen/typescript": "^5.0.6",
-    "@graphql-codegen/typescript-operations": "^5.0.6",
+    "@graphql-codegen/near-operation-file-preset": "^4.0.0",
+    "@graphql-codegen/typescript": "^5.0.7",
+    "@graphql-codegen/typescript-operations": "^5.0.7",
     "@graphql-codegen/typescript-react-apollo": "^4.3.3",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.0.8",
@@ -51,13 +53,15 @@
     "@typescript-eslint/parser": "^5.62.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "39.2.4",
+    "electron-reloader": "^1.2.3",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.7.3",
     "typescript": "^5.6.3",
-    "vite": "^5.4.21"
+    "vite": "^5.4.21",
+    "vite-plugin-checker": "^0.7.2"
   },
   "dependencies": {
     "@apollo/client": "^4.0.9",

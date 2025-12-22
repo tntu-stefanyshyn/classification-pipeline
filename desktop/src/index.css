@@ -181,6 +181,21 @@ h1 {
   font-weight: 600;
 }
 
+.alert {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.error-alert {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: #b91c1c;
+  min-height: 2.2rem;
+}
+
 .btn-block {
   width: 100%;
 }

@@ -1,8 +1,10 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { ProtectedRoute } from '../components/ProtectedRoute';
+import { useEffect } from 'react';
 import { DashboardPage } from '../pages/private/DashboardPage';
 import { LoginPage } from '../pages/public/LoginPage';
 import { RegisterPage } from '../pages/public/RegisterPage';
+import { useMeQuery } from '../graphql/queries/generated/me';
+import { tokenService } from '../services/tokenService';
 
 type AppRouterProps = {
   isAuthenticated: boolean;
@@ -11,6 +13,23 @@ type AppRouterProps = {
 };
 
 export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRouterProps) {
+  const { data, loading, error } = useMeQuery({
+    skip: !isAuthenticated,
+    fetchPolicy: 'network-only',
+  });
+
+  useEffect(() => {
+    if (error) {
+      tokenService.clearToken();
+    }
+  }, [error]);
+
+  const resolvedAuth = isAuthenticated && Boolean(data?.me);
+
+  if (isAuthenticated && loading) {
+    return null;
+  }
+
   return (
     <HashRouter>
       <Routes>
@@ -19,12 +38,10 @@ export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRout
         <Route
           path="/app"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated}>
-              <DashboardPage onLogout={onLogout} />
-            </ProtectedRoute>
+            resolvedAuth ? <DashboardPage onLogout={onLogout} /> : <Navigate to="/login" replace />
           }
         />
-        <Route path="*" element={<Navigate to={isAuthenticated ? '/app' : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={resolvedAuth ? '/app' : '/login'} replace />} />
       </Routes>
     </HashRouter>
   );

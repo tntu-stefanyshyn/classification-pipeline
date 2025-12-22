@@ -76,6 +76,7 @@
     "graphql-tag": "^2.12.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-pro-sidebar": "^1.1.0",
     "react-router-dom": "^6.28.0",
     "yup": "^1.7.1"
   }

@@ -1,6 +1,8 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { useEffect } from 'react';
 import { DashboardPage } from '../pages/private/DashboardPage';
+import { ExperimentsPage } from '../pages/private/ExperimentsPage';
+import { ExperimentDetailsPage } from '../pages/private/ExperimentDetailsPage';
 import { LoginPage } from '../pages/public/LoginPage';
 import { RegisterPage } from '../pages/public/RegisterPage';
 import { useMeQuery } from '../graphql/queries/generated/me';
@@ -39,6 +41,26 @@ export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRout
           path="/app"
           element={
             resolvedAuth ? <DashboardPage onLogout={onLogout} /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="/app/experiments"
+          element={
+            resolvedAuth ? (
+              <ExperimentsPage onLogout={onLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/app/experiments/:id"
+          element={
+            resolvedAuth ? (
+              <ExperimentDetailsPage onLogout={onLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
           }
         />
         <Route path="*" element={<Navigate to={resolvedAuth ? '/app' : '/login'} replace />} />

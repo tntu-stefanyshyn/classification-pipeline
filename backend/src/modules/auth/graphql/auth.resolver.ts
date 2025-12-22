@@ -5,7 +5,8 @@ import { AuthPayload } from '../classes/AuthPayload';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
 import { AuthService } from '../services/AuthService';
-import { User } from '../../../core/user';
+import { User, UserModel } from '../../../core/user';
+import { config } from '../../../config/config';
 
 const authService = new AuthService();
 
@@ -22,7 +23,10 @@ export class AuthResolver {
   }
 
   @Query(() => User)
-  async me(@Ctx('req') req: Request): Promise<User> {
+  async me(@Ctx('req') req: Request): Promise<User | null> {
+    if (config.isDev) {
+      return UserModel.findOne();
+    }
     return authService.me(req);
   }
 }

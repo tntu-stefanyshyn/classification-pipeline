@@ -1,0 +1,41 @@
+query Experiment($id: ID!) {
+  experiment(id: $id) {
+    id
+    name
+    description
+    status
+    runs
+    fileName
+    createdAt
+    graph {
+      id
+      experimentId
+      createdAt
+      nodes {
+        id
+        label
+        type
+        children {
+          id
+          label
+          type
+          children {
+            id
+            label
+            type
+            children {
+              id
+              label
+              type
+            }
+          }
+        }
+      }
+      edges {
+        id
+        from
+        to
+      }
+    }
+  }
+}

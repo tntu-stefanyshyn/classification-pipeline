@@ -7,7 +7,7 @@ class TokenService {
   private listeners = new Set<TokenListener>();
 
   getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+    return 'token'; // TODO:  localStorage.getItem(TOKEN_KEY);
   }
 
   setToken(value: string) {

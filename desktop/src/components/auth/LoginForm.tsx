@@ -20,7 +20,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
   return (
     <Formik
-      initialValues={{ email: '', password: '', form: '' }}
+      initialValues={{ email: '', password: '' }}
       validationSchema={loginSchema}
       onSubmit={async (values, { setFieldError }) => {
         const result = await loginMutation({

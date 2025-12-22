@@ -1,0 +1,16 @@
+query DashboardData {
+  uploadedFiles {
+    id
+    filename
+    sizeMb
+    status
+    uploadedAt
+  }
+  experiments {
+    id
+    name
+    status
+    runs
+    createdAt
+  }
+}

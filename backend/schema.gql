@@ -8,10 +8,48 @@ type AuthPayload {
   user: User!
 }
 
+input CreateExperimentInput {
+  description: String
+  fileName: String
+  name: String!
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
 scalar DateTimeISO
+
+type Experiment {
+  createdAt: DateTimeISO!
+  description: String
+  fileName: String
+  graph: GraphStructure
+  id: ID!
+  name: String!
+  runs: Int!
+  status: String!
+}
+
+type GraphEdge {
+  from: String!
+  id: ID!
+  to: String!
+}
+
+type GraphNode {
+  children: [GraphNode!]!
+  id: ID!
+  label: String!
+  type: String
+}
+
+type GraphStructure {
+  createdAt: DateTimeISO!
+  edges: [GraphEdge!]!
+  experimentId: String!
+  id: ID!
+  nodes: [GraphNode!]!
+}
 
 input LoginInput {
   email: String!
@@ -19,14 +57,19 @@ input LoginInput {
 }
 
 type Mutation {
+  createExperiment(input: CreateExperimentInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
+  updateExperiment(input: UpdateExperimentInput!): Experiment!
 }
 
 type Query {
+  experiment(id: ID!): Experiment
+  experiments: [Experiment!]!
   health: String!
   me: User!
   serverInfo: ServerInfo!
+  uploadedFiles: [UploadedFile!]!
 }
 
 input RegisterInput {
@@ -39,6 +82,20 @@ type ServerInfo {
   status: String!
   uptimeSeconds: Int!
   version: String!
+}
+
+input UpdateExperimentInput {
+  description: String
+  id: ID!
+  name: String
+}
+
+type UploadedFile {
+  filename: String!
+  id: ID!
+  sizeMb: Int!
+  status: String!
+  uploadedAt: DateTimeISO!
 }
 
 type User {

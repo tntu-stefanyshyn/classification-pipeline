@@ -10,12 +10,13 @@ import { User } from './core/user';
 import { AuthResolver } from './modules/auth/graphql/auth.resolver';
 import { HealthResolver } from './graphql/health.resolver';
 import { ServerInfoResolver } from './graphql/serverInfo.resolver';
+import { DashboardResolver } from './graphql/dashboard.resolver';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 
 async function bootstrap() {
   const schema = await buildSchema({
-    resolvers: [HealthResolver, AuthResolver, ServerInfoResolver],
+    resolvers: [HealthResolver, AuthResolver, ServerInfoResolver, DashboardResolver],
     orphanedTypes: [User],
     validate: false,
     ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),
@@ -23,7 +24,7 @@ async function bootstrap() {
 
   const apollo = new ApolloServer({
     schema,
-    context: ({ req, res }): GraphQLContext => ({ req, res }),
+    context: ({ req, res }): GraphQLContext => ({ req, res }) as GraphQLContext,
   });
   await apollo.start();
 

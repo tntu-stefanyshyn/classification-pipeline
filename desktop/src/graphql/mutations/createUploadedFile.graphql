@@ -1,0 +1,9 @@
+mutation CreateUploadedFile($input: CreateUploadedFileInput!) {
+  createUploadedFile(input: $input) {
+    id
+    filename
+    sizeMb
+    status
+    uploadedAt
+  }
+}

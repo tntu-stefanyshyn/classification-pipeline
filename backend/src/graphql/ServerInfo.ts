@@ -1,19 +1,8 @@
-import { Field, Int, ObjectType, Query, Resolver } from 'type-graphql';
-
-@ObjectType()
-class ServerInfo {
-  @Field()
-  version!: string;
-
-  @Field()
-  status!: string;
-
-  @Field(() => Int)
-  uptimeSeconds!: number;
-}
+import { Query, Resolver } from 'type-graphql';
+import { ServerInfo } from './classes/ServerInfo';
 
 @Resolver()
-export class ServerInfoResolver {
+export class ServerInfoApi {
   private readonly startedAt = Date.now();
 
   @Query(() => ServerInfo)

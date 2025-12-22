@@ -1,10 +1,9 @@
-import { index, modelOptions, prop } from '@typegoose/typegoose';
+import { modelOptions, prop } from '@typegoose/typegoose';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 
 @ObjectType()
 @modelOptions({ schemaOptions: { timestamps: true } })
-@index({ email: 1 }, { unique: true })
 export class User {
   @Field(() => ID)
   _id!: Types.ObjectId;

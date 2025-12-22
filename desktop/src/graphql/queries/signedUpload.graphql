@@ -1,0 +1,7 @@
+query SignedUploadUrl($input: SignedUploadRequest!) {
+  signedUploadUrl(input: $input) {
+    url
+    key
+    expiresIn
+  }
+}

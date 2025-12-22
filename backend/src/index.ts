@@ -7,16 +7,18 @@ import mongoose from 'mongoose';
 import { buildSchema } from 'type-graphql';
 
 import { User } from './core/user';
-import { AuthResolver } from './modules/auth/graphql/auth.resolver';
-import { HealthResolver } from './graphql/health.resolver';
-import { ServerInfoResolver } from './graphql/serverInfo.resolver';
-import { DashboardResolver } from './graphql/dashboard.resolver';
+import { Auth } from './modules/auth/graphql/Auth';
+import { Health } from './graphql/Health';
+import { ServerInfoApi } from './graphql/ServerInfo';
+import { Experiments } from './modules/experiments/graphql/Experiments';
+import { Storage } from './modules/storage/graphql/Storage';
+import { Files } from './modules/files/graphql/Files';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 
 async function bootstrap() {
   const schema = await buildSchema({
-    resolvers: [HealthResolver, AuthResolver, ServerInfoResolver, DashboardResolver],
+    resolvers: [Health, Auth, ServerInfoApi, Experiments, Storage, Files],
     orphanedTypes: [User],
     validate: false,
     ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),

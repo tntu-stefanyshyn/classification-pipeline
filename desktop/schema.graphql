@@ -14,6 +14,12 @@ input CreateExperimentInput {
   name: String!
 }
 
+input CreateUploadedFileInput {
+  filename: String!
+  sizeMb: Int!
+  status: String
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
@@ -58,6 +64,7 @@ input LoginInput {
 
 type Mutation {
   createExperiment(input: CreateExperimentInput!): Experiment!
+  createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
@@ -69,6 +76,7 @@ type Query {
   health: String!
   me: User!
   serverInfo: ServerInfo!
+  signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
   uploadedFiles: [UploadedFile!]!
 }
 
@@ -82,6 +90,17 @@ type ServerInfo {
   status: String!
   uptimeSeconds: Int!
   version: String!
+}
+
+input SignedUploadRequest {
+  filename: String!
+  mimeType: String
+}
+
+type SignedUploadUrl {
+  expiresIn: Int!
+  key: String!
+  url: String!
 }
 
 input UpdateExperimentInput {

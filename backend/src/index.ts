@@ -11,6 +11,7 @@ import { AuthResolver } from './modules/auth/graphql/auth.resolver';
 import { HealthResolver } from './graphql/health.resolver';
 import { ServerInfoResolver } from './graphql/serverInfo.resolver';
 import { config } from './config/config';
+import { GraphQLContext } from './types/context';
 
 async function bootstrap() {
   const schema = await buildSchema({
@@ -20,7 +21,10 @@ async function bootstrap() {
     ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),
   });
 
-  const apollo = new ApolloServer({ schema });
+  const apollo = new ApolloServer({
+    schema,
+    context: ({ req, res }): GraphQLContext => ({ req, res }),
+  });
   await apollo.start();
 
   const app = express();

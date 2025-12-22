@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import type { Request } from 'express';
 
 import { config } from '../../../config/config';
 import { User, UserModel } from '../../../core/user';
@@ -48,6 +49,24 @@ export class AuthService {
     return { token, user };
   }
 
+  async me(req: Request): Promise<User> {
+    this.assertDbConnected();
+    const token = this.extractToken(req);
+    const payload = jwt.verify(token, config.jwtSecret) as JwtPayload;
+
+    const userId = payload.sub;
+    if (!userId) {
+      throw new Error('Invalid token payload');
+    }
+
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    return user;
+  }
+
   private buildToken(user: User): string {
     return jwt.sign({ sub: user._id.toString(), email: user.email }, config.jwtSecret, {
       expiresIn: TOKEN_TTL,
@@ -58,5 +77,14 @@ export class AuthService {
     if (mongoose.connection.readyState !== 1) {
       throw new Error('Database is not connected. Set MONGODB_URI and restart the server.');
     }
+  }
+
+  private extractToken(req: Request): string {
+    const header = req.headers.authorization || '';
+    const token = header.replace('Bearer', '').trim();
+    if (!token) {
+      throw new Error('Not authenticated');
+    }
+    return token;
   }
 }

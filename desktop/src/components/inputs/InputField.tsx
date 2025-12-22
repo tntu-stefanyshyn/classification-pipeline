@@ -19,7 +19,6 @@ export function InputField({
 }: InputFieldProps) {
   const [field, meta] = useField(name);
   const hasError = Boolean(meta.touched && meta.error);
-  console.log(hasError);
   const inputId = id ?? name;
 
   return (

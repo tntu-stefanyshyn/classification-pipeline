@@ -1,9 +1,11 @@
-import { Arg, Mutation, Resolver } from 'type-graphql';
+import { Arg, Ctx, Mutation, Query, Resolver } from 'type-graphql';
+import type { Request } from 'express';
 
 import { AuthPayload } from '../classes/AuthPayload';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
 import { AuthService } from '../services/AuthService';
+import { User } from '../../../core/user';
 
 const authService = new AuthService();
 
@@ -17,5 +19,10 @@ export class AuthResolver {
   @Mutation(() => AuthPayload)
   async login(@Arg('input') input: LoginInput): Promise<AuthPayload> {
     return authService.login(input);
+  }
+
+  @Query(() => User)
+  async me(@Ctx('req') req: Request): Promise<User> {
+    return authService.me(req);
   }
 }

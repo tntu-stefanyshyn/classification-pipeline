@@ -2,7 +2,7 @@ mutation Register($email: String!, $password: String!, $name: String) {
   register(input: { email: $email, password: $password, name: $name }) {
     token
     user {
-      id
+      _id
       email
       name
     }

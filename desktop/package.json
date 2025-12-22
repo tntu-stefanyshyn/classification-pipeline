@@ -25,7 +25,8 @@
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "codegen:clean": "find src -type d -name generated -prune -exec rm -rf {} +",
-    "codegen": "npm run codegen:clean && graphql-codegen --config codegen.ts"
+    "sync:schema": "node scripts/sync-schema.js",
+    "codegen": "npm run codegen:clean && npm run sync:schema && graphql-codegen --config codegen.ts"
   },
   "keywords": [],
   "author": "ivans",

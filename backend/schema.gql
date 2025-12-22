@@ -25,6 +25,7 @@ type Mutation {
 
 type Query {
   health: String!
+  me: User!
   serverInfo: ServerInfo!
 }
 

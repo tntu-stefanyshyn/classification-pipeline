@@ -52,6 +52,15 @@ export class FileStore {
     this.items.unshift(file);
     return file;
   }
+
+  remove(id: string): UploadedFile {
+    const index = this.items.findIndex((item) => item.id === id);
+    if (index === -1) {
+      throw new Error('File not found');
+    }
+    const [removed] = this.items.splice(index, 1);
+    return removed;
+  }
 }
 
 export const fileStore = new FileStore();

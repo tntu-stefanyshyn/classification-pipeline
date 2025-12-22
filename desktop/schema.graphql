@@ -65,6 +65,7 @@ input LoginInput {
 type Mutation {
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
+  deleteUploadedFile(id: ID!): UploadedFile!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   updateExperiment(input: UpdateExperimentInput!): Experiment!

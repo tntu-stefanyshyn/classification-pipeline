@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { DashboardPage } from '../pages/private/DashboardPage';
 import { ExperimentsPage } from '../pages/private/ExperimentsPage';
 import { ExperimentDetailsPage } from '../pages/private/ExperimentDetailsPage';
+import { FilesPage } from '../pages/private/FilesPage';
 import { LoginPage } from '../pages/public/LoginPage';
 import { RegisterPage } from '../pages/public/RegisterPage';
 import { useMeQuery } from '../graphql/queries/generated/me';
@@ -51,6 +52,12 @@ export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRout
             ) : (
               <Navigate to="/login" replace />
             )
+          }
+        />
+        <Route
+          path="/app/files"
+          element={
+            resolvedAuth ? <FilesPage onLogout={onLogout} /> : <Navigate to="/login" replace />
           }
         />
         <Route

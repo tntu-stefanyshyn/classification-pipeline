@@ -1,4 +1,4 @@
-import { Arg, Mutation, Query, Resolver } from 'type-graphql';
+import { Arg, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { UploadedFile } from '../classes/UploadedFile';
 import { CreateUploadedFileInput } from '../classes/CreateUploadedFileInput';
 import { fileStore } from '../services/FileStore';
@@ -15,5 +15,10 @@ export class Files {
     @Arg('input', () => CreateUploadedFileInput) input: CreateUploadedFileInput
   ): UploadedFile {
     return fileStore.create(input);
+  }
+
+  @Mutation(() => UploadedFile)
+  deleteUploadedFile(@Arg('id', () => ID) id: string): UploadedFile {
+    return fileStore.remove(id);
   }
 }

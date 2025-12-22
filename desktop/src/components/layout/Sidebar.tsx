@@ -28,6 +28,11 @@ export function AppSidebar({
       hint: 'Список та створення',
       to: '/app/experiments',
     },
+    {
+      label: 'Файли',
+      hint: 'Завантаження та список',
+      to: '/app/files',
+    },
   ];
 
   return (

@@ -1,7 +1,8 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { DashboardPage } from '../pages/private/DashboardPage';
-import { WelcomePage } from '../pages/public/WelcomePage';
+import { LoginPage } from '../pages/public/LoginPage';
+import { RegisterPage } from '../pages/public/RegisterPage';
 
 type AppRouterProps = {
   isAuthenticated: boolean;
@@ -9,18 +10,12 @@ type AppRouterProps = {
   onLogout: () => void;
 };
 
-export function AppRouter({
-  isAuthenticated,
-  onLoginSuccess,
-  onLogout,
-}: AppRouterProps) {
+export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRouterProps) {
   return (
     <HashRouter>
       <Routes>
-        <Route
-          path="/welcome"
-          element={<WelcomePage onLoginSuccess={onLoginSuccess} />}
-        />
+        <Route path="/login" element={<LoginPage onLoginSuccess={onLoginSuccess} />} />
+        <Route path="/register" element={<RegisterPage onRegisterSuccess={onLoginSuccess} />} />
         <Route
           path="/app"
           element={
@@ -29,15 +24,7 @@ export function AppRouter({
             </ProtectedRoute>
           }
         />
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to={isAuthenticated ? '/app' : '/welcome'}
-              replace
-            />
-          }
-        />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/app' : '/login'} replace />} />
       </Routes>
     </HashRouter>
   );

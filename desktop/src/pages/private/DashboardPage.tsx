@@ -1,4 +1,5 @@
 import { useServerInfoQuery } from '../../graphql/queries/generated/serverInfo';
+import { AuthLayout } from '../../components/layout/AuthLayout';
 
 type DashboardPageProps = {
   onLogout: () => void;
@@ -25,50 +26,38 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   });
 
   return (
-    <main className="page">
-      <section className="panel dashboard">
-        <div className="panel-header">
-          <p className="badge">Авторизований доступ</p>
-          <h1>Робоча панель</h1>
-          <p className="subtitle">
-            Тут будуть розділи, доступні лише авторизованим користувачам.
-            Замініть віджети на реальні дані або додайте нові сторінки.
-          </p>
-        </div>
+    <AuthLayout
+      badge="Авторизований доступ"
+      title="Робоча панель"
+      subtitle="Тут будуть розділи, доступні лише авторизованим користувачам. Замініть віджети на реальні дані або додайте нові сторінки."
+      actions={
+        <button className="btn ghost" type="button" onClick={onLogout}>
+          Вийти
+        </button>
+      }
+    >
+      <div className="widgets">
+        <article className="card widget">
+          <h3>GraphQL підключення</h3>
+          {loading && <p>Завантаження...</p>}
+          {error && <p className="error">Помилка підключення: {error.message}</p>}
+          {!loading && !error && data?.serverInfo && (
+            <p>
+              Підключено. Версія: <strong>{data.serverInfo.version}</strong>, статус:{' '}
+              <strong>{data.serverInfo.status}</strong>, аптайм:{' '}
+              <strong>{data.serverInfo.uptimeSeconds}s</strong>.
+            </p>
+          )}
+        </article>
 
-        <div className="widgets">
-          <article className="card widget">
-            <h3>GraphQL підключення</h3>
-            {loading && <p>Завантаження...</p>}
-            {error && (
-              <p className="error">
-                Помилка підключення: {error.message}
-              </p>
-            )}
-            {!loading && !error && data?.serverInfo && (
-              <p>
-                Підключено. Версія: <strong>{data.serverInfo.version}</strong>,
-                статус: <strong>{data.serverInfo.status}</strong>, аптайм:{' '}
-                <strong>{data.serverInfo.uptimeSeconds}s</strong>.
-              </p>
-            )}
+        {widgets.map((widget) => (
+          <article key={widget.title} className="card widget">
+            <h3>{widget.title}</h3>
+            <p>{widget.description}</p>
           </article>
-
-          {widgets.map((widget) => (
-            <article key={widget.title} className="card widget">
-              <h3>{widget.title}</h3>
-              <p>{widget.description}</p>
-            </article>
-          ))}
-        </div>
-
-        <div className="actions">
-          <button className="btn ghost" type="button" onClick={onLogout}>
-            Вийти
-          </button>
-        </div>
-      </section>
-    </main>
+        ))}
+      </div>
+    </AuthLayout>
   );
 }
 

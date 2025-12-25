@@ -18,6 +18,7 @@ input CreateUploadedFileInput {
   filename: String!
   sizeMb: Int!
   status: String
+  storageKey: String!
 }
 
 """

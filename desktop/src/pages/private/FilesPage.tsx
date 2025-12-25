@@ -1,16 +1,29 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import { AuthLayout } from '../../components/layout/AuthLayout';
+import { DataTable } from '../../components/ui/DataTable';
 import { useUploadedFilesQuery } from '../../graphql/queries/generated/uploadedFiles';
+import type { UploadedFilesQuery } from '../../graphql/queries/generated/uploadedFiles';
 import { useSignedUploadUrlLazyQuery } from '../../graphql/queries/generated/signedUpload';
 import { useCreateUploadedFileMutation } from '../../graphql/mutations/generated/createUploadedFile';
 import { useDeleteUploadedFileMutation } from '../../graphql/mutations/generated/deleteUploadedFile';
+import { isCsvFile } from '../../utils/fileValidation';
 
 type FilesPageProps = {
   onLogout: () => void;
 };
 
-function formatTimeAgo(value: string) {
+type FileRow = UploadedFilesQuery['uploadedFiles'][number];
+
+const statusLabels: Record<string, string> = {
+  processed: 'Оброблено',
+  queued: 'В черзі',
+  ready: 'Готово',
+  uploaded: 'Завантажено',
+};
+
+function formatTimeAgo(value: string | Date) {
   const date = new Date(value);
   const diffMs = Date.now() - date.getTime();
   const hours = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60)));
@@ -33,6 +46,7 @@ export function FilesPage({ onLogout }: FilesPageProps) {
 
   const files = data?.uploadedFiles ?? [];
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.sizeMb, 0), [files]);
+  const emptyMessage = loading ? 'Завантаження файлів...' : 'Файлів ще немає — додайте перші дані.';
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -41,6 +55,14 @@ export function FilesPage({ onLogout }: FilesPageProps) {
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
+
+    if (!isCsvFile(file)) {
+      setUploadError('Підтримуються лише CSV файли.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
 
     setUploadError(null);
     setUploading(true);
@@ -56,8 +78,9 @@ export function FilesPage({ onLogout }: FilesPageProps) {
       });
 
       const signedUrl = signedData?.signedUploadUrl?.url;
-      if (!signedUrl) {
-        throw new Error('Не вдалося отримати URL для завантаження.');
+      const storageKey = signedData?.signedUploadUrl?.key;
+      if (!signedUrl || !storageKey) {
+        throw new Error('Не вдалося отримати дані для завантаження.');
       }
 
       const uploadResponse = await fetch(signedUrl, {
@@ -75,6 +98,7 @@ export function FilesPage({ onLogout }: FilesPageProps) {
         variables: {
           input: {
             filename: file.name,
+            storageKey,
             sizeMb,
             status: 'uploaded',
           },
@@ -95,14 +119,115 @@ export function FilesPage({ onLogout }: FilesPageProps) {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Видалити файл?')) return;
-    try {
-      await deleteFile({ variables: { id } });
-      await refetch();
-    } catch (deleteErr) {
-      setUploadError(deleteErr instanceof Error ? deleteErr.message : 'Не вдалося видалити файл.');
-    }
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (!window.confirm('Видалити файл?')) return;
+      try {
+        await deleteFile({ variables: { id } });
+        await refetch();
+      } catch (deleteErr) {
+        setUploadError(
+          deleteErr instanceof Error ? deleteErr.message : 'Не вдалося видалити файл.'
+        );
+      }
+    },
+    [deleteFile, refetch]
+  );
+
+  const columns = useMemo<ColumnDef<FileRow>[]>(
+    () => [
+      {
+        header: 'Файл',
+        accessorKey: 'filename',
+        cell: (info) => <span className="item-title">{info.getValue<string>()}</span>,
+      },
+      {
+        header: 'Розмір',
+        accessorKey: 'sizeMb',
+        cell: (info) => <span className="cell-number">{info.getValue<number>()} МБ</span>,
+      },
+      {
+        header: 'Завантажено',
+        accessorKey: 'uploadedAt',
+        cell: (info) => {
+          const value = info.getValue<string | Date>();
+          return <span className="muted">{formatTimeAgo(value)}</span>;
+        },
+      },
+      {
+        header: 'Статус',
+        accessorKey: 'status',
+        cell: (info) => {
+          const status = info.getValue<string>();
+          return (
+            <span className={`status-pill status-${status}`}>{statusLabels[status] ?? status}</span>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+          <div className="table-actions">
+            <button
+              className="btn ghost small icon"
+              type="button"
+              onClick={() => handleDelete(row.original.id)}
+              disabled={deleting}
+              aria-label="Видалити"
+              title="Видалити"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M3 6h18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M8 6V4h8v2"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M6 6l1 14h10l1-14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M10 10v6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M14 10v6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+              </svg>
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [deleting, handleDelete]
+  );
+
+  const tableLabels = {
+    page: 'Сторінка',
+    of: 'з',
+    rowsPerPage: 'Рядків на сторінці',
+    previous: 'Назад',
+    next: 'Далі',
   };
 
   return (
@@ -130,6 +255,7 @@ export function FilesPage({ onLogout }: FilesPageProps) {
       <input
         ref={fileInputRef}
         type="file"
+        accept=".csv,text/csv"
         onChange={handleFileChange}
         style={{ display: 'none' }}
       />
@@ -154,47 +280,19 @@ export function FilesPage({ onLogout }: FilesPageProps) {
             <p className="muted">Історія завантажень та статус обробки.</p>
           </div>
         </header>
-        <div className="item-list">
-          {loading && !files.length && <p className="muted">Завантаження файлів...</p>}
+        <div className="table-status">
           {error && <p className="error">Помилка: {error.message}</p>}
           {uploadError && <p className="error">{uploadError}</p>}
-          {!loading && !error && files.length === 0 && (
-            <p className="muted">Файлів ще немає — додайте перші дані.</p>
-          )}
-
-          {files.map((file) => (
-            <div key={file.id} className="item-row">
-              <div className="item-meta">
-                <p className="item-title">{file.filename}</p>
-                <p className="muted">
-                  {file.sizeMb} МБ • {formatTimeAgo(String(file.uploadedAt))}
-                </p>
-              </div>
-              <div className="file-actions">
-                <span className={`status-pill status-${file.status}`}>
-                  {file.status === 'processed' ? 'Оброблено' : null}
-                  {file.status === 'queued' ? 'В черзі' : null}
-                  {file.status === 'ready' ? 'Готово' : null}
-                  {file.status === 'uploaded' ? 'Завантажено' : null}
-                  {file.status !== 'processed' &&
-                  file.status !== 'queued' &&
-                  file.status !== 'ready' &&
-                  file.status !== 'uploaded'
-                    ? file.status
-                    : null}
-                </span>
-                <button
-                  className="btn ghost small"
-                  type="button"
-                  onClick={() => handleDelete(file.id)}
-                  disabled={deleting}
-                >
-                  Видалити
-                </button>
-              </div>
-            </div>
-          ))}
         </div>
+        <DataTable
+          data={files}
+          columns={columns}
+          emptyMessage={emptyMessage}
+          labels={tableLabels}
+          pageSize={5}
+          pageSizeOptions={[5, 10, 20]}
+          getRowId={(row) => row.id}
+        />
       </section>
     </AuthLayout>
   );

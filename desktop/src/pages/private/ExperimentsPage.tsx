@@ -1,15 +1,22 @@
 import { Form, Formik, useField } from 'formik';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import { Link } from 'react-router-dom';
 import * as Yup from 'yup';
 import { AuthLayout } from '../../components/layout/AuthLayout';
+import { DataTable } from '../../components/ui/DataTable';
 import { refetchDashboardDataQuery } from '../../graphql/queries/generated/dashboard';
 import {
   refetchExperimentsQuery,
   useExperimentsQuery,
 } from '../../graphql/queries/generated/experiments';
+import type { ExperimentsQuery } from '../../graphql/queries/generated/experiments';
+import { useUploadedFilesQuery } from '../../graphql/queries/generated/uploadedFiles';
+import { useSignedUploadUrlLazyQuery } from '../../graphql/queries/generated/signedUpload';
+import { useCreateUploadedFileMutation } from '../../graphql/mutations/generated/createUploadedFile';
 import { useCreateExperimentMutation } from '../../graphql/mutations/generated/createExperiment';
 import { Modal } from '../../components/ui/Modal';
+import { isCsvFile } from '../../utils/fileValidation';
 
 type ExperimentsPageProps = {
   onLogout: () => void;
@@ -18,10 +25,18 @@ type ExperimentsPageProps = {
 type ExperimentFormValues = {
   name: string;
   description: string;
-  file: File | null;
+  uploadedFileId: string;
 };
 
-function formatTimeAgo(value: string) {
+type ExperimentRow = ExperimentsQuery['experiments'][number];
+
+const statusLabels: Record<string, string> = {
+  running: 'Запущено',
+  completed: 'Завершено',
+  queued: 'Заплановано',
+};
+
+function formatTimeAgo(value: string | Date) {
   const date = new Date(value);
   const diffMs = Date.now() - date.getTime();
   const hours = Math.max(1, Math.floor(diffMs / (1000 * 60 * 60)));
@@ -34,6 +49,7 @@ function formatTimeAgo(value: string) {
 const experimentSchema = Yup.object({
   name: Yup.string().trim().min(3, 'Мінімум 3 символи').required('Вкажіть назву'),
   description: Yup.string().trim().max(400, 'Максимум 400 символів').optional(),
+  uploadedFileId: Yup.string().optional(),
 });
 
 function TextAreaField({
@@ -95,9 +111,18 @@ export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
   const { data, loading, error, refetch } = useExperimentsQuery({
     fetchPolicy: 'cache-and-network',
   });
+  const {
+    data: uploadedFilesData,
+    loading: loadingFiles,
+    refetch: refetchUploadedFiles,
+  } = useUploadedFilesQuery({ fetchPolicy: 'cache-and-network' });
+  const [getSignedUrl] = useSignedUploadUrlLazyQuery();
+  const [createUploadedFile] = useCreateUploadedFileMutation();
   const [createExperiment, { loading: creating, error: creationError }] =
     useCreateExperimentMutation();
   const [isModalOpen, setModalOpen] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Keep dashboard stats fresh when a new experiment is created.
   const refetchQueries = useMemo(
@@ -106,6 +131,163 @@ export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
   );
 
   const experiments = data?.experiments ?? [];
+  const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
+  const emptyMessage = loading ? 'Завантаження експериментів...' : 'Експерименти ще не додані.';
+
+  const columns = useMemo<ColumnDef<ExperimentRow>[]>(
+    () => [
+      {
+        header: 'Експеримент',
+        accessorKey: 'name',
+        cell: ({ row, getValue }) => (
+          <div className="table-stack">
+            <Link to={`/app/experiments/${row.original.id}`} className="table-link item-title">
+              {getValue<string>()}
+            </Link>
+            <span className="muted small">{row.original.description || 'Опис не додано'}</span>
+          </div>
+        ),
+      },
+      {
+        header: 'Файл',
+        accessorKey: 'fileName',
+        cell: ({ row }) => <span className="muted">{row.original.fileName || 'Не додано'}</span>,
+      },
+      {
+        header: 'Запуски',
+        accessorKey: 'runs',
+        cell: (info) => <span className="cell-number">{info.getValue<number>()}</span>,
+      },
+      {
+        header: 'Статус',
+        accessorKey: 'status',
+        cell: (info) => {
+          const status = info.getValue<string>();
+          return (
+            <span className={`status-pill status-${status}`}>{statusLabels[status] ?? status}</span>
+          );
+        },
+      },
+      {
+        header: 'Створено',
+        accessorKey: 'createdAt',
+        cell: (info) => (
+          <span className="muted">{formatTimeAgo(info.getValue<string | Date>())}</span>
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+          <div className="table-actions">
+            <Link
+              to={`/app/experiments/${row.original.id}`}
+              className="btn ghost small icon"
+              aria-label="Відкрити"
+              title="Відкрити"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path
+                  d="M5 12h14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="M13 6l6 6-6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                />
+              </svg>
+            </Link>
+          </div>
+        ),
+      },
+    ],
+    []
+  );
+
+  const tableLabels = {
+    page: 'Сторінка',
+    of: 'з',
+    rowsPerPage: 'Рядків на сторінці',
+    previous: 'Назад',
+    next: 'Далі',
+  };
+  const handleUploadNewFile = useCallback(
+    async (
+      file: File,
+      resetInput: () => void,
+      setFieldValue: (field: string, value: string) => void
+    ) => {
+      if (!isCsvFile(file)) {
+        setUploadError('Підтримуються лише CSV файли.');
+        resetInput();
+        return;
+      }
+
+      setUploadError(null);
+      setUploadingFile(true);
+
+      try {
+        const { data: signedData } = await getSignedUrl({
+          variables: {
+            input: {
+              filename: file.name,
+              mimeType: file.type || undefined,
+            },
+          },
+        });
+
+        const signedUrl = signedData?.signedUploadUrl?.url;
+        const storageKey = signedData?.signedUploadUrl?.key;
+        if (!signedUrl || !storageKey) {
+          throw new Error('Не вдалося отримати дані для завантаження.');
+        }
+
+        const uploadResponse = await fetch(signedUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type },
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Помилка завантаження файла.');
+        }
+
+        const sizeMb = Math.max(1, Math.round(file.size / (1024 * 1024)));
+        const { data: createData } = await createUploadedFile({
+          variables: {
+            input: {
+              filename: file.name,
+              storageKey,
+              sizeMb,
+              status: 'uploaded',
+            },
+          },
+        });
+
+        const createdId = createData?.createUploadedFile?.id;
+        if (!createdId) {
+          throw new Error('Не вдалося створити запис файлу.');
+        }
+
+        await refetchUploadedFiles();
+        setFieldValue('uploadedFileId', createdId);
+      } catch (uploadErr) {
+        setUploadError(
+          uploadErr instanceof Error ? uploadErr.message : 'Не вдалося завантажити файл.'
+        );
+      } finally {
+        setUploadingFile(false);
+        resetInput();
+      }
+    },
+    [createUploadedFile, getSignedUrl, refetchUploadedFiles]
+  );
 
   return (
     <AuthLayout
@@ -132,57 +314,31 @@ export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
               <p className="muted">Статуси, файли та час створення.</p>
             </div>
           </header>
-          <div className="item-list">
-            {loading && !experiments.length && (
-              <p className="muted">Завантаження експериментів...</p>
-            )}
+          <div className="table-status">
             {error && <p className="error">Помилка: {error.message}</p>}
-            {!loading && !error && experiments.length === 0 && (
-              <p className="muted">Експерименти ще не додані.</p>
-            )}
-
-            {experiments.map((experiment) => (
-              <Link
-                key={experiment.id}
-                to={`/app/experiments/${experiment.id}`}
-                className="item-row experiment-row experiment-link"
-              >
-                <div className="item-meta">
-                  <p className="item-title">{experiment.name}</p>
-                  <p className="muted small">{experiment.description || 'Опис не додано'}</p>
-                  <p className="muted small">
-                    Файл: <strong>{experiment.fileName || 'Не додано'}</strong> • Запуски:{' '}
-                    {experiment.runs}
-                  </p>
-                </div>
-                <div className="experiment-meta">
-                  <span className={`status-pill status-${experiment.status}`}>
-                    {experiment.status === 'running' ? 'Запущено' : null}
-                    {experiment.status === 'completed' ? 'Завершено' : null}
-                    {experiment.status === 'queued' ? 'Заплановано' : null}
-                    {experiment.status !== 'running' &&
-                    experiment.status !== 'completed' &&
-                    experiment.status !== 'queued'
-                      ? experiment.status
-                      : null}
-                  </span>
-                  <span className="muted small">{formatTimeAgo(String(experiment.createdAt))}</span>
-                </div>
-              </Link>
-            ))}
           </div>
+          <DataTable
+            data={experiments}
+            columns={columns}
+            emptyMessage={emptyMessage}
+            labels={tableLabels}
+            pageSize={6}
+            pageSizeOptions={[6, 12, 24]}
+            getRowId={(row) => row.id}
+          />
         </section>
       </div>
 
       <Modal open={isModalOpen} title="Створити експеримент" onClose={() => setModalOpen(false)}>
         <Formik<ExperimentFormValues>
-          initialValues={{ name: '', description: '', file: null }}
+          initialValues={{ name: '', description: '', uploadedFileId: '' }}
           validationSchema={experimentSchema}
           onSubmit={async (values, { resetForm, setStatus, setSubmitting }) => {
             setStatus(undefined);
             const trimmedName = values.name.trim();
             const trimmedDescription = values.description?.trim() ?? '';
-            const fileName = values.file?.name ?? null;
+            const selectedFile = uploadedFiles.find((file) => file.id === values.uploadedFileId);
+            const fileName = selectedFile?.filename ?? null;
 
             try {
               await createExperiment({
@@ -205,53 +361,97 @@ export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
             }
           }}
         >
-          {({ setFieldValue, values, isSubmitting, status }) => (
-            <Form className="experiment-form" noValidate>
-              <TextInputField
-                name="name"
-                label="Назва експерименту"
-                placeholder="Наприклад, Protein baseline"
-              />
-              <TextAreaField
-                name="description"
-                label="Опис"
-                placeholder="Коротко опишіть цілі експерименту"
-              />
+          {({ setFieldValue, values, isSubmitting, status }) => {
+            const selectedUploadedFile = uploadedFiles.find(
+              (file) => file.id === values.uploadedFileId
+            );
+            const fileHelperText = values.uploadedFileId
+              ? `Обрано: ${selectedUploadedFile?.filename ?? 'Файл недоступний'}`
+              : uploadedFiles.length > 0
+                ? 'Оберіть файл зі списку завантажених.'
+                : 'Немає завантажених файлів. Завантажте файл у розділі "Файли".';
 
-              <div className="form-group">
-                <label htmlFor="file">Файл експерименту</label>
-                <div className="file-input">
-                  <input
-                    id="file"
-                    name="file"
-                    type="file"
-                    onChange={(event) => {
-                      const selectedFile = event.currentTarget.files?.[0] ?? null;
-                      setFieldValue('file', selectedFile);
-                    }}
-                    accept=".csv,.json,.zip,.txt"
-                  />
-                  <p className="muted small">
-                    {values.file
-                      ? `Обрано: ${values.file.name}`
-                      : 'Додайте файл з даними або конфігурацією.'}
-                  </p>
+            return (
+              <Form className="experiment-form" noValidate>
+                <TextInputField
+                  name="name"
+                  label="Назва експерименту"
+                  placeholder="Наприклад, Protein baseline"
+                />
+                <TextAreaField
+                  name="description"
+                  label="Опис"
+                  placeholder="Коротко опишіть цілі експерименту"
+                />
+
+                <div className="form-group">
+                  <label htmlFor="uploadedFileId">Файл експерименту</label>
+                  <select
+                    id="uploadedFileId"
+                    name="uploadedFileId"
+                    value={values.uploadedFileId}
+                    onChange={(event) => setFieldValue('uploadedFileId', event.target.value)}
+                    disabled={loadingFiles || uploadedFiles.length === 0}
+                  >
+                    <option value="">Не обрано</option>
+                    {uploadedFiles.map((file) => (
+                      <option key={file.id} value={file.id}>
+                        {file.filename} • {file.sizeMb} МБ
+                      </option>
+                    ))}
+                  </select>
+                  <p className="muted small">{fileHelperText}</p>
                 </div>
-              </div>
 
-              {status && <p className="error">{status}</p>}
-              {creationError && <p className="error">Помилка: {creationError.message}</p>}
+                <div className="form-divider">
+                  <span>або</span>
+                </div>
 
-              <div className="actions">
-                <button className="btn ghost" type="button" onClick={() => setModalOpen(false)}>
-                  Скасувати
-                </button>
-                <button className="btn primary" type="submit" disabled={creating || isSubmitting}>
-                  {creating || isSubmitting ? 'Створення...' : 'Створити експеримент'}
-                </button>
-              </div>
-            </Form>
-          )}
+                <div className="form-group">
+                  <label htmlFor="uploadFile">Завантажити новий файл</label>
+                  <div className="file-input">
+                    <input
+                      id="uploadFile"
+                      name="uploadFile"
+                      type="file"
+                      accept=".csv,text/csv"
+                      disabled={uploadingFile}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (!file) return;
+                        const input = event.currentTarget;
+                        void handleUploadNewFile(
+                          file,
+                          () => {
+                            input.value = '';
+                          },
+                          setFieldValue
+                        );
+                      }}
+                    />
+                    <p className="muted small">
+                      {uploadingFile
+                        ? 'Завантаження...'
+                        : 'Файл буде додано до списку та обрано автоматично.'}
+                    </p>
+                  </div>
+                  {uploadError && <p className="error">{uploadError}</p>}
+                </div>
+
+                {status && <p className="error">{status}</p>}
+                {creationError && <p className="error">Помилка: {creationError.message}</p>}
+
+                <div className="actions">
+                  <button className="btn ghost" type="button" onClick={() => setModalOpen(false)}>
+                    Скасувати
+                  </button>
+                  <button className="btn primary" type="submit" disabled={creating || isSubmitting}>
+                    {creating || isSubmitting ? 'Створення...' : 'Створити експеримент'}
+                  </button>
+                </div>
+              </Form>
+            );
+          }}
         </Formik>
       </Modal>
     </AuthLayout>

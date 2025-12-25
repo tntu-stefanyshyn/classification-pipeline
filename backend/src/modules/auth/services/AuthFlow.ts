@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import mongoose from 'mongoose';
 import type { Request } from 'express';
 
 import { config } from '../../../config/config';
@@ -12,8 +11,6 @@ import { RegisterInput } from '../classes/RegisterInput';
 
 export class AuthFlow {
   async register(input: RegisterInput): Promise<AuthPayload> {
-    this.assertDbConnected();
-
     const email = input.email.toLowerCase().trim();
     const existing = await UserModel.findOne({ email });
     if (existing) {
@@ -32,8 +29,6 @@ export class AuthFlow {
   }
 
   async login(input: LoginInput): Promise<AuthPayload> {
-    this.assertDbConnected();
-
     const email = input.email.toLowerCase().trim();
     const user = await UserModel.findOne({ email });
     if (!user) {
@@ -50,7 +45,6 @@ export class AuthFlow {
   }
 
   async me(req: Request): Promise<User | null> {
-    this.assertDbConnected();
     if (config.isDev) {
       return UserModel.findOne();
     }
@@ -75,12 +69,6 @@ export class AuthFlow {
     return jwt.sign({ sub: user._id.toString(), email: user.email }, config.jwtSecret, {
       expiresIn: TOKEN_TTL,
     });
-  }
-
-  private assertDbConnected() {
-    if (mongoose.connection.readyState !== 1) {
-      throw new Error('Database is not connected. Set MONGODB_URI and restart the server.');
-    }
   }
 
   private extractToken(req: Request): string {

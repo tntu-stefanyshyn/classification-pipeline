@@ -70,6 +70,7 @@
   },
   "dependencies": {
     "@apollo/client": "^3.9.0",
+    "@tanstack/react-table": "^8.21.3",
     "electron-squirrel-startup": "^1.0.1",
     "formik": "^2.4.9",
     "graphql": "^16.12.0",

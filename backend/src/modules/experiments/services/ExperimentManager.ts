@@ -1,152 +1,71 @@
+import { randomUUID } from 'crypto';
 import { Experiment } from '../classes/Experiment';
 import { GraphStructure } from '../classes/GraphStructure';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { GraphNode } from '../classes/GraphNode';
 import { GraphEdge } from '../classes/GraphEdge';
+import { ExperimentModel } from '../models/ExperimentModel';
 
 export class ExperimentManager {
-  private readonly experimentItems: Experiment[] = [
-    {
-      id: 'exp-1',
-      name: 'Protein folding baseline',
-      description: 'Перевірка стабільності моделі на базовому датасеті.',
-      status: 'running',
-      runs: 12,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
-      fileName: 'protein-baseline.csv',
-      graph: this.buildGraph('exp-1', [
-        {
-          id: 'n1',
-          label: 'Input',
-          type: 'source',
-          children: [
-            {
-              id: 'n1-1',
-              label: 'Preprocess',
-              type: 'compute',
-              children: [
-                {
-                  id: 'n1-1-1',
-                  label: 'Model',
-                  type: 'compute',
-                  children: [{ id: 'n1-1-1-1', label: 'Results', type: 'sink', children: [] }],
-                },
-              ],
-            },
-          ],
-        },
-      ]),
-    },
-    {
-      id: 'exp-2',
-      name: 'Dataset v2 benchmarking',
-      description: 'Порівняння швидкості та точності після оновлення даних.',
-      status: 'completed',
-      runs: 34,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 8),
-      fileName: 'dataset-v2.zip',
-      graph: this.buildGraph('exp-2', [
-        {
-          id: 'n1',
-          label: 'Loader',
-          type: 'source',
-          children: [
-            {
-              id: 'n1-1',
-              label: 'Benchmark',
-              type: 'compute',
-              children: [],
-            },
-          ],
-        },
-      ]),
-    },
-    {
-      id: 'exp-3',
-      name: 'Hyperparameter sweep',
-      description: 'Сітковий пошук оптимальних параметрів для нової архітектури.',
-      status: 'queued',
-      runs: 5,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1),
-      fileName: 'hparams.json',
-      graph: this.buildGraph('exp-3', [
-        {
-          id: 'n1',
-          label: 'Config',
-          type: 'source',
-          children: [
-            {
-              id: 'n1-1',
-              label: 'Sweep',
-              type: 'compute',
-              children: [{ id: 'n1-1-1', label: 'Report', type: 'sink', children: [] }],
-            },
-          ],
-        },
-      ]),
-    },
-  ];
-
-  list(): Experiment[] {
-    return this.experimentItems;
+  async list(): Promise<Experiment[]> {
+    return ExperimentModel.find().sort({ createdAt: -1 }).lean<Experiment>().exec();
   }
 
-  getById(id: string): Experiment | undefined {
-    return this.experimentItems.find((item) => item.id === id);
+  async getById(id: string): Promise<Experiment | null> {
+    const trimmedId = id.trim();
+    if (!trimmedId) throw new Error('Experiment id is required');
+    return ExperimentModel.findOne({ id: trimmedId }).lean<Experiment>().exec();
   }
 
-  create(input: CreateExperimentInput): Experiment {
-    const id = `exp-${this.experimentItems.length + 1}`;
-    const graphId = `graph-${this.experimentItems.length + 1}`;
-    const baseNodeId = `n${this.experimentItems.length + 1}`;
+  async create(input: CreateExperimentInput): Promise<Experiment> {
+    const name = input.name.trim();
+    if (!name) throw new Error('Name is required');
 
-    const graph = this.buildGraph(
-      id,
-      [
-        {
-          id: `${baseNodeId}-input`,
-          label: 'Input',
-          type: 'source',
-          children: [
-            {
-              id: `${baseNodeId}-process`,
-              label: 'Process',
-              type: 'compute',
-              children: [
-                { id: `${baseNodeId}-output`, label: 'Output', type: 'sink', children: [] },
-              ],
-            },
-          ],
-        },
-      ],
-      [
-        { id: `${graphId}-edge-1`, from: `${baseNodeId}-input`, to: `${baseNodeId}-process` },
-        { id: `${graphId}-edge-2`, from: `${baseNodeId}-process`, to: `${baseNodeId}-output` },
-      ]
-    );
+    const id = `exp-${randomUUID()}`;
+    const description = input.description?.trim();
+    const fileName = input.fileName?.trim();
+    const graph = this.buildDefaultGraph(id);
 
-    const experiment: Experiment = {
+    const experiment = await ExperimentModel.create({
       id,
-      name: input.name,
-      description: input.description,
+      name,
+      description: description || undefined,
       status: 'queued',
       runs: 0,
       createdAt: new Date(),
-      fileName: input.fileName,
+      fileName: fileName || undefined,
       graph,
-    };
+    });
 
-    this.experimentItems.unshift(experiment);
-    return experiment;
+    return experiment.toObject() as Experiment;
   }
 
-  update(input: UpdateExperimentInput): Experiment {
-    const experiment = this.getById(input.id);
-    if (!experiment) throw new Error('Experiment not found');
+  async update(input: UpdateExperimentInput): Promise<Experiment> {
+    const trimmedId = input.id.trim();
+    if (!trimmedId) throw new Error('Experiment id is required');
 
-    if (typeof input.name === 'string') experiment.name = input.name;
-    if (typeof input.description === 'string') experiment.description = input.description;
+    const update: Partial<Experiment> = {};
+
+    if (typeof input.name === 'string') {
+      const name = input.name.trim();
+      if (!name) throw new Error('Name is required');
+      update.name = name;
+    }
+
+    if (typeof input.description === 'string') {
+      update.description = input.description.trim();
+    }
+
+    const experiment = await ExperimentModel.findOneAndUpdate({ id: trimmedId }, update, {
+      new: true,
+    })
+      .lean<Experiment>()
+      .exec();
+
+    if (!experiment) {
+      throw new Error('Experiment not found');
+    }
 
     return experiment;
   }
@@ -177,5 +96,29 @@ export class ExperimentManager {
 
     nodes.forEach((n) => walk(n));
     return edges;
+  }
+
+  private buildDefaultGraph(experimentId: string): GraphStructure {
+    const inputId = `node-${randomUUID()}`;
+    const processId = `node-${randomUUID()}`;
+    const outputId = `node-${randomUUID()}`;
+
+    const nodes: GraphNode[] = [
+      {
+        id: inputId,
+        label: 'Input',
+        type: 'source',
+        children: [
+          {
+            id: processId,
+            label: 'Process',
+            type: 'compute',
+            children: [{ id: outputId, label: 'Output', type: 'sink', children: [] }],
+          },
+        ],
+      },
+    ];
+
+    return this.buildGraph(experimentId, nodes);
   }
 }

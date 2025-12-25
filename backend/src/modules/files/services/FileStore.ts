@@ -1,65 +1,67 @@
 import { randomUUID } from 'crypto';
+import { StorageClient } from '../../storage/services/StorageClient';
 import { UploadedFile } from '../classes/UploadedFile';
+import { UploadedFileModel } from '../models/UploadedFileModel';
 
 type CreateFileInput = {
   filename: string;
   sizeMb: number;
   status?: string;
+  storageKey: string;
 };
 
 export class FileStore {
-  private items: UploadedFile[] = [
-    {
-      id: 'file-1',
-      filename: 'microscopy-scan.tiff',
-      sizeMb: 248,
-      status: 'processed',
-      uploadedAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    },
-    {
-      id: 'file-2',
-      filename: 'cell-growth.csv',
-      sizeMb: 32,
-      status: 'queued',
-      uploadedAt: new Date(Date.now() - 1000 * 60 * 60 * 6),
-    },
-    {
-      id: 'file-3',
-      filename: 'report-draft.pdf',
-      sizeMb: 12,
-      status: 'ready',
-      uploadedAt: new Date(Date.now() - 1000 * 60 * 60 * 22),
-    },
-  ];
+  private storage?: StorageClient;
 
-  list(): UploadedFile[] {
-    return this.items;
+  async list(): Promise<UploadedFile[]> {
+    return UploadedFileModel.find().sort({ uploadedAt: -1 }).lean();
   }
 
-  create(input: CreateFileInput): UploadedFile {
+  async create(input: CreateFileInput): Promise<UploadedFile> {
     const filename = input.filename.trim();
     if (!filename) throw new Error('Filename is required');
+    if (!filename.toLowerCase().endsWith('.csv')) {
+      throw new Error('Only CSV files are allowed');
+    }
+    const storageKey = input.storageKey?.trim();
+    if (!storageKey) throw new Error('Storage key is required');
     if (input.sizeMb <= 0) throw new Error('sizeMb must be positive');
 
-    const file: UploadedFile = {
+    const status = input.status?.trim();
+    const file = await UploadedFileModel.create({
       id: randomUUID(),
       filename,
+      storageKey,
       sizeMb: input.sizeMb,
-      status: input.status?.trim() || 'uploaded',
+      status: status || undefined,
       uploadedAt: new Date(),
-    };
+    });
 
-    this.items.unshift(file);
+    return file.toObject();
+  }
+
+  async remove(id: string): Promise<UploadedFile> {
+    const trimmedId = id.trim();
+    if (!trimmedId) throw new Error('File id is required');
+
+    const file = await UploadedFileModel.findOne({ id: trimmedId }).lean<UploadedFile>().exec();
+    if (!file) {
+      throw new Error('File not found');
+    }
+    if (!file.storageKey) {
+      throw new Error('Storage key is missing for file');
+    }
+
+    await this.getStorage().deleteObject(file.storageKey);
+    await UploadedFileModel.deleteOne({ id: trimmedId }).exec();
     return file;
   }
 
-  remove(id: string): UploadedFile {
-    const index = this.items.findIndex((item) => item.id === id);
-    if (index === -1) {
-      throw new Error('File not found');
+  private getStorage(): StorageClient {
+    if (!this.storage) {
+      this.storage = new StorageClient();
     }
-    const [removed] = this.items.splice(index, 1);
-    return removed;
+    return this.storage;
   }
 }
 

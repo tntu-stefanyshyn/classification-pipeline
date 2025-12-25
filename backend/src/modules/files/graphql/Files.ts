@@ -6,19 +6,19 @@ import { fileStore } from '../services/FileStore';
 @Resolver()
 export class Files {
   @Query(() => [UploadedFile])
-  uploadedFiles(): UploadedFile[] {
+  uploadedFiles(): Promise<UploadedFile[]> {
     return fileStore.list();
   }
 
   @Mutation(() => UploadedFile)
   createUploadedFile(
     @Arg('input', () => CreateUploadedFileInput) input: CreateUploadedFileInput
-  ): UploadedFile {
+  ): Promise<UploadedFile> {
     return fileStore.create(input);
   }
 
   @Mutation(() => UploadedFile)
-  deleteUploadedFile(@Arg('id', () => ID) id: string): UploadedFile {
+  deleteUploadedFile(@Arg('id', () => ID) id: string): Promise<UploadedFile> {
     return fileStore.remove(id);
   }
 }

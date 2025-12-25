@@ -5,6 +5,9 @@ export class CreateUploadedFileInput {
   @Field()
   filename!: string;
 
+  @Field()
+  storageKey!: string;
+
   @Field(() => Int)
   sizeMb!: number;
 

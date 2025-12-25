@@ -9,26 +9,26 @@ export class Experiments {
   private readonly manager = new ExperimentManager();
 
   @Query(() => [Experiment])
-  experiments(): Experiment[] {
+  experiments(): Promise<Experiment[]> {
     return this.manager.list();
   }
 
   @Query(() => Experiment, { nullable: true })
-  experiment(@Arg('id', () => ID) id: string): Experiment | undefined {
+  experiment(@Arg('id', () => ID) id: string): Promise<Experiment | null> {
     return this.manager.getById(id);
   }
 
   @Mutation(() => Experiment)
   createExperiment(
     @Arg('input', () => CreateExperimentInput) input: CreateExperimentInput
-  ): Experiment {
+  ): Promise<Experiment> {
     return this.manager.create(input);
   }
 
   @Mutation(() => Experiment)
   updateExperiment(
     @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
-  ): Experiment {
+  ): Promise<Experiment> {
     return this.manager.update(input);
   }
 }

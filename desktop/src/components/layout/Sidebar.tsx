@@ -39,13 +39,8 @@ export function AppSidebar({
     <aside className={`app-sidebar ${isOpen ? 'open' : ''} ${isMobile ? 'mobile' : ''}`}>
       <div className="sidebar-inner">
         <div className="sidebar-brand">
-          <div className="sidebar-mark" aria-label="Логотип панелі">
-            <span className="sidebar-mark-bar primary" />
-            <span className="sidebar-mark-bar" />
-          </div>
           <div>
-            <p className="sidebar-kicker">Дослідницька панель</p>
-            <p className="sidebar-title">Control</p>
+            <p className="sidebar-title">Дослідницька панель</p>
           </div>
           {isMobile ? (
             <button

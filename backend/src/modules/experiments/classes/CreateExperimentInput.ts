@@ -1,4 +1,4 @@
-import { Field, InputType } from 'type-graphql';
+import { Field, ID, InputType } from 'type-graphql';
 
 @InputType()
 export class CreateExperimentInput {
@@ -7,4 +7,7 @@ export class CreateExperimentInput {
 
   @Field({ nullable: true })
   description?: string;
+
+  @Field(() => ID, { nullable: true })
+  fileId?: string;
 }

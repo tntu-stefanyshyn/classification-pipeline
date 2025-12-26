@@ -3,6 +3,7 @@ mutation CreateExperiment($input: CreateExperimentInput!) {
     _id
     name
     description
+    fileId
     status
     createdAt
   }

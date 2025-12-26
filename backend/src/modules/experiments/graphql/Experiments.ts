@@ -13,8 +13,6 @@ export class Experiments {
 
   @FieldResolver(() => GraphStructure, { nullable: true })
   graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
-    console.log(experiment);
-
     return this.graphManager.getByExperimentId(experiment._id);
   }
 

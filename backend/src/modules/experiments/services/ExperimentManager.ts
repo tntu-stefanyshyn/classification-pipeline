@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { Experiment } from '../classes/Experiment';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
@@ -23,9 +24,14 @@ export class ExperimentManager {
     if (!name) throw new Error('Name is required');
 
     const description = input.description?.trim();
+    const fileId = input.fileId?.trim();
+    if (fileId && !Types.ObjectId.isValid(fileId)) {
+      throw new Error('File _id is invalid');
+    }
     const experiment = await ExperimentModel.create({
       name,
       description,
+      fileId: fileId ? new Types.ObjectId(fileId) : undefined,
     });
 
     await this.graphManager.createDefaultGraph(experiment._id);
@@ -37,6 +43,7 @@ export class ExperimentManager {
     if (!trimmedId) throw new Error('Experiment _id is required');
 
     const update: Partial<Experiment> = {};
+    const unset: Record<string, 1> = {};
 
     if (typeof input.name === 'string') {
       const name = input.name.trim();
@@ -48,6 +55,18 @@ export class ExperimentManager {
       update.description = input.description.trim();
     }
 
+    if (input.fileId !== undefined) {
+      const trimmedFileId = input.fileId?.trim() ?? '';
+      if (!trimmedFileId) {
+        unset.fileId = 1;
+      } else {
+        if (!Types.ObjectId.isValid(trimmedFileId)) {
+          throw new Error('File _id is invalid');
+        }
+        update.fileId = new Types.ObjectId(trimmedFileId);
+      }
+    }
+
     if (input.graphNodes !== undefined) {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
@@ -57,7 +76,9 @@ export class ExperimentManager {
       await this.graphManager.updateGraph(trimmedId, input.graphNodes);
     }
 
-    const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, update, {
+    const updateOps =
+      Object.keys(unset).length > 0 ? { $set: update, $unset: unset } : { $set: update };
+    const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, updateOps, {
       new: true,
     }).lean();
 

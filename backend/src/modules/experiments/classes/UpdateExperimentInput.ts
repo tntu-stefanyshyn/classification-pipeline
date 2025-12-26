@@ -12,6 +12,9 @@ export class UpdateExperimentInput {
   @Field({ nullable: true })
   description?: string;
 
+  @Field(() => ID, { nullable: true })
+  fileId?: string | null;
+
   @Field(() => [GraphNodeInput], { nullable: true })
   graphNodes?: GraphNodeInput[];
 }

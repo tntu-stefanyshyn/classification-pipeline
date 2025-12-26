@@ -107,7 +107,6 @@ export function FilesPage({ onLogout }: FilesPageProps) {
 
       await refetch();
     } catch (uploadErr) {
-      console.log('йобаний хуй');
       setUploadError(
         uploadErr instanceof Error ? uploadErr.message : 'Не вдалося завантажити файл.'
       );

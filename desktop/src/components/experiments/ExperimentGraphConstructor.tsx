@@ -293,7 +293,6 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   };
 
   const handleUpdateNode = async () => {
-    console.log(123);
     if (!draftNode || modalState?.type !== 'edit') return;
     const nextNodes = graphNodes.map((node) =>
       node._id === modalState.nodeId

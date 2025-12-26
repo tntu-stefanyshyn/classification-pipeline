@@ -3,6 +3,7 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
     _id
     name
     description
+    fileId
     status
     createdAt
     graph {

@@ -3,6 +3,7 @@ query Experiment($_id: ID!) {
     _id
     name
     description
+    fileId
     status
     createdAt
     graph {

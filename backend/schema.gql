@@ -18,6 +18,7 @@ enum ClassificationStage {
 
 input CreateExperimentInput {
   description: String
+  fileId: ID
   name: String!
 }
 
@@ -37,6 +38,7 @@ type Experiment {
   _id: ID!
   createdAt: DateTimeISO!
   description: String
+  fileId: ID
   graph: GraphStructure
   name: String!
   status: ExperimentStatus!
@@ -161,6 +163,7 @@ enum TechnologySettingType {
 input UpdateExperimentInput {
   _id: ID!
   description: String
+  fileId: ID
   graphNodes: [GraphNodeInput!]
   name: String
 }

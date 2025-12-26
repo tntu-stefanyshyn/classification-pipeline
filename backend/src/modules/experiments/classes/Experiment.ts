@@ -26,6 +26,10 @@ export class Experiment extends TimeStamps {
   })
   status!: ExperimentStatus;
 
+  @Field(() => ID, { nullable: true })
+  @prop({ type: () => Types.ObjectId })
+  fileId?: Types.ObjectId;
+
   @Field(() => Date)
   declare createdAt: Date;
 }

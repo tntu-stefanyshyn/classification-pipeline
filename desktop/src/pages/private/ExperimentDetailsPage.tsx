@@ -1,11 +1,14 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Form, Formik } from 'formik';
 import * as Yup from 'yup';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AuthLayout } from '../../components/layout/AuthLayout';
-import { useExperimentQuery } from '../../graphql/queries/generated/experiment';
+import {
+  useExperimentQuery,
+  refetchExperimentQuery,
+} from '../../graphql/queries/generated/experiment';
 import { useUpdateExperimentMutation } from '../../graphql/mutations/generated/updateExperiment';
-import { refetchExperimentQuery } from '../../graphql/queries/generated/experiment';
+import type { GraphNode } from '../../graphql/types.generated';
 import { Modal } from '../../components/ui/Modal';
 
 type ExperimentDetailsPageProps = {
@@ -26,7 +29,7 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   const params = useParams();
   const id = params.id ?? '';
   const { data, loading, error, refetch } = useExperimentQuery({
-    variables: { id },
+    variables: { _id: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   });
@@ -39,8 +42,8 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   });
 
   const experiment = data?.experiment;
-
   const graph = experiment?.graph;
+  const pathsCount = useMemo(() => countGraphPaths(graph?.nodes ?? []), [graph]);
 
   return (
     <AuthLayout
@@ -53,6 +56,14 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
           <button className="btn ghost" type="button" onClick={() => refetch()} disabled={loading}>
             Оновити
           </button>
+          <Link className="btn ghost" to="/app">
+            На дашборд
+          </Link>
+          {experiment ? (
+            <Link className="btn ghost" to={`/app/experiments/${experiment._id}/constructor`}>
+              Конструктор
+            </Link>
+          ) : null}
           <button
             className="btn primary"
             type="button"
@@ -78,60 +89,49 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                 {experiment.status === 'running' ? 'Запущено' : null}
                 {experiment.status === 'completed' ? 'Завершено' : null}
                 {experiment.status === 'queued' ? 'Заплановано' : null}
+                {experiment.status === 'failed' ? 'Помилка' : null}
                 {experiment.status !== 'running' &&
                 experiment.status !== 'completed' &&
-                experiment.status !== 'queued'
+                experiment.status !== 'queued' &&
+                experiment.status !== 'failed'
                   ? experiment.status
                   : null}
               </span>
             </article>
             <article className="card stat-card">
-              <p className="muted">Запуски</p>
-              <div className="stat-value">{experiment.runs}</div>
-              <p className="muted small">Оновлено {formatTimeAgo(String(experiment.createdAt))}</p>
+              <p className="muted">Створено</p>
+              <div className="stat-value">{formatTimeAgo(String(experiment.createdAt))}</div>
+              <p className="muted small">Дата: {new Date(experiment.createdAt).toLocaleString()}</p>
             </article>
             <article className="card stat-card">
-              <p className="muted">Файл</p>
-              <div className="stat-value small">{experiment.fileName || 'Не додано'}</div>
-              <p className="muted small">ID: {experiment.id}</p>
+              <p className="muted">ID</p>
+              <div className="stat-value small">{experiment._id}</div>
+              <p className="muted small">Ідентифікатор експерименту</p>
             </article>
           </div>
 
           <section className="card data-card">
             <header className="card-head">
               <div>
-                <h3>Конфігурація графа</h3>
-                <p className="muted">
-                  Автоматично створений граф, повʼязаний один до одного з експериментом.
-                </p>
+                <h3>Графова структура</h3>
+                <p className="muted">Поточна кількість шляхів у графі.</p>
               </div>
+              {graph ? (
+                <Link
+                  className="btn primary small"
+                  to={`/app/experiments/${experiment._id}/constructor`}
+                >
+                  Відкрити конструктор
+                </Link>
+              ) : null}
             </header>
             {!graph && <p className="muted">Граф ще не створений.</p>}
             {graph && (
-              <div className="graph-block">
-                <div className="graph-info">
-                  <p className="muted small">Graph ID: {graph.id}</p>
-                  <p className="muted small">
-                    Вузли: {graph.nodes.length} • Ребра: {graph.edges.length}
-                  </p>
-                  <p className="muted small">Створено: {formatTimeAgo(String(graph.createdAt))}</p>
-                </div>
-                <div className="graph-grid">
-                  <div>
-                    <ul className="graph-tree">
-                      {graph.nodes.map((node) => (
-                        <NodeItem key={node.id} node={node as unknown as GraphNodeType} />
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <ul className="graph-list">
-                      {graph.edges.map((edge) => (
-                        <li key={edge.id} className="muted small">
-                          {edge.from} → {edge.to}
-                        </li>
-                      ))}
-                    </ul>
+              <div className="graph-summary">
+                <div className="graph-summary-grid">
+                  <div className="graph-summary-item">
+                    <span className="muted small">Кількість шляхів</span>
+                    <span className="graph-summary-value">{pathsCount}</span>
                   </div>
                 </div>
               </div>
@@ -159,12 +159,12 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
               await updateExperiment({
                 variables: {
                   input: {
-                    id: experiment.id,
+                    _id: experiment._id,
                     name: values.name.trim(),
                     description: values.description.trim() || null,
                   },
                 },
-                refetchQueries: [refetchExperimentQuery({ id: experiment.id })],
+                refetchQueries: [refetchExperimentQuery({ _id: experiment._id })],
                 awaitRefetchQueries: true,
               });
               setEditModalOpen(false);
@@ -224,28 +224,49 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   );
 }
 
-type GraphNodeType = {
-  id: string;
-  label: string;
-  type?: string | null;
-  children?: GraphNodeType[] | null;
-};
+const countGraphPaths = (nodes: GraphNode[]): number => {
+  if (nodes.length === 0) return 0;
+  const ids = new Set(nodes.map((node) => node._id));
+  const childrenByParent = new Map<string, string[]>();
 
-function NodeItem({ node }: { node: GraphNodeType }) {
-  return (
-    <li className="graph-node-item">
-      <div>
-        <strong>{node.label}</strong> <span className="muted small">({node.type || 'node'})</span>
-      </div>
-      {node.children && node.children.length > 0 ? (
-        <ul className="graph-tree nested">
-          {node.children.map((child) => (
-            <NodeItem key={child.id} node={child} />
-          ))}
-        </ul>
-      ) : null}
-    </li>
-  );
-}
+  nodes.forEach((node) => {
+    if (!node.parentId || !ids.has(node.parentId)) return;
+    const list = childrenByParent.get(node.parentId) ?? [];
+    list.push(node._id);
+    childrenByParent.set(node.parentId, list);
+  });
+
+  const roots = nodes.filter((node) => !node.parentId || !ids.has(node.parentId));
+  if (roots.length === 0) return 0;
+
+  const memo = new Map<string, number>();
+  const visiting = new Set<string>();
+
+  const dfs = (id: string): number => {
+    if (visiting.has(id)) return 0;
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    visiting.add(id);
+    const children = childrenByParent.get(id) ?? [];
+    let paths = 0;
+    if (children.length === 0) {
+      paths = 1;
+    } else {
+      children.forEach((childId) => {
+        paths += dfs(childId);
+      });
+    }
+    visiting.delete(id);
+    memo.set(id, paths);
+    return paths;
+  };
+
+  let pathsCount = 0;
+  roots.forEach((root) => {
+    pathsCount += dfs(root._id);
+  });
+
+  return pathsCount;
+};
 
 export default ExperimentDetailsPage;

@@ -106,7 +106,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
             )}
 
             {files.map((file) => (
-              <div key={file.id} className="item-row">
+              <div key={file._id} className="item-row">
                 <div className="item-meta">
                   <p className="item-title">{file.filename}</p>
                   <p className="muted">
@@ -140,17 +140,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
             )}
 
             {experiments.map((experiment) => (
-              <div key={experiment.id} className="item-row">
+              <div key={experiment._id} className="item-row">
                 <div className="item-meta">
                   <p className="item-title">{experiment.name}</p>
-                  <p className="muted">
-                    {experiment.runs} прогонів • {formatTimeAgo(experiment.createdAt)}
-                  </p>
+                  <p className="muted">Створено {formatTimeAgo(experiment.createdAt)}</p>
                 </div>
                 <span className={`status-pill status-${experiment.status}`}>
                   {experiment.status === 'running' ? 'Запущено' : null}
                   {experiment.status === 'completed' ? 'Завершено' : null}
                   {experiment.status === 'queued' ? 'Заплановано' : null}
+                  {experiment.status === 'failed' ? 'Помилка' : null}
                 </span>
               </div>
             ))}

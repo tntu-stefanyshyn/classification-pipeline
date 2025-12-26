@@ -1,0 +1,16 @@
+query Technologies {
+  technologies {
+    _id
+    name
+    stage
+    settings {
+      key
+      label
+      type
+      required
+      placeholder
+      defaultValue
+      options
+    }
+  }
+}

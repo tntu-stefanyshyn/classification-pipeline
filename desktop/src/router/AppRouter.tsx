@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { DashboardPage } from '../pages/private/DashboardPage';
 import { ExperimentsPage } from '../pages/private/ExperimentsPage';
 import { ExperimentDetailsPage } from '../pages/private/ExperimentDetailsPage';
+import { ExperimentConstructorPage } from '../pages/private/ExperimentConstructorPage';
 import { FilesPage } from '../pages/private/FilesPage';
 import { LoginPage } from '../pages/public/LoginPage';
 import { RegisterPage } from '../pages/public/RegisterPage';
@@ -69,6 +70,10 @@ export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRout
               <Navigate to="/login" replace />
             )
           }
+        />
+        <Route
+          path="/app/experiments/:id/constructor"
+          element={resolvedAuth ? <ExperimentConstructorPage /> : <Navigate to="/login" replace />}
         />
         <Route path="*" element={<Navigate to={resolvedAuth ? '/app' : '/login'} replace />} />
       </Routes>

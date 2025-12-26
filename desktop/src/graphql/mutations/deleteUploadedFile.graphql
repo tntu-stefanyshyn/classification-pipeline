@@ -1,6 +1,6 @@
-mutation DeleteUploadedFile($id: ID!) {
-  deleteUploadedFile(id: $id) {
-    id
+mutation DeleteUploadedFile($_id: ID!) {
+  deleteUploadedFile(_id: $_id) {
+    _id
     filename
     sizeMb
     status

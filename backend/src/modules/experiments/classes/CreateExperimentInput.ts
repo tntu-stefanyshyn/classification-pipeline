@@ -7,7 +7,4 @@ export class CreateExperimentInput {
 
   @Field({ nullable: true })
   description?: string;
-
-  @Field({ nullable: true })
-  fileName?: string;
 }

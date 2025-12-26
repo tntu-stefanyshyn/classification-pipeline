@@ -1,14 +1,14 @@
 import { modelOptions, prop } from '@typegoose/typegoose';
-import mongoose from 'mongoose';
-import { Field, ID, Int, ObjectType } from 'type-graphql';
-import { GraphStructure } from './GraphStructure';
+import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
+import { Types } from 'mongoose';
+import { Field, ID, ObjectType } from 'type-graphql';
+import { ExperimentStatus } from './ExperimentStatus';
 
 @ObjectType()
 @modelOptions({ schemaOptions: { id: false, versionKey: false } })
-export class Experiment {
+export class Experiment extends TimeStamps {
   @Field(() => ID)
-  @prop({ required: true, unique: true, trim: true })
-  id!: string;
+  _id!: Types.ObjectId;
 
   @Field()
   @prop({ required: true, trim: true })
@@ -18,23 +18,15 @@ export class Experiment {
   @prop({ trim: true })
   description?: string;
 
-  @Field()
-  @prop({ required: true, trim: true, default: 'queued' })
-  status!: string;
-
-  @Field(() => Int)
-  @prop({ required: true, min: 0, default: 0 })
-  runs!: number;
+  @Field(() => ExperimentStatus)
+  @prop({
+    required: true,
+    enum: ExperimentStatus,
+    type: () => String,
+    default: ExperimentStatus.queued,
+  })
+  status!: ExperimentStatus;
 
   @Field(() => Date)
-  @prop({ required: true, default: Date.now })
-  createdAt!: Date;
-
-  @Field({ nullable: true })
-  @prop({ trim: true })
-  fileName?: string;
-
-  @Field(() => GraphStructure, { nullable: true })
-  @prop({ type: () => mongoose.Schema.Types.Mixed, _id: false })
-  graph?: GraphStructure;
+  declare createdAt: Date;
 }

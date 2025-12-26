@@ -25,3 +25,4 @@ Rules:
 - Keep services transport-agnostic; resolvers call services.
 - Put constants/enums in their dedicated folders; re-export via an `index.ts` when useful.
 - Avoid committing built `.js` in `src/`; TypeScript is the source of truth.
+- Use `_id` for identifiers across DB/models/GraphQL; avoid `id` fields.

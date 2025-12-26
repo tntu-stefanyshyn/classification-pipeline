@@ -1,16 +1,15 @@
 query DashboardData {
   uploadedFiles {
-    id
+    _id
     filename
     sizeMb
     status
     uploadedAt
   }
   experiments {
-    id
+    _id
     name
     status
-    runs
     createdAt
   }
 }

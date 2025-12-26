@@ -1,6 +1,6 @@
 mutation CreateUploadedFile($input: CreateUploadedFileInput!) {
   createUploadedFile(input: $input) {
-    id
+    _id
     filename
     sizeMb
     status

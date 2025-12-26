@@ -1,11 +1,9 @@
 mutation CreateExperiment($input: CreateExperimentInput!) {
   createExperiment(input: $input) {
-    id
+    _id
     name
     description
     status
-    runs
-    fileName
     createdAt
   }
 }

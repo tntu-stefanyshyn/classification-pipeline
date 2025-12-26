@@ -1,6 +1,6 @@
 query UploadedFiles {
   uploadedFiles {
-    id
+    _id
     filename
     sizeMb
     status

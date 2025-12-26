@@ -120,10 +120,10 @@ export function FilesPage({ onLogout }: FilesPageProps) {
   };
 
   const handleDelete = useCallback(
-    async (id: string) => {
+    async (_id: string) => {
       if (!window.confirm('Видалити файл?')) return;
       try {
-        await deleteFile({ variables: { id } });
+        await deleteFile({ variables: { _id } });
         await refetch();
       } catch (deleteErr) {
         setUploadError(
@@ -172,7 +172,7 @@ export function FilesPage({ onLogout }: FilesPageProps) {
             <button
               className="btn ghost small icon"
               type="button"
-              onClick={() => handleDelete(row.original.id)}
+              onClick={() => handleDelete(row.original._id)}
               disabled={deleting}
               aria-label="Видалити"
               title="Видалити"
@@ -291,7 +291,7 @@ export function FilesPage({ onLogout }: FilesPageProps) {
           labels={tableLabels}
           pageSize={5}
           pageSizeOptions={[5, 10, 20]}
-          getRowId={(row) => row.id}
+          getRowId={(row) => row._id}
         />
       </section>
     </AuthLayout>

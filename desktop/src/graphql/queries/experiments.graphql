@@ -1,11 +1,9 @@
 query Experiments {
   experiments {
-    id
+    _id
     name
     description
     status
-    runs
-    fileName
     createdAt
   }
 }

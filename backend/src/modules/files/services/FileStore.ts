@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import { StorageClient } from '../../storage/services/StorageClient';
 import { UploadedFile } from '../classes/UploadedFile';
 import { UploadedFileModel } from '../models/UploadedFileModel';
@@ -29,7 +28,6 @@ export class FileStore {
 
     const status = input.status?.trim();
     const file = await UploadedFileModel.create({
-      id: randomUUID(),
       filename,
       storageKey,
       sizeMb: input.sizeMb,
@@ -40,11 +38,11 @@ export class FileStore {
     return file.toObject();
   }
 
-  async remove(id: string): Promise<UploadedFile> {
-    const trimmedId = id.trim();
-    if (!trimmedId) throw new Error('File id is required');
+  async remove(_id: string): Promise<UploadedFile> {
+    const trimmedId = _id.trim();
+    if (!trimmedId) throw new Error('File _id is required');
 
-    const file = await UploadedFileModel.findOne({ id: trimmedId }).lean<UploadedFile>().exec();
+    const file = await UploadedFileModel.findById(trimmedId).lean<UploadedFile>().exec();
     if (!file) {
       throw new Error('File not found');
     }
@@ -53,7 +51,7 @@ export class FileStore {
     }
 
     await this.getStorage().deleteObject(file.storageKey);
-    await UploadedFileModel.deleteOne({ id: trimmedId }).exec();
+    await UploadedFileModel.deleteOne({ _id: trimmedId }).exec();
     return file;
   }
 

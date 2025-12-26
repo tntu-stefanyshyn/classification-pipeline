@@ -18,7 +18,7 @@ export class Files {
   }
 
   @Mutation(() => UploadedFile)
-  deleteUploadedFile(@Arg('id', () => ID) id: string): Promise<UploadedFile> {
-    return fileStore.remove(id);
+  deleteUploadedFile(@Arg('_id', () => ID) _id: string): Promise<UploadedFile> {
+    return fileStore.remove(_id);
   }
 }

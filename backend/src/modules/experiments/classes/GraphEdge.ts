@@ -1,9 +1,10 @@
+import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 
 @ObjectType()
 export class GraphEdge {
   @Field(() => ID)
-  id!: string;
+  _id!: Types.ObjectId;
 
   @Field()
   from!: string;

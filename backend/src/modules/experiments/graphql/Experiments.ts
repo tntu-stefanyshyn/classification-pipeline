@@ -1,12 +1,15 @@
-import { Arg, ID, Mutation, Query, Resolver } from 'type-graphql';
+import { Arg, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
 import { Experiment } from '../classes/Experiment';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentManager } from '../services/ExperimentManager';
+import { GraphManager } from '../services/GraphManager';
+import { GraphStructure } from '../classes/GraphStructure';
 
-@Resolver()
+@Resolver(() => Experiment)
 export class Experiments {
   private readonly manager = new ExperimentManager();
+  private readonly graphManager = new GraphManager();
 
   @Query(() => [Experiment])
   experiments(): Promise<Experiment[]> {
@@ -14,8 +17,8 @@ export class Experiments {
   }
 
   @Query(() => Experiment, { nullable: true })
-  experiment(@Arg('id', () => ID) id: string): Promise<Experiment | null> {
-    return this.manager.getById(id);
+  experiment(@Arg('_id', () => ID) _id: string): Promise<Experiment | null> {
+    return this.manager.getById(_id);
   }
 
   @Mutation(() => Experiment)
@@ -30,5 +33,12 @@ export class Experiments {
     @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
   ): Promise<Experiment> {
     return this.manager.update(input);
+  }
+
+  @FieldResolver(() => GraphStructure, { nullable: true })
+  graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
+    const experimentId = String(experiment._id ?? '').trim();
+    if (!experimentId) return Promise.resolve(null);
+    return this.graphManager.getByExperimentId(experimentId);
   }
 }

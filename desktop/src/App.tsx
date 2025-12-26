@@ -1,3 +1,4 @@
+import 'reactflow/dist/style.css';
 import './index.css';
 import { AppRouter } from './router/AppRouter';
 import { ApolloProvider } from '@apollo/client/react';

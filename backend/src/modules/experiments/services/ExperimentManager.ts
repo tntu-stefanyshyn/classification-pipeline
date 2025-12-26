@@ -1,49 +1,48 @@
-import { randomUUID } from 'crypto';
 import { Experiment } from '../classes/Experiment';
-import { GraphStructure } from '../classes/GraphStructure';
+import { ExperimentStatus } from '../classes/ExperimentStatus';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
-import { GraphNode } from '../classes/GraphNode';
-import { GraphEdge } from '../classes/GraphEdge';
 import { ExperimentModel } from '../models/ExperimentModel';
+import { GraphManager } from './GraphManager';
 
 export class ExperimentManager {
+  private readonly graphManager = new GraphManager();
+
   async list(): Promise<Experiment[]> {
-    return ExperimentModel.find().sort({ createdAt: -1 }).lean<Experiment>().exec();
+    const experiments = await ExperimentModel.find()
+      .sort({ createdAt: -1 })
+      .lean<Experiment>()
+      .exec();
+    return experiments;
   }
 
-  async getById(id: string): Promise<Experiment | null> {
-    const trimmedId = id.trim();
-    if (!trimmedId) throw new Error('Experiment id is required');
-    return ExperimentModel.findOne({ id: trimmedId }).lean<Experiment>().exec();
+  async getById(_id: string): Promise<Experiment | null> {
+    const trimmedId = _id.trim();
+    if (!trimmedId) throw new Error('Experiment _id is required');
+    const experiment = await ExperimentModel.findById(trimmedId).lean<Experiment>().exec();
+    if (!experiment) return null;
+    return experiment;
   }
 
   async create(input: CreateExperimentInput): Promise<Experiment> {
     const name = input.name.trim();
     if (!name) throw new Error('Name is required');
 
-    const id = `exp-${randomUUID()}`;
     const description = input.description?.trim();
-    const fileName = input.fileName?.trim();
-    const graph = this.buildDefaultGraph(id);
-
     const experiment = await ExperimentModel.create({
-      id,
       name,
       description: description || undefined,
-      status: 'queued',
-      runs: 0,
+      status: ExperimentStatus.queued,
       createdAt: new Date(),
-      fileName: fileName || undefined,
-      graph,
     });
 
+    await this.graphManager.createDefaultGraph(experiment._id);
     return experiment.toObject() as Experiment;
   }
 
   async update(input: UpdateExperimentInput): Promise<Experiment> {
-    const trimmedId = input.id.trim();
-    if (!trimmedId) throw new Error('Experiment id is required');
+    const trimmedId = input._id.trim();
+    if (!trimmedId) throw new Error('Experiment _id is required');
 
     const update: Partial<Experiment> = {};
 
@@ -57,7 +56,18 @@ export class ExperimentManager {
       update.description = input.description.trim();
     }
 
-    const experiment = await ExperimentModel.findOneAndUpdate({ id: trimmedId }, update, {
+    if (input.graphNodes !== undefined) {
+      if (!Array.isArray(input.graphNodes)) {
+        throw new Error('Graph nodes must be an array');
+      }
+      const existingExperiment = await ExperimentModel.findById(trimmedId)
+        .lean<Experiment>()
+        .exec();
+      if (!existingExperiment) throw new Error('Experiment not found');
+      await this.graphManager.updateGraph(trimmedId, input.graphNodes);
+    }
+
+    const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, update, {
       new: true,
     })
       .lean<Experiment>()
@@ -68,57 +78,5 @@ export class ExperimentManager {
     }
 
     return experiment;
-  }
-
-  private buildGraph(
-    experimentId: string,
-    nodes: GraphNode[],
-    edges?: GraphEdge[]
-  ): GraphStructure {
-    return {
-      id: `graph-${experimentId}`,
-      experimentId,
-      nodes,
-      edges: edges ?? this.buildEdgesFromNodes(nodes),
-      createdAt: new Date(),
-    };
-  }
-
-  private buildEdgesFromNodes(nodes: GraphNode[]): GraphEdge[] {
-    const edges: GraphEdge[] = [];
-
-    const walk = (parent: GraphNode) => {
-      parent.children?.forEach((child) => {
-        edges.push({ id: `${parent.id}-${child.id}`, from: parent.id, to: child.id });
-        walk(child);
-      });
-    };
-
-    nodes.forEach((n) => walk(n));
-    return edges;
-  }
-
-  private buildDefaultGraph(experimentId: string): GraphStructure {
-    const inputId = `node-${randomUUID()}`;
-    const processId = `node-${randomUUID()}`;
-    const outputId = `node-${randomUUID()}`;
-
-    const nodes: GraphNode[] = [
-      {
-        id: inputId,
-        label: 'Input',
-        type: 'source',
-        children: [
-          {
-            id: processId,
-            label: 'Process',
-            type: 'compute',
-            children: [{ id: outputId, label: 'Output', type: 'sink', children: [] }],
-          },
-        ],
-      },
-    ];
-
-    return this.buildGraph(experimentId, nodes);
   }
 }

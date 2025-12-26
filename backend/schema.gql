@@ -8,9 +8,16 @@ type AuthPayload {
   user: User!
 }
 
+enum ClassificationStage {
+  CLASSIFICATION
+  DATA_ENHANCEMENT
+  DIMENSIONALITY_REDUCTION
+  FEATURE_EXTRACTION
+  PREPROCESSING
+}
+
 input CreateExperimentInput {
   description: String
-  fileName: String
   name: String!
 }
 
@@ -27,34 +34,55 @@ A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `dat
 scalar DateTimeISO
 
 type Experiment {
+  _id: ID!
   createdAt: DateTimeISO!
   description: String
-  fileName: String
   graph: GraphStructure
-  id: ID!
   name: String!
-  runs: Int!
-  status: String!
+  status: ExperimentStatus!
 }
 
-type GraphEdge {
-  from: String!
-  id: ID!
-  to: String!
+enum ExperimentStatus {
+  completed
+  failed
+  queued
+  running
 }
 
 type GraphNode {
-  children: [GraphNode!]!
-  id: ID!
+  _id: ID!
   label: String!
-  type: String
+  parentId: ID
+  settings: [GraphNodeSetting!]
+  stage: ClassificationStage!
+  technology: String!
+  type: String!
+}
+
+input GraphNodeInput {
+  _id: ID!
+  label: String!
+  parentId: ID
+  settings: [GraphNodeSettingInput!]
+  stage: ClassificationStage!
+  technology: String!
+  type: String!
+}
+
+type GraphNodeSetting {
+  key: String!
+  value: String!
+}
+
+input GraphNodeSettingInput {
+  key: String!
+  value: String!
 }
 
 type GraphStructure {
+  _id: ID!
   createdAt: DateTimeISO!
-  edges: [GraphEdge!]!
-  experimentId: String!
-  id: ID!
+  experimentId: ID!
   nodes: [GraphNode!]!
 }
 
@@ -66,19 +94,21 @@ input LoginInput {
 type Mutation {
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
-  deleteUploadedFile(id: ID!): UploadedFile!
+  deleteUploadedFile(_id: ID!): UploadedFile!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
 }
 
 type Query {
-  experiment(id: ID!): Experiment
+  experiment(_id: ID!): Experiment
   experiments: [Experiment!]!
+  graphStructure(experimentId: ID!): GraphStructure
   health: String!
   me: User!
   serverInfo: ServerInfo!
   signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
+  technologies: [Technology!]!
   uploadedFiles: [UploadedFile!]!
 }
 
@@ -105,15 +135,40 @@ type SignedUploadUrl {
   url: String!
 }
 
+type Technology {
+  _id: ID!
+  name: String!
+  settings: [TechnologySetting!]!
+  stage: ClassificationStage!
+}
+
+type TechnologySetting {
+  defaultValue: String
+  key: String!
+  label: String!
+  options: [String!]
+  placeholder: String
+  required: Boolean
+  type: TechnologySettingType!
+}
+
+enum TechnologySettingType {
+  BOOLEAN
+  NUMBER
+  SELECT
+  TEXT
+}
+
 input UpdateExperimentInput {
+  _id: ID!
   description: String
-  id: ID!
+  graphNodes: [GraphNodeInput!]
   name: String
 }
 
 type UploadedFile {
+  _id: ID!
   filename: String!
-  id: ID!
   sizeMb: Int!
   status: String!
   uploadedAt: DateTimeISO!

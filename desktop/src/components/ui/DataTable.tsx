@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type MouseEvent } from 'react';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import {
   flexRender,
@@ -24,6 +24,7 @@ type DataTableProps<TData> = {
   labels?: Partial<DataTableLabels>;
   className?: string;
   getRowId?: (row: TData, index: number) => string;
+  onRowClick?: (row: TData) => void;
 };
 
 const defaultLabels: DataTableLabels = {
@@ -43,6 +44,7 @@ export function DataTable<TData>({
   labels,
   className,
   getRowId,
+  onRowClick,
 }: DataTableProps<TData>) {
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -72,6 +74,14 @@ export function DataTable<TData>({
 
   const pageCount = table.getPageCount();
   const containerClassName = ['data-table-block', className].filter(Boolean).join(' ');
+  const rowClassName = onRowClick ? 'clickable' : undefined;
+
+  const handleRowClick = (event: MouseEvent, row: TData) => {
+    if (!onRowClick) return;
+    if (event.defaultPrevented) return;
+    if (isInteractiveTarget(event.target)) return;
+    onRowClick(row);
+  };
 
   return (
     <div className={containerClassName}>
@@ -99,7 +109,11 @@ export function DataTable<TData>({
               </tr>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  className={rowClassName}
+                  onClick={(event) => handleRowClick(event, row.original)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -154,3 +168,20 @@ export function DataTable<TData>({
     </div>
   );
 }
+
+const isInteractiveTarget = (target: EventTarget | null) => {
+  if (!target) return false;
+  if (target instanceof Element) {
+    return Boolean(
+      target.closest('button, a, input, select, textarea, [role="button"], [data-row-action]')
+    );
+  }
+  if (target instanceof Node && target.parentElement) {
+    return Boolean(
+      target.parentElement.closest(
+        'button, a, input, select, textarea, [role="button"], [data-row-action]'
+      )
+    );
+  }
+  return false;
+};

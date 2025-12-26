@@ -1,35 +1,25 @@
 mutation UpdateExperiment($input: UpdateExperimentInput!) {
   updateExperiment(input: $input) {
-    id
+    _id
     name
     description
     status
-    runs
-    fileName
     createdAt
     graph {
-      id
+      _id
       experimentId
       createdAt
       nodes {
-        id
+        _id
         label
+        stage
+        technology
         type
-        children {
-          id
-          label
-          type
-          children {
-            id
-            label
-            type
-          }
+        settings {
+          key
+          value
         }
-      }
-      edges {
-        id
-        from
-        to
+        parentId
       }
     }
   }

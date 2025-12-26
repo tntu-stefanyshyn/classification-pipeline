@@ -11,6 +11,13 @@ export class Experiments {
   private readonly manager = new ExperimentManager();
   private readonly graphManager = new GraphManager();
 
+  @FieldResolver(() => GraphStructure, { nullable: true })
+  graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
+    console.log(experiment);
+
+    return this.graphManager.getByExperimentId(experiment._id);
+  }
+
   @Query(() => [Experiment])
   experiments(): Promise<Experiment[]> {
     return this.manager.list();
@@ -33,12 +40,5 @@ export class Experiments {
     @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
   ): Promise<Experiment> {
     return this.manager.update(input);
-  }
-
-  @FieldResolver(() => GraphStructure, { nullable: true })
-  graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
-    const experimentId = String(experiment._id ?? '').trim();
-    if (!experimentId) return Promise.resolve(null);
-    return this.graphManager.getByExperimentId(experimentId);
   }
 }

@@ -103,7 +103,6 @@ type Mutation {
 type Query {
   experiment(_id: ID!): Experiment
   experiments: [Experiment!]!
-  graphStructure(experimentId: ID!): GraphStructure
   health: String!
   me: User!
   serverInfo: ServerInfo!

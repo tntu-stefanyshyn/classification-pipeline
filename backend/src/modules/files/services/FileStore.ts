@@ -35,7 +35,7 @@ export class FileStore {
       uploadedAt: new Date(),
     });
 
-    return file.toObject();
+    return file.toObject({ getters: true });
   }
 
   async remove(_id: string): Promise<UploadedFile> {

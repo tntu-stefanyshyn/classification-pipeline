@@ -1,11 +1,10 @@
-import { modelOptions, prop } from '@typegoose/typegoose';
+import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 import { ExperimentStatus } from './ExperimentStatus';
 
 @ObjectType()
-@modelOptions({ schemaOptions: { id: false, versionKey: false } })
 export class Experiment extends TimeStamps {
   @Field(() => ID)
   _id!: Types.ObjectId;

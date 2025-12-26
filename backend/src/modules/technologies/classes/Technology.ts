@@ -1,11 +1,10 @@
-import { modelOptions, prop } from '@typegoose/typegoose';
+import { prop } from '@typegoose/typegoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { TechnologySetting } from './TechnologySetting';
 import { Types } from 'mongoose';
 
 @ObjectType()
-@modelOptions({ schemaOptions: { id: false, versionKey: false } })
 export class Technology {
   @Field(() => ID)
   _id!: Types.ObjectId;

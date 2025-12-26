@@ -1,9 +1,8 @@
-import { modelOptions, prop } from '@typegoose/typegoose';
+import { prop } from '@typegoose/typegoose';
 import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
 
 @ObjectType()
-@modelOptions({ schemaOptions: { id: false, versionKey: false } })
 export class UploadedFile {
   @Field(() => ID)
   _id!: Types.ObjectId;

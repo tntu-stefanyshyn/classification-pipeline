@@ -11,7 +11,6 @@ import { Auth } from './modules/auth/graphql/Auth';
 import { Health } from './graphql/Health';
 import { ServerInfoApi } from './graphql/ServerInfo';
 import { Experiments } from './modules/experiments/graphql/Experiments';
-import { Graphs } from './modules/experiments/graphql/Graphs';
 import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
@@ -21,7 +20,7 @@ import { runSeeders } from './seeders';
 
 async function bootstrap() {
   const schema = buildSchemaSync({
-    resolvers: [Health, Auth, ServerInfoApi, Experiments, Graphs, Technologies, Storage, Files],
+    resolvers: [Health, Auth, ServerInfoApi, Experiments, Technologies, Storage, Files],
     orphanedTypes: [User],
     validate: { forbidUnknownValues: false },
     ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),

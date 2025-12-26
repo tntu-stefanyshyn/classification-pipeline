@@ -19,93 +19,29 @@ const DEFAULT_NODE_TYPE = 'technology';
 export class GraphManager {
   private readonly technologyManager = new TechnologyManager();
 
-  async getByExperimentId(experimentId: string): Promise<GraphStructure | null> {
-    const graph = await GraphStructureModel.findOne({ experimentId }).lean<GraphStructure>().exec();
-    if (graph) {
-      return this.ensureGraphNodeIntegrity(graph);
-    }
-    return null;
+  async getById(_id: Types.ObjectId | string): Promise<GraphStructure> {
+    const graph = await GraphStructureModel.findOne({ _id });
+    if (!graph) throw new Error('Граф не знайдено');
+    return graph;
   }
 
-  async createDefaultGraph(experimentId: Types.ObjectId | string): Promise<GraphStructure> {
-    const graph = await this.buildDefaultGraph(experimentId);
-    const created = await GraphStructureModel.create(graph);
-    return created.toObject();
+  async getByExperimentId(experimentId: Types.ObjectId | string): Promise<GraphStructure> {
+    const graph = await GraphStructureModel.findOne({ experimentId });
+    if (!graph) throw new Error('Граф не знайдено');
+    return graph;
   }
 
-  async updateGraph(experimentId: string, nodes: GraphNodeInput[]): Promise<GraphStructure> {
-    const currentGraph = await GraphStructureModel.findOne({ experimentId })
-      .lean<GraphStructure>()
-      .exec();
-    const updatedGraph = await this.buildGraphFromInput(
-      experimentId,
-      currentGraph ?? undefined,
-      nodes
-    );
-    await GraphStructureModel.updateOne(
-      { experimentId },
-      { $set: updatedGraph, $setOnInsert: { experimentId: updatedGraph.experimentId } },
-      { upsert: true }
-    ).exec();
-    if (currentGraph?._id) {
-      return { ...updatedGraph, _id: currentGraph._id };
-    }
-    const savedGraph = await GraphStructureModel.findOne({ experimentId })
-      .lean<GraphStructure>()
-      .exec();
-    return savedGraph ?? updatedGraph;
+  async createDefaultGraph(experimentId: Types.ObjectId): Promise<void> {
+    await GraphStructureModel.create({ experimentId });
   }
 
-  private buildGraph(experimentId: Types.ObjectId | string, nodes: GraphNode[]): GraphStructure {
-    const resolvedExperimentId =
-      typeof experimentId === 'string' ? new Types.ObjectId(experimentId) : experimentId;
-    return {
-      experimentId: resolvedExperimentId,
-      nodes,
-      createdAt: new Date(),
-    };
-  }
-
-  private async buildDefaultGraph(experimentId: Types.ObjectId | string): Promise<GraphStructure> {
-    const technologies = await this.technologyManager.list();
-    const { byStage } = this.buildTechnologyIndex(technologies);
-
-    let parentId: Types.ObjectId | undefined;
-    const nodes: GraphNode[] = CLASSIFICATION_STAGE_VALUES.map((stage) => {
-      const techForStage = byStage.get(stage);
-      if (!techForStage || techForStage.length === 0) {
-        throw new Error(`No technologies configured for stage ${stage}`);
-      }
-      const technology = techForStage[0];
-      const nodeId = new Types.ObjectId();
-      const node: GraphNode = {
-        _id: nodeId,
-        label: technology.name,
-        technology: technology.name,
-        stage,
-        settings: this.buildSettingsForTechnology(technology, undefined),
-        type: DEFAULT_NODE_TYPE,
-        parentId,
-      };
-      parentId = nodeId;
-      return node;
-    });
-
-    return this.buildGraph(experimentId, nodes);
-  }
-
-  private async buildGraphFromInput(
+  async updateGraph(
     experimentId: Types.ObjectId | string,
-    currentGraph: GraphStructure | undefined,
     nodes: GraphNodeInput[]
   ): Promise<GraphStructure> {
-    const normalizedNodes = await this.normalizeGraphNodes(nodes);
-    return {
-      experimentId:
-        typeof experimentId === 'string' ? new Types.ObjectId(experimentId) : experimentId,
-      nodes: normalizedNodes,
-      createdAt: currentGraph?.createdAt ?? new Date(),
-    };
+    await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } }).exec();
+
+    return this.getByExperimentId(experimentId);
   }
 
   private async normalizeGraphNodes(nodes: GraphNodeInput[]): Promise<GraphNode[]> {
@@ -148,7 +84,7 @@ export class GraphManager {
         technology = byStageName.get(`${stage}:${candidateTechnology}`) ?? null;
       } else {
         technology = byName.get(candidateTechnology) ?? null;
-        stage = technology?.stage ?? null;
+        if (technology) stage = technology.stage;
       }
 
       if (!stage) {

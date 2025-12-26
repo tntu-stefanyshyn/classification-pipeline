@@ -1,10 +1,10 @@
-import { modelOptions, prop } from '@typegoose/typegoose';
+import { prop } from '@typegoose/typegoose';
+import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 
 @ObjectType()
-@modelOptions({ schemaOptions: { timestamps: true } })
-export class User {
+export class User extends TimeStamps {
   @Field(() => ID)
   _id!: Types.ObjectId;
 
@@ -19,9 +19,9 @@ export class User {
   @prop({ trim: true })
   name?: string;
 
-  @Field({ nullable: true })
-  createdAt?: Date;
+  @Field(() => Date, { nullable: true })
+  declare createdAt?: Date;
 
-  @Field({ nullable: true })
-  updatedAt?: Date;
+  @Field(() => Date, { nullable: true })
+  declare updatedAt?: Date;
 }

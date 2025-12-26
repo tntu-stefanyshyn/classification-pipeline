@@ -1,5 +1,4 @@
 import { Experiment } from '../classes/Experiment';
-import { ExperimentStatus } from '../classes/ExperimentStatus';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentModel } from '../models/ExperimentModel';
@@ -9,18 +8,13 @@ export class ExperimentManager {
   private readonly graphManager = new GraphManager();
 
   async list(): Promise<Experiment[]> {
-    const experiments = await ExperimentModel.find()
-      .sort({ createdAt: -1 })
-      .lean<Experiment>()
-      .exec();
+    const experiments = await ExperimentModel.find().sort({ createdAt: -1 }).lean();
     return experiments;
   }
 
-  async getById(_id: string): Promise<Experiment | null> {
-    const trimmedId = _id.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    const experiment = await ExperimentModel.findById(trimmedId).lean<Experiment>().exec();
-    if (!experiment) return null;
+  async getById(_id: string): Promise<Experiment> {
+    const experiment = await ExperimentModel.findById(_id).lean();
+    if (!experiment) throw new Error('Експеремент не знайдено');
     return experiment;
   }
 
@@ -31,13 +25,11 @@ export class ExperimentManager {
     const description = input.description?.trim();
     const experiment = await ExperimentModel.create({
       name,
-      description: description || undefined,
-      status: ExperimentStatus.queued,
-      createdAt: new Date(),
+      description,
     });
 
     await this.graphManager.createDefaultGraph(experiment._id);
-    return experiment.toObject() as Experiment;
+    return experiment.toObject({ getters: true });
   }
 
   async update(input: UpdateExperimentInput): Promise<Experiment> {
@@ -60,18 +52,14 @@ export class ExperimentManager {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
       }
-      const existingExperiment = await ExperimentModel.findById(trimmedId)
-        .lean<Experiment>()
-        .exec();
+      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
       if (!existingExperiment) throw new Error('Experiment not found');
       await this.graphManager.updateGraph(trimmedId, input.graphNodes);
     }
 
     const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, update, {
       new: true,
-    })
-      .lean<Experiment>()
-      .exec();
+    }).lean();
 
     if (!experiment) {
       throw new Error('Experiment not found');

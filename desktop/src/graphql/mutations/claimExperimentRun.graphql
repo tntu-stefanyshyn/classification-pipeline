@@ -1,0 +1,11 @@
+mutation ClaimExperimentRun($queue: ComputationQueue!, $machineInfo: ComputationMachineInfoInput) {
+  claimExperimentRun(queue: $queue, machineInfo: $machineInfo) {
+    _id
+    experimentId
+    queue
+    status
+    progress
+    statusMessage
+    pathNodeIds
+  }
+}

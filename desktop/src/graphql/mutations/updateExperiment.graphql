@@ -8,6 +8,7 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
     createdAt
     graph {
       _id
+      computationMode
       experimentId
       createdAt
       nodes {

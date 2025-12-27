@@ -3,7 +3,7 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
 import { config } from './config/config';
-import { localComputationWorker } from './computations/LocalComputationWorker';
+import { localComputationWorker } from './workers/localComputation';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;

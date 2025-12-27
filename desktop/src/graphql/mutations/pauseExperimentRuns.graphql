@@ -1,0 +1,8 @@
+mutation PauseExperimentRuns($experimentId: ID!) {
+  pauseExperimentRuns(experimentId: $experimentId) {
+    _id
+    status
+    queue
+    pathNodeIds
+  }
+}

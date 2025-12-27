@@ -7,6 +7,7 @@ import { classificationStages, stageLabels } from './constants/stages';
 import { DEFAULT_NODE_TYPE, DEFAULT_STAGE } from './constants/graph';
 import {
   ClassificationStage,
+  ComputationMode,
   type GraphNode as GraphNodeData,
   TechnologySettingType,
   useGenerateExperimentGraphMutation,
@@ -75,6 +76,9 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   const graphActionsDisabled = isGraphBusy || !techReady;
 
   const graph = experiment?.graph;
+  const [graphComputationMode, setGraphComputationMode] = useState<ComputationMode>(
+    ComputationMode.both
+  );
   const [graphNodes, setGraphNodes] = useState<FlatGraphNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<NodeModalState>(null);
@@ -95,6 +99,14 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     graphSignatureRef.current = signature;
     setGraphNodes(nextNodes);
   }, [graph, technologyIndex]);
+
+  useEffect(() => {
+    if (!graph?.computationMode) {
+      setGraphComputationMode(ComputationMode.both);
+      return;
+    }
+    setGraphComputationMode(graph.computationMode);
+  }, [graph?.computationMode]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -352,6 +364,23 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   const canGenerateGraph =
     classificationSelection.length > 0 && !graphActionsDisabled && Boolean(experiment);
 
+  const handleComputationModeChange = async (value: ComputationMode) => {
+    if (!experiment) return;
+    setGraphComputationMode(value);
+    try {
+      await updateGraph({
+        variables: {
+          input: {
+            _id: experiment._id,
+            graphComputationMode: value,
+          },
+        },
+      });
+    } catch (_error) {
+      // Error state is handled by graphUpdateError.
+    }
+  };
+
   const backHref = experiment?._id
     ? `/app/experiments/${experiment._id}`
     : experimentId
@@ -381,6 +410,23 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
 
         {experiment && (
           <div className="constructor-chart">
+            <div className="item-list">
+              <div className="form-group">
+                <label htmlFor="graph-computation-mode">Режим обчислень</label>
+                <select
+                  id="graph-computation-mode"
+                  value={graphComputationMode}
+                  onChange={(event) =>
+                    handleComputationModeChange(event.target.value as ComputationMode)
+                  }
+                  disabled={graphActionsDisabled}
+                >
+                  <option value={ComputationMode.both}>Локальні + хмарні</option>
+                  <option value={ComputationMode.local}>Тільки локальні</option>
+                  <option value={ComputationMode.cloud}>Тільки хмарні</option>
+                </select>
+              </div>
+            </div>
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}

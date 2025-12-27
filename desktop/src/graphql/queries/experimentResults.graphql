@@ -1,0 +1,10 @@
+query ExperimentResults($experimentId: ID!) {
+  experimentResults(experimentId: $experimentId) {
+    _id
+    runId
+    experimentId
+    pathNodeIds
+    payloadJson
+    createdAt
+  }
+}

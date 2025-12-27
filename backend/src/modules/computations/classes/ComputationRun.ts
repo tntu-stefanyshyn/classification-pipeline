@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from './ComputationQueue';
 import { ComputationStatus } from './ComputationStatus';
+import { ComputationMachineInfo } from './ComputationMachineInfo';
 
 @ObjectType()
 export class ComputationRun extends TimeStamps {
@@ -38,6 +39,15 @@ export class ComputationRun extends TimeStamps {
   @Field({ nullable: true })
   @prop({ trim: true })
   statusMessage?: string;
+
+  @prop({ _id: false, type: () => ComputationMachineInfo })
+  machineInfo?: ComputationMachineInfo;
+
+  @prop({ min: 0, default: 0 })
+  priority?: number;
+
+  @prop({ trim: true })
+  cloudJobId?: string;
 
   @Field(() => Date)
   declare createdAt: Date;

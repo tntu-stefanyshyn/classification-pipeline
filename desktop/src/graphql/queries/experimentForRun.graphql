@@ -1,0 +1,17 @@
+query ExperimentForRun($id: ID!) {
+  experiment(_id: $id) {
+    _id
+    fileId
+    graph {
+      nodes {
+        _id
+        stage
+        technology
+        settings {
+          key
+          value
+        }
+      }
+    }
+  }
+}

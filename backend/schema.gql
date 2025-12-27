@@ -8,6 +8,14 @@ type AuthPayload {
   user: User!
 }
 
+type ClassificationMetric {
+  f1Score: Float!
+  label: String!
+  precision: Float!
+  recall: Float!
+  support: Float!
+}
+
 enum ClassificationStage {
   CLASSIFICATION
   DATA_ENHANCEMENT
@@ -33,6 +41,50 @@ enum ComputationQueue {
   local
 }
 
+type ComputationMachineInfo {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  lastSeenAt: DateTimeISO
+  memoryGb: Float
+  platform: String
+  queue: ComputationQueue
+  release: String
+}
+
+input ComputationMachineInfoInput {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  memoryGb: Float
+  platform: String
+  release: String
+}
+
+type ComputationResult {
+  _id: ID!
+  createdAt: DateTimeISO!
+  experimentId: ID!
+  pathNodeIds: [ID!]!
+  payload: ComputationResultPayload
+  payloadJson: String
+  runId: ID!
+}
+
+type ComputationResultPayload {
+  accuracy: Float
+  classes: [ClassificationMetric!]
+  completedAt: String
+  macroAvg: ClassificationMetric
+  nodes: [String!]
+  pathLength: Float
+  weightedAvg: ClassificationMetric
+}
+
 type ComputationRun {
   _id: ID!
   createdAt: DateTimeISO!
@@ -48,6 +100,7 @@ type ComputationRun {
 enum ComputationStatus {
   completed
   failed
+  paused
   queued
   running
 }
@@ -79,6 +132,7 @@ input EnqueueExperimentRunsInput {
 
 type Experiment {
   _id: ID!
+  computationHosts: [ComputationMachineInfo!]
   createdAt: DateTimeISO!
   description: String
   fileId: ID
@@ -153,7 +207,7 @@ input LoginInput {
 }
 
 type Mutation {
-  claimExperimentRun(queue: ComputationQueue!): ComputationRun
+  claimExperimentRun(queue: ComputationQueue!, machineInfo: ComputationMachineInfoInput): ComputationRun
   completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
@@ -162,13 +216,17 @@ type Mutation {
   failExperimentRun(input: FailExperimentRunInput!): ComputationRun!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
+  pauseExperimentRuns(experimentId: ID!): [ComputationRun!]!
   register(input: RegisterInput!): AuthPayload!
+  resumeExperimentRuns(experimentId: ID!): [ComputationRun!]!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
   updateExperimentRun(input: UpdateExperimentRunInput!): ComputationRun!
 }
 
 type Query {
   experiment(_id: ID!): Experiment
+  experimentRun(runId: ID!): ComputationRun
+  experimentResults(experimentId: ID!): [ComputationResult!]!
   experimentRuns(experimentId: ID!, queue: ComputationQueue): [ComputationRun!]!
   experiments: [Experiment!]!
   health: String!

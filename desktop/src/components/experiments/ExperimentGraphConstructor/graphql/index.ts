@@ -4,6 +4,7 @@ export { useUpdateExperimentMutation } from '../../../../graphql/mutations/gener
 export { useGenerateExperimentGraphMutation } from '../../../../graphql/mutations/generated/generateExperimentGraph';
 export {
   ClassificationStage,
+  ComputationMode,
   type GraphNode,
   TechnologySettingType,
   type GraphNodeSetting,

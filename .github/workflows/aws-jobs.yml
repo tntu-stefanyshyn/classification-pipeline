@@ -1,0 +1,39 @@
+name: AWS jobs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'aws-jobs/**'
+      - '.github/workflows/aws-jobs.yml'
+      - '.github/CODEOWNERS'
+  pull_request:
+    paths:
+      - 'aws-jobs/**'
+      - '.github/workflows/aws-jobs.yml'
+      - '.github/CODEOWNERS'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aws-jobs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: aws-jobs/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run tests
+        run: pytest

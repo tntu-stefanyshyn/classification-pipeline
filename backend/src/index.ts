@@ -14,13 +14,23 @@ import { Experiments } from './modules/experiments/graphql/Experiments';
 import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
+import { Computations } from './modules/computations/graphql/Computations';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
 
 async function bootstrap() {
   const schema = buildSchemaSync({
-    resolvers: [Health, Auth, ServerInfoApi, Experiments, Technologies, Storage, Files],
+    resolvers: [
+      Health,
+      Auth,
+      ServerInfoApi,
+      Experiments,
+      Technologies,
+      Storage,
+      Files,
+      Computations,
+    ],
     orphanedTypes: [User],
     validate: { forbidUnknownValues: false },
     ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),

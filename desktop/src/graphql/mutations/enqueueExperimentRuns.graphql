@@ -1,0 +1,10 @@
+mutation EnqueueExperimentRuns($input: EnqueueExperimentRunsInput!) {
+  enqueueExperimentRuns(input: $input) {
+    _id
+    experimentId
+    queue
+    status
+    pathNodeIds
+    createdAt
+  }
+}

@@ -64,21 +64,19 @@ export class GraphManager {
       throw new Error('Фінальний етап має містити щонайменше одну технологію класифікації.');
     }
 
-    const stages = CLASSIFICATION_STAGE_VALUES.filter(
-      (stage) => (selectionMap.get(stage)?.size ?? 0) > 0
-    );
-    if (stages.length === 0) {
-      throw new Error('Потрібно обрати хоча б одну технологію для побудови графа.');
-    }
-
     const technologies = await this.technologyManager.list();
     const technologyById = new Map<string, Technology>();
     technologies.forEach((technology) => {
       technologyById.set(String(technology._id), technology);
     });
 
-    const stageSelections = stages.map((stage) => {
+    const stageTechnologiesByStage = new Map<ClassificationStage, Technology[]>();
+    CLASSIFICATION_STAGE_VALUES.forEach((stage) => {
       const ids = Array.from(selectionMap.get(stage) ?? []);
+      if (ids.length === 0) {
+        stageTechnologiesByStage.set(stage, []);
+        return;
+      }
       const stageTechnologies: Technology[] = [];
       ids.forEach((id) => {
         if (!Types.ObjectId.isValid(id)) {
@@ -93,20 +91,23 @@ export class GraphManager {
         }
         stageTechnologies.push(technology);
       });
-      return { stage, technologies: stageTechnologies };
+      stageTechnologiesByStage.set(stage, stageTechnologies);
     });
 
-    const lastStage = stageSelections[stageSelections.length - 1]?.stage;
-    if (lastStage !== ClassificationStage.CLASSIFICATION) {
-      throw new Error('Останній етап у шляхах має бути класифікацією.');
-    }
-
     const nodes: GraphNodeInput[] = [];
-    let parentIds: string[] = [];
+    let parentIds: Array<string | null> = [null];
 
-    stageSelections.forEach(({ stage, technologies: stageTechnologies }) => {
-      const nextParentIds: string[] = [];
-      const createNode = (parentId: string | undefined, technology: Technology) => {
+    CLASSIFICATION_STAGE_VALUES.forEach((stage) => {
+      const stageTechnologies = stageTechnologiesByStage.get(stage) ?? [];
+      if (stageTechnologies.length === 0) {
+        if (stage === ClassificationStage.CLASSIFICATION) {
+          throw new Error('Фінальний етап має містити щонайменше одну технологію класифікації.');
+        }
+        return;
+      }
+
+      const nextParentIds: Array<string | null> = [];
+      const createNode = (parentId: string | null, technology: Technology) => {
         const nodeId = new Types.ObjectId().toHexString();
         const settings = this.buildSettingsForTechnology(technology, undefined);
         nodes.push({
@@ -115,18 +116,18 @@ export class GraphManager {
           stage,
           technology: technology.name,
           type: DEFAULT_NODE_TYPE,
-          parentId,
+          parentId: parentId ?? undefined,
           settings,
         });
         nextParentIds.push(nodeId);
       };
 
-      if (parentIds.length === 0) {
-        stageTechnologies.forEach((technology) => createNode(undefined, technology));
-      } else {
-        parentIds.forEach((parentId) => {
-          stageTechnologies.forEach((technology) => createNode(parentId, technology));
-        });
+      parentIds.forEach((parentId) => {
+        stageTechnologies.forEach((technology) => createNode(parentId, technology));
+      });
+
+      if (stage !== ClassificationStage.CLASSIFICATION) {
+        nextParentIds.push(...parentIds);
       }
 
       parentIds = nextParentIds;
@@ -185,9 +186,6 @@ export class GraphManager {
         throw new Error(`Unsupported technology for stage ${stage}`);
       }
 
-      const rawType = typeof node.type === 'string' ? node.type.trim() : '';
-      const type = rawType || DEFAULT_NODE_TYPE;
-
       const parentIdRaw = typeof node.parentId === 'string' ? node.parentId.trim() : '';
       const parentId = parentIdRaw ? idMap.get(parentIdRaw) : undefined;
       if (parentIdRaw && !parentId) {
@@ -197,6 +195,8 @@ export class GraphManager {
         throw new Error(`Graph node cannot reference itself: ${nodeId.toHexString()}`);
       }
 
+      const rawType = typeof node.type === 'string' ? node.type.trim() : '';
+      const type = rawType || DEFAULT_NODE_TYPE;
       const settings = this.buildSettingsForTechnology(technology, node.settings);
 
       return {

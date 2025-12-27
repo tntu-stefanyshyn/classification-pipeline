@@ -1,0 +1,10 @@
+query ExperimentRuns($experimentId: ID!, $queue: ComputationQueue) {
+  experimentRuns(experimentId: $experimentId, queue: $queue) {
+    _id
+    experimentId
+    queue
+    status
+    pathNodeIds
+    createdAt
+  }
+}

@@ -592,8 +592,9 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
       <Modal open={autoModalOpen} title="Автозаповнення графа" onClose={closeAutoModal}>
         <div className="node-modal">
           <p className="muted small">
-            Оберіть технології для кожного етапу. Порожній етап буде пропущено. Після автозаповнення
-            поточний граф буде замінено.
+            Оберіть технології для потрібних етапів. Усі етапи, окрім класифікації, опціональні,
+            тому для них буде створено гілку без етапу. Порожні етапи буде пропущено. Після
+            автозаповнення поточний граф буде замінено.
           </p>
           {classificationStages.map((stage) => {
             const stageTechnologies = technologyIndex.byStage.get(stage) ?? [];
@@ -632,7 +633,9 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
             <p className="error">Помилка автозаповнення: {graphGenerateError.message}</p>
           )}
           {!classificationSelection.length && (
-            <p className="error">Оберіть хоча б одну технологію етапу класифікації.</p>
+            <p className="error">
+              Оберіть хоча б одну технологію етапу класифікації (інші етапи опціональні).
+            </p>
           )}
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={closeAutoModal}>

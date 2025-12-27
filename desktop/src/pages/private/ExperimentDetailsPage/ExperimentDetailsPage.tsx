@@ -1,22 +1,33 @@
 import { Link, useParams } from 'react-router-dom';
 import { Form, Formik } from 'formik';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { AuthLayout } from '../../../components/layout/AuthLayout/AuthLayout';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { validationSchema } from './constants/validationSchema';
 import {
+  ComputationQueue,
   refetchExperimentQuery,
+  useEnqueueExperimentRunsMutation,
   useCreateUploadedFileMutation,
   useExperimentQuery,
+  useExperimentRunsQuery,
   useSignedUploadUrlLazyQuery,
   useUpdateExperimentMutation,
   useUploadedFilesQuery,
 } from './graphql';
 import type { ExperimentDetailsPageProps } from './ExperimentDetailsPage.types';
+import { buildGraphPaths } from './utils/buildGraphPaths';
 import { countGraphPaths } from './utils/countGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
+
+const runStatusLabels: Record<string, string> = {
+  queued: 'В черзі',
+  running: 'Запущено',
+  completed: 'Завершено',
+  failed: 'Помилка',
+};
 
 export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) {
   const params = useParams();
@@ -42,11 +53,50 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   const [getSignedUrl] = useSignedUploadUrlLazyQuery();
   const [createFile] = useCreateUploadedFileMutation();
   const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const {
+    data: runsData,
+    loading: runsLoading,
+    error: runsError,
+    refetch: refetchRuns,
+  } = useExperimentRunsQuery({
+    variables: { experimentId: id },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  });
+  const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
+    useEnqueueExperimentRunsMutation();
 
   const experiment = data?.experiment;
   const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
   const graph = experiment?.graph;
   const pathsCount = useMemo(() => countGraphPaths(graph?.nodes ?? []), [graph]);
+  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
+  const graphPathMap = useMemo(
+    () => new Map(graphPaths.map((path) => [path.id, path])),
+    [graphPaths]
+  );
+  const [selectedPathId, setSelectedPathId] = useState('all');
+  const [queue, setQueue] = useState(ComputationQueue.local);
+  const [enqueueStatus, setEnqueueStatus] = useState<string | null>(null);
+  const runs = runsData?.experimentRuns ?? [];
+  const localRuns = runs.filter((run) => run.queue === ComputationQueue.local);
+  const cloudRuns = runs.filter((run) => run.queue === ComputationQueue.cloud);
+  const pathLabels = useMemo(
+    () => new Map(graphPaths.map((path) => [path.id, path.label])),
+    [graphPaths]
+  );
+  const resolvePathLabel = (nodeIds: string[]) =>
+    pathLabels.get(nodeIds.join('.')) ?? nodeIds.join(' -> ');
+
+  useEffect(() => {
+    if (selectedPathId === 'all') return;
+    if (graphPathMap.has(selectedPathId)) return;
+    setSelectedPathId('all');
+  }, [graphPathMap, selectedPathId]);
+
+  useEffect(() => {
+    setEnqueueStatus(null);
+  }, [queue, selectedPathId]);
 
   const handleCloseModal = () => {
     setEditModalOpen(false);
@@ -56,6 +106,47 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
+
+  const handleEnqueueRuns = async () => {
+    if (!experiment) return;
+    if (!graph || graphPaths.length === 0) {
+      setEnqueueStatus('Спочатку згенеруйте граф і оберіть шлях.');
+      return;
+    }
+
+    const isAll = selectedPathId === 'all';
+    const selectedPath = isAll ? null : graphPathMap.get(selectedPathId);
+    if (!isAll && !selectedPath) {
+      setEnqueueStatus('Оберіть шлях для запуску.');
+      return;
+    }
+
+    try {
+      const result = await enqueueRuns({
+        variables: {
+          input: {
+            experimentId: experiment._id,
+            queue,
+            runAll: isAll ? true : undefined,
+            pathNodeIds: !isAll ? selectedPath?.nodeIds : undefined,
+          },
+        },
+      });
+      const created = result.data?.enqueueExperimentRuns ?? [];
+      const queueLabel = queue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
+      setEnqueueStatus(`Додано в ${queueLabel} чергу: ${created.length}.`);
+      await refetchRuns();
+    } catch (_err) {
+      // Error state is handled by enqueueError.
+    }
+  };
+
+  const isAllSelected = selectedPathId === 'all';
+  const selectedPath = isAllSelected ? null : graphPathMap.get(selectedPathId) ?? null;
+  const canEnqueue =
+    Boolean(experiment && graph && graphPaths.length > 0) && (isAllSelected || Boolean(selectedPath));
+  const localQueueLabel = 'Локальна черга';
+  const cloudQueueLabel = 'Хмарна черга';
 
   return (
     <AuthLayout
@@ -139,6 +230,149 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                   </div>
                 </div>
               </div>
+            )}
+          </section>
+
+          <section className="card data-card">
+            <header className="card-head">
+              <div>
+                <h3>Запуск обчислень</h3>
+                <p className="muted">
+                  Запустіть один шлях або всі — у локальну чи хмарну чергу.
+                </p>
+              </div>
+            </header>
+            {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
+            {graph && (
+              <>
+                <div className="item-list">
+                  <div className="form-group">
+                    <label htmlFor="path-select">Шлях</label>
+                    <select
+                      id="path-select"
+                      value={selectedPathId}
+                      onChange={(event) => setSelectedPathId(event.target.value)}
+                      disabled={graphPaths.length === 0 || enqueueing}
+                    >
+                      <option value="all">Усі шляхи ({graphPaths.length})</option>
+                      {graphPaths.map((path, index) => (
+                        <option key={path.id} value={path.id}>
+                          {`Шлях ${index + 1}: ${path.label}`}
+                        </option>
+                      ))}
+                    </select>
+                    {graphPaths.length === 0 && (
+                      <p className="muted small">Немає доступних шляхів у графі.</p>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="queue-select">Черга</label>
+                    <select
+                      id="queue-select"
+                      value={queue}
+                      onChange={(event) =>
+                        setQueue(event.target.value as ComputationQueue)
+                      }
+                      disabled={enqueueing}
+                    >
+                      <option value={ComputationQueue.local}>{localQueueLabel}</option>
+                      <option value={ComputationQueue.cloud}>{cloudQueueLabel}</option>
+                    </select>
+                  </div>
+                  <div className="actions">
+                    <button
+                      className="btn primary"
+                      type="button"
+                      onClick={() => void handleEnqueueRuns()}
+                      disabled={!canEnqueue || enqueueing}
+                    >
+                      {enqueueing
+                        ? 'Запуск...'
+                        : isAllSelected
+                          ? 'Запустити всі'
+                          : 'Запустити шлях'}
+                    </button>
+                  </div>
+                  {enqueueError && (
+                    <p className="error">Помилка запуску: {enqueueError.message}</p>
+                  )}
+                  {enqueueStatus && <p className="muted small">{enqueueStatus}</p>}
+                </div>
+
+                <div className="graph-summary">
+                  <div className="graph-summary-grid">
+                    <div className="graph-summary-item">
+                      <span className="muted small">{localQueueLabel}</span>
+                      <span className="graph-summary-value">
+                        {runsLoading ? '...' : localRuns.length}
+                      </span>
+                    </div>
+                    <div className="graph-summary-item">
+                      <span className="muted small">{cloudQueueLabel}</span>
+                      <span className="graph-summary-value">
+                        {runsLoading ? '...' : cloudRuns.length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="data-grid">
+                  <div>
+                    <div className="form-divider">{localQueueLabel}</div>
+                    <div className="item-list">
+                      {runsLoading && localRuns.length === 0 && (
+                        <p className="muted">Завантаження черги...</p>
+                      )}
+                      {runsError && <p className="error">Помилка черги: {runsError.message}</p>}
+                      {!runsLoading && !runsError && localRuns.length === 0 && (
+                        <p className="muted">Локальна черга порожня.</p>
+                      )}
+                      {localRuns.map((run) => (
+                        <div key={run._id} className="item-row">
+                          <div className="item-meta">
+                            <p className="item-title">
+                              {resolvePathLabel(run.pathNodeIds)}
+                            </p>
+                            <p className="muted">
+                              {formatTimeAgo(run.createdAt)} • {run.pathNodeIds.length} вузлів
+                            </p>
+                          </div>
+                          <span className={`status-pill status-${run.status}`}>
+                            {runStatusLabels[run.status] ?? run.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="form-divider">{cloudQueueLabel}</div>
+                    <div className="item-list">
+                      {runsLoading && cloudRuns.length === 0 && (
+                        <p className="muted">Завантаження черги...</p>
+                      )}
+                      {runsError && <p className="error">Помилка черги: {runsError.message}</p>}
+                      {!runsLoading && !runsError && cloudRuns.length === 0 && (
+                        <p className="muted">Хмарна черга порожня.</p>
+                      )}
+                      {cloudRuns.map((run) => (
+                        <div key={run._id} className="item-row">
+                          <div className="item-meta">
+                            <p className="item-title">
+                              {resolvePathLabel(run.pathNodeIds)}
+                            </p>
+                            <p className="muted">
+                              {formatTimeAgo(run.createdAt)} • {run.pathNodeIds.length} вузлів
+                            </p>
+                          </div>
+                          <span className={`status-pill status-${run.status}`}>
+                            {runStatusLabels[run.status] ?? run.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </section>
         </div>

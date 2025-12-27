@@ -1,8 +1,10 @@
 export { useExperimentQuery } from '../../../../graphql/queries/generated/experiment';
 export { useTechnologiesQuery } from '../../../../graphql/queries/generated/technologies';
 export { useUpdateExperimentMutation } from '../../../../graphql/mutations/generated/updateExperiment';
+export { useGenerateExperimentGraphMutation } from '../../../../graphql/mutations/generated/generateExperimentGraph';
 export {
   ClassificationStage,
+  type GraphNode,
   TechnologySettingType,
   type GraphNodeSetting,
   type GraphNodeSettingInput,

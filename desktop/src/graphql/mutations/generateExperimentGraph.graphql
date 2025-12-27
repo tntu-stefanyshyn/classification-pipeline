@@ -1,0 +1,27 @@
+mutation GenerateExperimentGraph($input: GenerateExperimentGraphInput!) {
+  generateExperimentGraph(input: $input) {
+    _id
+    name
+    description
+    fileId
+    status
+    createdAt
+    graph {
+      _id
+      experimentId
+      createdAt
+      nodes {
+        _id
+        label
+        stage
+        technology
+        type
+        settings {
+          key
+          value
+        }
+        parentId
+      }
+    }
+  }
+}

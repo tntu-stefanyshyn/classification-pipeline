@@ -33,6 +33,8 @@ export type GraphFlowNodeData = {
 export type GraphFlowNode = Node<GraphFlowNodeData>;
 export type GraphFlowEdge = Edge;
 
+export type StageSelection = Partial<Record<ClassificationStage, string[]>>;
+
 export type FlatGraphNode = {
   _id: string;
   label: string;

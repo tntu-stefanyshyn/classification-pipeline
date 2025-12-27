@@ -1,6 +1,7 @@
 import { Arg, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
 import { Experiment } from '../classes/Experiment';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
+import { GenerateExperimentGraphInput } from '../classes/GenerateExperimentGraphInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentManager } from '../services/ExperimentManager';
 import { GraphManager } from '../services/GraphManager';
@@ -38,5 +39,12 @@ export class Experiments {
     @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
   ): Promise<Experiment> {
     return this.manager.update(input);
+  }
+
+  @Mutation(() => Experiment)
+  generateExperimentGraph(
+    @Arg('input', () => GenerateExperimentGraphInput) input: GenerateExperimentGraphInput
+  ): Promise<Experiment> {
+    return this.manager.generateGraph(input);
   }
 }

@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { Experiment } from '../classes/Experiment';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
+import { GenerateExperimentGraphInput } from '../classes/GenerateExperimentGraphInput';
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentModel } from '../models/ExperimentModel';
 import { GraphManager } from './GraphManager';
@@ -85,6 +86,20 @@ export class ExperimentManager {
     if (!experiment) {
       throw new Error('Experiment not found');
     }
+
+    return experiment;
+  }
+
+  async generateGraph(input: GenerateExperimentGraphInput): Promise<Experiment> {
+    const trimmedId = input._id.trim();
+    if (!trimmedId) throw new Error('Experiment _id is required');
+
+    const experiment = await ExperimentModel.findById(trimmedId).lean();
+    if (!experiment) {
+      throw new Error('Experiment not found');
+    }
+
+    await this.graphManager.generateGraphFromSelections(trimmedId, input.stages ?? []);
 
     return experiment;
   }

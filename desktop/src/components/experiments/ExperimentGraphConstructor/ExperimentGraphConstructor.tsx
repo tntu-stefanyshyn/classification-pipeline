@@ -7,13 +7,17 @@ import { classificationStages, stageLabels } from './constants/stages';
 import { DEFAULT_NODE_TYPE, DEFAULT_STAGE } from './constants/graph';
 import {
   ClassificationStage,
+  type GraphNode as GraphNodeData,
   TechnologySettingType,
+  useGenerateExperimentGraphMutation,
   useExperimentQuery,
   useTechnologiesQuery,
   useUpdateExperimentMutation,
 } from './graphql';
 import { buildFlowElements } from './utils/flow';
 import { collectDescendantIds, getGraphSignature } from './utils/graph';
+import { buildStageSelectionsFromNodes } from './utils/buildStageSelectionsFromNodes';
+import { normalizeGraphNodes } from './utils/normalizeGraphNodes';
 import { buildSettingsMap, settingsMapToInput, settingsRecordToList } from './utils/settings';
 import { isClassificationStage } from './utils/stage';
 import {
@@ -27,6 +31,7 @@ import type {
   FlatGraphNode,
   NodeDraft,
   NodeModalState,
+  StageSelection,
 } from './ExperimentGraphConstructor.types';
 
 export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphConstructorProps) {
@@ -42,6 +47,8 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   } = useTechnologiesQuery();
   const [updateGraph, { loading: graphUpdating, error: graphUpdateError }] =
     useUpdateExperimentMutation();
+  const [generateGraph, { loading: graphGenerating, error: graphGenerateError }] =
+    useGenerateExperimentGraphMutation();
 
   const experiment = data?.experiment;
   const technologies = technologiesData?.technologies ?? [];
@@ -64,40 +71,25 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   );
   const technologyIndex = useMemo(() => buildTechnologyIndex(technologies), [technologiesKey]);
   const techReady = !technologiesLoading && !technologiesError && technologies.length > 0;
-  const graphActionsDisabled = graphUpdating || !techReady;
+  const isGraphBusy = graphUpdating || graphGenerating;
+  const graphActionsDisabled = isGraphBusy || !techReady;
 
   const graph = experiment?.graph;
   const [graphNodes, setGraphNodes] = useState<FlatGraphNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<NodeModalState>(null);
   const [draftNode, setDraftNode] = useState<NodeDraft | null>(null);
+  const [autoSelections, setAutoSelections] = useState<StageSelection>({});
+  const [autoModalOpen, setAutoModalOpen] = useState(false);
   const graphSignatureRef = useRef<string>('');
 
   useEffect(() => {
     if (!graph) {
       setGraphNodes([]);
+      graphSignatureRef.current = '';
       return;
     }
-    const nextNodes = graph.nodes.map((node) => {
-      const stage = node.stage ?? DEFAULT_STAGE;
-      const resolvedTechnology = resolveTechnology(
-        technologyIndex,
-        stage,
-        node.technology,
-        node.label
-      );
-      const technologyName = resolvedTechnology?.name ?? node.technology ?? node.label ?? '';
-      const settings = buildSettingsMap(resolvedTechnology?.settings, node.settings);
-      return {
-        _id: node._id,
-        label: technologyName,
-        technology: technologyName,
-        stage,
-        type: node.type ?? DEFAULT_NODE_TYPE,
-        settings,
-        parentId: node.parentId ?? null,
-      };
-    });
+    const nextNodes = normalizeGraphNodes(graph.nodes ?? [], technologyIndex);
     const signature = getGraphSignature(nextNodes);
     if (signature === graphSignatureRef.current) return;
     graphSignatureRef.current = signature;
@@ -193,6 +185,19 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     setDraftNode(null);
   };
 
+  const applyGraphUpdate = (nodes?: GraphNodeData[], nextActiveId?: string | null) => {
+    if (!nodes) return;
+    const normalized = normalizeGraphNodes(nodes, technologyIndex);
+    const signature = getGraphSignature(normalized);
+    graphSignatureRef.current = signature;
+    setGraphNodes(normalized);
+    if (typeof nextActiveId === 'string' && normalized.some((node) => node._id === nextActiveId)) {
+      setSelectedNodeId(nextActiveId);
+      return;
+    }
+    setSelectedNodeId(normalized[0]?._id ?? null);
+  };
+
   const toGraphNodeInput = (node: FlatGraphNode) => {
     const stage = node.stage ?? DEFAULT_STAGE;
     const resolvedTechnology = resolveTechnology(
@@ -226,36 +231,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
         },
       });
       const updatedNodes = result.data?.updateExperiment.graph?.nodes;
-      if (!updatedNodes) return;
-      const normalized = updatedNodes.map((node) => {
-        const stage = node.stage ?? DEFAULT_STAGE;
-        const resolvedTechnology = resolveTechnology(
-          technologyIndex,
-          stage,
-          node.technology,
-          node.label
-        );
-        const technologyName = resolvedTechnology?.name ?? node.technology ?? node.label ?? '';
-        const settings = buildSettingsMap(resolvedTechnology?.settings, node.settings);
-        return {
-          _id: node._id,
-          label: technologyName,
-          technology: technologyName,
-          stage,
-          type: node.type ?? DEFAULT_NODE_TYPE,
-          settings,
-          parentId: node.parentId ?? null,
-        };
-      });
-      setGraphNodes(normalized);
-      if (
-        typeof nextActiveId === 'string' &&
-        normalized.some((node) => node._id === nextActiveId)
-      ) {
-        setSelectedNodeId(nextActiveId);
-        return;
-      }
-      setSelectedNodeId(normalized[0]?._id ?? null);
+      applyGraphUpdate(updatedNodes, nextActiveId);
     } catch (_err) {
       // Error state is handled by graphUpdateError.
     }
@@ -303,6 +279,60 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     closeModal();
   };
 
+  const openAutoModal = () => {
+    if (!techReady) return;
+    setAutoSelections(buildStageSelectionsFromNodes(graphNodes, technologyIndex));
+    setAutoModalOpen(true);
+  };
+
+  const closeAutoModal = () => {
+    setAutoModalOpen(false);
+  };
+
+  const toggleAutoSelection = (stage: ClassificationStage, technologyId: string) => {
+    setAutoSelections((prev) => {
+      const next = new Set(prev[stage] ?? []);
+      if (next.has(technologyId)) {
+        next.delete(technologyId);
+      } else {
+        next.add(technologyId);
+      }
+      return {
+        ...prev,
+        [stage]: Array.from(next),
+      };
+    });
+  };
+
+  const handleGenerateGraph = async () => {
+    if (!experiment) return;
+    const stages = classificationStages
+      .map((stage) => ({
+        stage,
+        technologyIds: autoSelections[stage] ?? [],
+      }))
+      .filter((item) => item.technologyIds.length > 0);
+
+    if (!stages.some((item) => item.stage === ClassificationStage.CLASSIFICATION)) {
+      return;
+    }
+
+    try {
+      const result = await generateGraph({
+        variables: {
+          input: {
+            _id: experiment._id,
+            stages,
+          },
+        },
+      });
+      applyGraphUpdate(result.data?.generateExperimentGraph.graph?.nodes);
+      closeAutoModal();
+    } catch (_error) {
+      // Error state is handled by graphGenerateError.
+    }
+  };
+
   const draftTechnologies = draftNode ? (technologyIndex.byStage.get(draftNode.stage) ?? []) : [];
   const draftTechnology = draftNode
     ? (technologyIndex.byStageName.get(`${draftNode.stage}:${draftNode.technologyName}`) ?? null)
@@ -311,13 +341,16 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     nodes: graphNodes,
     selectedNodeId,
     graphActionsDisabled,
-    graphUpdating,
+    graphUpdating: isGraphBusy,
     onAdd: openAddModal,
     onEdit: openEditModal,
     onDelete: openDeleteModal,
   });
   const nodeTypes = useMemo(() => ({ graphNode: GraphNode }), []);
   const hasNodes = graphNodes.length > 0;
+  const classificationSelection = autoSelections[ClassificationStage.CLASSIFICATION] ?? [];
+  const canGenerateGraph =
+    classificationSelection.length > 0 && !graphActionsDisabled && Boolean(experiment);
 
   const backHref = experiment?._id
     ? `/app/experiments/${experiment._id}`
@@ -331,6 +364,14 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
         <Link className="btn ghost" to={backHref}>
           Назад
         </Link>
+        <button
+          className="btn primary"
+          type="button"
+          onClick={openAutoModal}
+          disabled={!techReady || graphActionsDisabled}
+        >
+          Автозаповнення
+        </button>
       </header>
       <div className="constructor-canvas">
         {!experimentId && <p className="error">Не вказано ідентифікатор експерименту.</p>}
@@ -360,6 +401,9 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
             )}
             {graphUpdateError && (
               <p className="error small">Помилка оновлення графа: {graphUpdateError.message}</p>
+            )}
+            {graphGenerateError && (
+              <p className="error small">Помилка автозаповнення: {graphGenerateError.message}</p>
             )}
           </div>
         )}
@@ -451,7 +495,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                                 event.target.checked ? 'true' : 'false'
                               )
                             }
-                            disabled={graphUpdating}
+                            disabled={isGraphBusy}
                           />
                         </div>
                       );
@@ -470,7 +514,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                             onChange={(event) =>
                               handleDraftSettingChange(setting.key, event.target.value)
                             }
-                            disabled={graphUpdating || options.length === 0}
+                            disabled={isGraphBusy || options.length === 0}
                             required={Boolean(setting.required)}
                           >
                             <option value="" disabled>
@@ -502,7 +546,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                           }
                           placeholder={setting.placeholder ?? undefined}
                           required={Boolean(setting.required)}
-                          disabled={graphUpdating}
+                          disabled={isGraphBusy}
                         />
                       </div>
                     );
@@ -517,7 +561,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
               <button
                 className="btn primary"
                 type="submit"
-                disabled={graphUpdating || graphActionsDisabled}
+                disabled={isGraphBusy || graphActionsDisabled}
               >
                 {modalState?.type === 'edit' ? 'Зберегти' : 'Створити'}
               </button>
@@ -537,9 +581,70 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
               className="btn danger"
               type="button"
               onClick={() => void handleDeleteNode()}
-              disabled={graphUpdating}
+              disabled={isGraphBusy}
             >
               Видалити
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={autoModalOpen} title="Автозаповнення графа" onClose={closeAutoModal}>
+        <div className="node-modal">
+          <p className="muted small">
+            Оберіть технології для кожного етапу. Порожній етап буде пропущено. Після автозаповнення
+            поточний граф буде замінено.
+          </p>
+          {classificationStages.map((stage) => {
+            const stageTechnologies = technologyIndex.byStage.get(stage) ?? [];
+            const selectedIds = autoSelections[stage] ?? [];
+            return (
+              <div key={stage}>
+                <div className="form-divider">{stageLabels[stage]}</div>
+                <p className="muted small">
+                  {stage === ClassificationStage.CLASSIFICATION
+                    ? 'Фінальний етап — обовʼязково виберіть хоча б одну технологію.'
+                    : 'Етап можна пропустити, якщо не потрібен.'}
+                </p>
+                {stageTechnologies.length === 0 ? (
+                  <p className="muted small">Немає доступних технологій для цього етапу.</p>
+                ) : (
+                  stageTechnologies.map((technology) => {
+                    const inputId = `auto-${stage}-${technology._id}`;
+                    return (
+                      <div className="form-group checkbox" key={technology._id}>
+                        <label htmlFor={inputId}>{technology.name}</label>
+                        <input
+                          id={inputId}
+                          type="checkbox"
+                          checked={selectedIds.includes(technology._id)}
+                          onChange={() => toggleAutoSelection(stage, technology._id)}
+                          disabled={graphGenerating}
+                        />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            );
+          })}
+          {graphGenerateError && (
+            <p className="error">Помилка автозаповнення: {graphGenerateError.message}</p>
+          )}
+          {!classificationSelection.length && (
+            <p className="error">Оберіть хоча б одну технологію етапу класифікації.</p>
+          )}
+          <div className="graph-panel-actions">
+            <button className="btn ghost" type="button" onClick={closeAutoModal}>
+              Скасувати
+            </button>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => void handleGenerateGraph()}
+              disabled={!canGenerateGraph}
+            >
+              {graphGenerating ? 'Автозаповнення...' : 'Згенерувати'}
             </button>
           </div>
         </div>

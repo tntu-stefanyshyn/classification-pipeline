@@ -51,6 +51,11 @@ enum ExperimentStatus {
   running
 }
 
+input GenerateExperimentGraphInput {
+  _id: ID!
+  stages: [GraphStageSelectionInput!]!
+}
+
 type GraphNode {
   _id: ID!
   label: String!
@@ -81,6 +86,11 @@ input GraphNodeSettingInput {
   value: String!
 }
 
+input GraphStageSelectionInput {
+  stage: ClassificationStage!
+  technologyIds: [ID!]!
+}
+
 type GraphStructure {
   _id: ID!
   createdAt: DateTimeISO!
@@ -97,6 +107,7 @@ type Mutation {
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
+  generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   updateExperiment(input: UpdateExperimentInput!): Experiment!

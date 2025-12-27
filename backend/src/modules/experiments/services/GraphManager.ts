@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { GraphStructure } from '../classes/GraphStructure';
 import { GraphNode } from '../classes/GraphNode';
 import { GraphNodeInput } from '../classes/GraphNodeInput';
+import { GraphStageSelectionInput } from '../classes/GraphStageSelectionInput';
 import { GraphNodeSetting } from '../classes/GraphNodeSetting';
 import { CLASSIFICATION_STAGE_VALUES, ClassificationStage } from '../classes/ClassificationStage';
 import { GraphStructureModel } from '../models/GraphStructureModel';
@@ -42,6 +43,96 @@ export class GraphManager {
     await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } }).exec();
 
     return this.getByExperimentId(experimentId);
+  }
+
+  async generateGraphFromSelections(
+    experimentId: Types.ObjectId | string,
+    selections: GraphStageSelectionInput[]
+  ): Promise<GraphStructure> {
+    const selectionMap = new Map<ClassificationStage, Set<string>>();
+    selections.forEach((selection) => {
+      const ids = Array.isArray(selection.technologyIds) ? selection.technologyIds : [];
+      const normalized = ids.map((id) => id.trim()).filter(Boolean);
+      if (normalized.length === 0) return;
+      const set = selectionMap.get(selection.stage) ?? new Set<string>();
+      normalized.forEach((id) => set.add(id));
+      selectionMap.set(selection.stage, set);
+    });
+
+    const classificationIds = selectionMap.get(ClassificationStage.CLASSIFICATION);
+    if (!classificationIds || classificationIds.size === 0) {
+      throw new Error('Фінальний етап має містити щонайменше одну технологію класифікації.');
+    }
+
+    const stages = CLASSIFICATION_STAGE_VALUES.filter(
+      (stage) => (selectionMap.get(stage)?.size ?? 0) > 0
+    );
+    if (stages.length === 0) {
+      throw new Error('Потрібно обрати хоча б одну технологію для побудови графа.');
+    }
+
+    const technologies = await this.technologyManager.list();
+    const technologyById = new Map<string, Technology>();
+    technologies.forEach((technology) => {
+      technologyById.set(String(technology._id), technology);
+    });
+
+    const stageSelections = stages.map((stage) => {
+      const ids = Array.from(selectionMap.get(stage) ?? []);
+      const stageTechnologies: Technology[] = [];
+      ids.forEach((id) => {
+        if (!Types.ObjectId.isValid(id)) {
+          throw new Error(`Некоректний ідентифікатор технології: ${id}`);
+        }
+        const technology = technologyById.get(id);
+        if (!technology) {
+          throw new Error(`Технологію не знайдено: ${id}`);
+        }
+        if (technology.stage !== stage) {
+          throw new Error(`Технологія "${technology.name}" не відповідає етапу ${stage}.`);
+        }
+        stageTechnologies.push(technology);
+      });
+      return { stage, technologies: stageTechnologies };
+    });
+
+    const lastStage = stageSelections[stageSelections.length - 1]?.stage;
+    if (lastStage !== ClassificationStage.CLASSIFICATION) {
+      throw new Error('Останній етап у шляхах має бути класифікацією.');
+    }
+
+    const nodes: GraphNodeInput[] = [];
+    let parentIds: string[] = [];
+
+    stageSelections.forEach(({ stage, technologies: stageTechnologies }) => {
+      const nextParentIds: string[] = [];
+      const createNode = (parentId: string | undefined, technology: Technology) => {
+        const nodeId = new Types.ObjectId().toHexString();
+        const settings = this.buildSettingsForTechnology(technology, undefined);
+        nodes.push({
+          _id: nodeId,
+          label: technology.name,
+          stage,
+          technology: technology.name,
+          type: DEFAULT_NODE_TYPE,
+          parentId,
+          settings,
+        });
+        nextParentIds.push(nodeId);
+      };
+
+      if (parentIds.length === 0) {
+        stageTechnologies.forEach((technology) => createNode(undefined, technology));
+      } else {
+        parentIds.forEach((parentId) => {
+          stageTechnologies.forEach((technology) => createNode(parentId, technology));
+        });
+      }
+
+      parentIds = nextParentIds;
+    });
+
+    return this.updateGraph(experimentId, nodes);
   }
 
   private async normalizeGraphNodes(nodes: GraphNodeInput[]): Promise<GraphNode[]> {

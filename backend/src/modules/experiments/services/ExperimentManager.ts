@@ -68,13 +68,22 @@ export class ExperimentManager {
       }
     }
 
+    const requiresGraphUpdate =
+      input.graphNodes !== undefined || input.graphComputationMode !== undefined;
+    if (requiresGraphUpdate) {
+      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+      if (!existingExperiment) throw new Error('Experiment not found');
+    }
+
     if (input.graphNodes !== undefined) {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
       }
-      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
-      if (!existingExperiment) throw new Error('Experiment not found');
       await this.graphManager.updateGraph(trimmedId, input.graphNodes);
+    }
+
+    if (input.graphComputationMode !== undefined) {
+      await this.graphManager.updateComputationMode(trimmedId, input.graphComputationMode);
     }
 
     const updateOps =

@@ -8,6 +8,7 @@ import { CLASSIFICATION_STAGE_VALUES, ClassificationStage } from '../classes/Cla
 import { GraphStructureModel } from '../models/GraphStructureModel';
 import { Technology } from '../../technologies/classes/Technology';
 import { TechnologyManager } from '../../technologies/services/TechnologyManager';
+import { ComputationMode } from '../classes/ComputationMode';
 
 type TechnologyIndex = {
   byStage: Map<ClassificationStage, Technology[]>;
@@ -40,7 +41,20 @@ export class GraphManager {
     experimentId: Types.ObjectId | string,
     nodes: GraphNodeInput[]
   ): Promise<GraphStructure> {
-    await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } }).exec();
+    await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } });
+
+    return this.getByExperimentId(experimentId);
+  }
+
+  async updateComputationMode(
+    experimentId: Types.ObjectId | string,
+    computationMode: ComputationMode
+  ): Promise<GraphStructure> {
+    await GraphStructureModel.updateOne(
+      { experimentId },
+      { $set: { computationMode } },
+      { upsert: true }
+    );
 
     return this.getByExperimentId(experimentId);
   }
@@ -302,7 +316,7 @@ export class GraphManager {
       { experimentId: resolvedExperimentId },
       { $set: { nodes: normalizedNodes, createdAt: updatedGraph.createdAt } },
       { upsert: true }
-    ).exec();
+    );
 
     return updatedGraph;
   }

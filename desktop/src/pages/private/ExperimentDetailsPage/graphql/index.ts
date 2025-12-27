@@ -8,5 +8,5 @@ export { useEnqueueExperimentRunsMutation } from '../../../../graphql/mutations/
 export { useUploadedFilesQuery } from '../../../../graphql/queries/generated/uploadedFiles';
 export { useSignedUploadUrlLazyQuery } from '../../../../graphql/queries/generated/signedUpload';
 export { useCreateUploadedFileMutation } from '../../../../graphql/mutations/generated/createUploadedFile';
-export { ComputationQueue } from '../../../../graphql/types.generated';
+export { ComputationMode, ComputationQueue } from '../../../../graphql/types.generated';
 export type { GraphNode } from '../../../../graphql/types.generated';

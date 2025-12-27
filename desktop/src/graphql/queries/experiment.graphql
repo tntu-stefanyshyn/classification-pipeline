@@ -8,6 +8,7 @@ query Experiment($_id: ID!) {
     createdAt
     graph {
       _id
+      computationMode
       experimentId
       createdAt
       nodes {

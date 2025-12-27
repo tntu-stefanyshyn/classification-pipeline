@@ -8,6 +8,7 @@ import { isCsvFile } from '../../../utils/fileValidation';
 import { validationSchema } from './constants/validationSchema';
 import {
   ComputationQueue,
+  ComputationMode,
   refetchExperimentQuery,
   useEnqueueExperimentRunsMutation,
   useCreateUploadedFileMutation,
@@ -61,6 +62,7 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   } = useExperimentRunsQuery({
     variables: { experimentId: id },
     skip: !id,
+    pollInterval: 5000,
     fetchPolicy: 'cache-and-network',
   });
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
@@ -69,6 +71,7 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   const experiment = data?.experiment;
   const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
   const graph = experiment?.graph;
+  const computationMode = graph?.computationMode ?? ComputationMode.both;
   const pathsCount = useMemo(() => countGraphPaths(graph?.nodes ?? []), [graph]);
   const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
   const graphPathMap = useMemo(
@@ -85,14 +88,46 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
     () => new Map(graphPaths.map((path) => [path.id, path.label])),
     [graphPaths]
   );
+  const runPathKeys = useMemo(() => new Set(runs.map((run) => run.pathNodeIds.join('.'))), [runs]);
+  const availablePaths = useMemo(
+    () => graphPaths.filter((path) => !runPathKeys.has(path.id)),
+    [graphPaths, runPathKeys]
+  );
+  const allowedQueues = useMemo(() => {
+    if (computationMode === ComputationMode.local) {
+      return [ComputationQueue.local];
+    }
+    if (computationMode === ComputationMode.cloud) {
+      return [ComputationQueue.cloud];
+    }
+    return [ComputationQueue.local, ComputationQueue.cloud];
+  }, [computationMode]);
+  const queueLabels = useMemo(
+    () =>
+      new Map<ComputationQueue, string>([
+        [ComputationQueue.local, 'Локальна черга'],
+        [ComputationQueue.cloud, 'Хмарна черга'],
+      ]),
+    []
+  );
   const resolvePathLabel = (nodeIds: string[]) =>
     pathLabels.get(nodeIds.join('.')) ?? nodeIds.join(' -> ');
+  const getRunMeta = (run: (typeof runs)[number]) => {
+    const timeLabel = formatTimeAgo(String(run.updatedAt ?? run.createdAt));
+    const progressLabel = typeof run.progress === 'number' ? ` • ${Math.round(run.progress)}%` : '';
+    return `${timeLabel} • ${run.pathNodeIds.length} вузлів${progressLabel}`;
+  };
 
   useEffect(() => {
     if (selectedPathId === 'all') return;
     if (graphPathMap.has(selectedPathId)) return;
     setSelectedPathId('all');
   }, [graphPathMap, selectedPathId]);
+
+  useEffect(() => {
+    if (allowedQueues.includes(queue)) return;
+    setQueue(allowedQueues[0] ?? ComputationQueue.local);
+  }, [allowedQueues, queue]);
 
   useEffect(() => {
     setEnqueueStatus(null);
@@ -120,6 +155,14 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
       setEnqueueStatus('Оберіть шлях для запуску.');
       return;
     }
+    if (isAll && availablePaths.length === 0) {
+      setEnqueueStatus('Усі шляхи вже мають обчислення.');
+      return;
+    }
+    if (!isAll && selectedPath && runPathKeys.has(selectedPath.id)) {
+      setEnqueueStatus('Цей шлях уже має обчислення.');
+      return;
+    }
 
     try {
       const result = await enqueueRuns({
@@ -142,9 +185,11 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
   };
 
   const isAllSelected = selectedPathId === 'all';
-  const selectedPath = isAllSelected ? null : graphPathMap.get(selectedPathId) ?? null;
+  const selectedPath = isAllSelected ? null : (graphPathMap.get(selectedPathId) ?? null);
+  const selectedPathHasRun = selectedPath ? runPathKeys.has(selectedPath.id) : false;
   const canEnqueue =
-    Boolean(experiment && graph && graphPaths.length > 0) && (isAllSelected || Boolean(selectedPath));
+    Boolean(experiment && graph && graphPaths.length > 0) &&
+    (isAllSelected ? availablePaths.length > 0 : Boolean(selectedPath && !selectedPathHasRun));
   const localQueueLabel = 'Локальна черга';
   const cloudQueueLabel = 'Хмарна черга';
 
@@ -208,38 +253,8 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
           <section className="card data-card">
             <header className="card-head">
               <div>
-                <h3>Графова структура</h3>
-                <p className="muted">Поточна кількість шляхів у графі.</p>
-              </div>
-              {graph ? (
-                <Link
-                  className="btn primary small"
-                  to={`/app/experiments/${experiment._id}/constructor`}
-                >
-                  Відкрити конструктор
-                </Link>
-              ) : null}
-            </header>
-            {!graph && <p className="muted">Граф ще не створений.</p>}
-            {graph && (
-              <div className="graph-summary">
-                <div className="graph-summary-grid">
-                  <div className="graph-summary-item">
-                    <span className="muted small">Кількість шляхів</span>
-                    <span className="graph-summary-value">{pathsCount}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <section className="card data-card">
-            <header className="card-head">
-              <div>
                 <h3>Запуск обчислень</h3>
-                <p className="muted">
-                  Запустіть один шлях або всі — у локальну чи хмарну чергу.
-                </p>
+                <p className="muted">Запустіть один шлях або всі — у локальну чи хмарну чергу.</p>
               </div>
             </header>
             {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
@@ -270,13 +285,14 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                     <select
                       id="queue-select"
                       value={queue}
-                      onChange={(event) =>
-                        setQueue(event.target.value as ComputationQueue)
-                      }
-                      disabled={enqueueing}
+                      onChange={(event) => setQueue(event.target.value as ComputationQueue)}
+                      disabled={enqueueing || allowedQueues.length === 1}
                     >
-                      <option value={ComputationQueue.local}>{localQueueLabel}</option>
-                      <option value={ComputationQueue.cloud}>{cloudQueueLabel}</option>
+                      {allowedQueues.map((value) => (
+                        <option key={value} value={value}>
+                          {queueLabels.get(value) ?? value}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="actions">
@@ -293,9 +309,7 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                           : 'Запустити шлях'}
                     </button>
                   </div>
-                  {enqueueError && (
-                    <p className="error">Помилка запуску: {enqueueError.message}</p>
-                  )}
+                  {enqueueError && <p className="error">Помилка запуску: {enqueueError.message}</p>}
                   {enqueueStatus && <p className="muted small">{enqueueStatus}</p>}
                 </div>
 
@@ -330,12 +344,11 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                       {localRuns.map((run) => (
                         <div key={run._id} className="item-row">
                           <div className="item-meta">
-                            <p className="item-title">
-                              {resolvePathLabel(run.pathNodeIds)}
-                            </p>
-                            <p className="muted">
-                              {formatTimeAgo(run.createdAt)} • {run.pathNodeIds.length} вузлів
-                            </p>
+                            <p className="item-title">{resolvePathLabel(run.pathNodeIds)}</p>
+                            <p className="muted">{getRunMeta(run)}</p>
+                            {run.statusMessage && (
+                              <p className="muted small">{run.statusMessage}</p>
+                            )}
                           </div>
                           <span className={`status-pill status-${run.status}`}>
                             {runStatusLabels[run.status] ?? run.status}
@@ -357,12 +370,11 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                       {cloudRuns.map((run) => (
                         <div key={run._id} className="item-row">
                           <div className="item-meta">
-                            <p className="item-title">
-                              {resolvePathLabel(run.pathNodeIds)}
-                            </p>
-                            <p className="muted">
-                              {formatTimeAgo(run.createdAt)} • {run.pathNodeIds.length} вузлів
-                            </p>
+                            <p className="item-title">{resolvePathLabel(run.pathNodeIds)}</p>
+                            <p className="muted">{getRunMeta(run)}</p>
+                            {run.statusMessage && (
+                              <p className="muted small">{run.statusMessage}</p>
+                            )}
                           </div>
                           <span className={`status-pill status-${run.status}`}>
                             {runStatusLabels[run.status] ?? run.status}

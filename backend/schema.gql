@@ -16,6 +16,18 @@ enum ClassificationStage {
   PREPROCESSING
 }
 
+input CompleteExperimentRunInput {
+  resultJson: String
+  runId: ID!
+  statusMessage: String
+}
+
+enum ComputationMode {
+  both
+  cloud
+  local
+}
+
 enum ComputationQueue {
   cloud
   local
@@ -26,8 +38,11 @@ type ComputationRun {
   createdAt: DateTimeISO!
   experimentId: ID!
   pathNodeIds: [ID!]!
+  progress: Int
   queue: ComputationQueue!
   status: ComputationStatus!
+  statusMessage: String
+  updatedAt: DateTimeISO!
 }
 
 enum ComputationStatus {
@@ -79,6 +94,11 @@ enum ExperimentStatus {
   running
 }
 
+input FailExperimentRunInput {
+  runId: ID!
+  statusMessage: String
+}
+
 input GenerateExperimentGraphInput {
   _id: ID!
   stages: [GraphStageSelectionInput!]!
@@ -121,6 +141,7 @@ input GraphStageSelectionInput {
 
 type GraphStructure {
   _id: ID!
+  computationMode: ComputationMode
   createdAt: DateTimeISO!
   experimentId: ID!
   nodes: [GraphNode!]!
@@ -132,14 +153,18 @@ input LoginInput {
 }
 
 type Mutation {
+  claimExperimentRun(queue: ComputationQueue!): ComputationRun
+  completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
   enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): [ComputationRun!]!
+  failExperimentRun(input: FailExperimentRunInput!): ComputationRun!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
+  updateExperimentRun(input: UpdateExperimentRunInput!): ComputationRun!
 }
 
 type Query {
@@ -205,8 +230,15 @@ input UpdateExperimentInput {
   _id: ID!
   description: String
   fileId: ID
+  graphComputationMode: ComputationMode
   graphNodes: [GraphNodeInput!]
   name: String
+}
+
+input UpdateExperimentRunInput {
+  progress: Int
+  runId: ID!
+  statusMessage: String
 }
 
 type UploadedFile {

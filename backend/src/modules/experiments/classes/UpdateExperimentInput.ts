@@ -1,5 +1,6 @@
 import { Field, ID, InputType } from 'type-graphql';
 import { GraphNodeInput } from './GraphNodeInput';
+import { ComputationMode } from './ComputationMode';
 
 @InputType()
 export class UpdateExperimentInput {
@@ -17,4 +18,7 @@ export class UpdateExperimentInput {
 
   @Field(() => [GraphNodeInput], { nullable: true })
   graphNodes?: GraphNodeInput[];
+
+  @Field(() => ComputationMode, { nullable: true })
+  graphComputationMode?: ComputationMode;
 }

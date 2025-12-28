@@ -5,5 +5,6 @@ query UploadedFiles {
     sizeMb
     status
     uploadedAt
+    uploadedByName
   }
 }

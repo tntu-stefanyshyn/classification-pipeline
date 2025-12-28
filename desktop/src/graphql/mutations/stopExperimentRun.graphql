@@ -1,0 +1,10 @@
+mutation StopExperimentRun($input: StopExperimentRunInput!) {
+  stopExperimentRun(input: $input) {
+    _id
+    experimentId
+    queue
+    status
+    pathNodeIds
+    createdAt
+  }
+}

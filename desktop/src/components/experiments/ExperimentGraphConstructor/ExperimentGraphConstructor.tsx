@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import ReactFlow from 'reactflow';
 import { Modal } from '../../ui/Modal/Modal';
+import { CheckboxField } from '../../inputs/CheckboxField/CheckboxField';
+import { InputControl } from '../../inputs/InputControl/InputControl';
+import { GraphSettingsModal } from '../GraphSettingsModal/GraphSettingsModal';
 import { GraphNode } from './components/GraphNode/GraphNode';
 import { classificationStages, stageLabels } from './constants/stages';
 import { DEFAULT_NODE_TYPE, DEFAULT_STAGE } from './constants/graph';
 import {
   ClassificationStage,
+  ExperimentStatus,
   type GraphNode as GraphNodeData,
   TechnologySettingType,
+  type GraphStructureSettingsInput,
   useGenerateExperimentGraphMutation,
   useExperimentQuery,
   useTechnologiesQuery,
@@ -35,6 +40,7 @@ import type {
 } from './ExperimentGraphConstructor.types';
 
 export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphConstructorProps) {
+  const location = useLocation();
   const { data, loading, error } = useExperimentQuery({
     variables: { _id: experimentId },
     skip: !experimentId,
@@ -72,16 +78,23 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   const technologyIndex = useMemo(() => buildTechnologyIndex(technologies), [technologiesKey]);
   const techReady = !technologiesLoading && !technologiesError && technologies.length > 0;
   const isGraphBusy = graphUpdating || graphGenerating;
-  const graphActionsDisabled = isGraphBusy || !techReady;
+  const isExperimentLocked =
+    experiment?.status === ExperimentStatus.computing ||
+    experiment?.status === ExperimentStatus.completed;
+  const graphActionsDisabled = isGraphBusy || !techReady || isExperimentLocked;
 
   const graph = experiment?.graph;
+  const graphSettings = graph?.settings ?? null;
   const [graphNodes, setGraphNodes] = useState<FlatGraphNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<NodeModalState>(null);
   const [draftNode, setDraftNode] = useState<NodeDraft | null>(null);
   const [autoSelections, setAutoSelections] = useState<StageSelection>({});
   const [autoModalOpen, setAutoModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
   const graphSignatureRef = useRef<string>('');
+  const openedSettingsRef = useRef(false);
 
   useEffect(() => {
     if (!graph) {
@@ -101,6 +114,20 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     if (graphNodes.some((node) => node._id === selectedNodeId)) return;
     setSelectedNodeId(null);
   }, [graphNodes, selectedNodeId]);
+
+  const getAllowedStages = (parentStage?: ClassificationStage | null) => {
+    if (!parentStage) return classificationStages;
+    const stageIndex = classificationStages.indexOf(parentStage);
+    if (stageIndex < 0) return classificationStages;
+    return classificationStages.slice(stageIndex + 1);
+  };
+
+  const getParentStage = (nodeId?: string | null) => {
+    if (!nodeId) return null;
+    const node = graphNodes.find((item) => item._id === nodeId);
+    if (!node?.parentId) return null;
+    return graphNodes.find((item) => item._id === node.parentId)?.stage ?? null;
+  };
 
   const handleDraftStageChange = (stage: ClassificationStage) => {
     if (!draftNode) return;
@@ -141,7 +168,12 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   const openAddModal = (parentId: string | null) => {
     if (graphActionsDisabled) return;
     const parentNode = parentId ? graphNodes.find((node) => node._id === parentId) : null;
-    const stage = parentNode?.stage ?? DEFAULT_STAGE;
+    const allowedStages = getAllowedStages(parentNode?.stage ?? null);
+    const stage =
+      allowedStages.find((candidate) =>
+        Boolean(getDefaultTechnologyForStage(technologyIndex, candidate))
+      ) ?? null;
+    if (!stage) return;
     const defaultTechnology = getDefaultTechnologyForStage(technologyIndex, stage);
     if (!defaultTechnology) return;
     setDraftNode({
@@ -183,6 +215,34 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   const closeModal = () => {
     setModalState(null);
     setDraftNode(null);
+  };
+
+  const openSettingsModal = () => {
+    if (isExperimentLocked) return;
+    setSettingsModalOpen(true);
+  };
+
+  const closeSettingsModal = () => {
+    setSettingsModalOpen(false);
+  };
+
+  useEffect(() => {
+    const state = location.state as { openSettings?: boolean } | null;
+    if (!state?.openSettings || openedSettingsRef.current) return;
+    if (!experiment || isExperimentLocked) {
+      openedSettingsRef.current = true;
+      return;
+    }
+    openSettingsModal();
+    openedSettingsRef.current = true;
+  }, [experiment, isExperimentLocked, location.state]);
+
+  const openResetModal = () => {
+    setResetModalOpen(true);
+  };
+
+  const closeResetModal = () => {
+    setResetModalOpen(false);
   };
 
   const applyGraphUpdate = (nodes?: GraphNodeData[], nextActiveId?: string | null) => {
@@ -237,6 +297,29 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     }
   };
 
+  const handleSaveSettings = async (settings: GraphStructureSettingsInput) => {
+    if (!experiment) return;
+    try {
+      await updateGraph({
+        variables: {
+          input: {
+            _id: experiment._id,
+            graphSettings: settings,
+          },
+        },
+      });
+      closeSettingsModal();
+    } catch (_err) {
+      // Error state is handled by graphUpdateError.
+    }
+  };
+
+  const handleResetGraph = async () => {
+    if (!experiment) return;
+    await persistGraphNodes([]);
+    closeResetModal();
+  };
+
   const handleCreateNode = async () => {
     if (!draftNode || modalState?.type !== 'add') return;
     const newNode: FlatGraphNode = {
@@ -280,7 +363,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
   };
 
   const openAutoModal = () => {
-    if (!techReady) return;
+    if (graphActionsDisabled) return;
     setAutoSelections(buildStageSelectionsFromNodes(graphNodes, technologyIndex));
     setAutoModalOpen(true);
   };
@@ -333,6 +416,15 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
     }
   };
 
+  const addParentStage = modalState?.type === 'add' ? getParentStage(modalState.parentId) : null;
+  const editParentStage = modalState?.type === 'edit' ? getParentStage(modalState.nodeId) : null;
+  const selectableStages =
+    modalState?.type === 'add'
+      ? getAllowedStages(addParentStage)
+      : modalState?.type === 'edit'
+        ? getAllowedStages(editParentStage)
+        : classificationStages;
+
   const draftTechnologies = draftNode ? (technologyIndex.byStage.get(draftNode.stage) ?? []) : [];
   const draftTechnology = draftNode
     ? (technologyIndex.byStageName.get(`${draftNode.stage}:${draftNode.technologyName}`) ?? null)
@@ -371,6 +463,22 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
           disabled={!techReady || graphActionsDisabled}
         >
           Автозаповнення
+        </button>
+        <button
+          className="btn ghost"
+          type="button"
+          onClick={openSettingsModal}
+          disabled={!experiment || isExperimentLocked}
+        >
+          Налаштування графа
+        </button>
+        <button
+          className="btn danger"
+          type="button"
+          onClick={openResetModal}
+          disabled={graphActionsDisabled || graphNodes.length === 0}
+        >
+          Скинути граф
         </button>
       </header>
       <div className="constructor-canvas">
@@ -437,12 +545,12 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                   if (value === draftNode.stage) return;
                   handleDraftStageChange(value);
                 }}
-                disabled={graphActionsDisabled}
+                disabled={graphActionsDisabled || selectableStages.length === 0}
               >
                 <option value="" disabled>
                   Оберіть етап
                 </option>
-                {classificationStages.map((stage) => (
+                {selectableStages.map((stage) => (
                   <option
                     key={stage}
                     value={stage}
@@ -480,24 +588,19 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                     const value = draftNode.settings[setting.key] ?? '';
                     if (setting.type === TechnologySettingType.BOOLEAN) {
                       return (
-                        <div className="form-group checkbox" key={setting.key}>
-                          <label htmlFor={settingId}>
-                            {setting.label}
-                            {setting.required ? ' *' : ''}
-                          </label>
-                          <input
-                            id={settingId}
-                            type="checkbox"
-                            checked={value === 'true'}
-                            onChange={(event) =>
-                              handleDraftSettingChange(
-                                setting.key,
-                                event.target.checked ? 'true' : 'false'
-                              )
-                            }
-                            disabled={isGraphBusy}
-                          />
-                        </div>
+                        <CheckboxField
+                          key={setting.key}
+                          id={settingId}
+                          label={`${setting.label}${setting.required ? ' *' : ''}`}
+                          checked={value === 'true'}
+                          onChange={(event) =>
+                            handleDraftSettingChange(
+                              setting.key,
+                              event.target.checked ? 'true' : 'false'
+                            )
+                          }
+                          disabled={isGraphBusy || isExperimentLocked}
+                        />
                       );
                     }
                     if (setting.type === TechnologySettingType.SELECT) {
@@ -532,23 +635,19 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                     const inputType =
                       setting.type === TechnologySettingType.NUMBER ? 'number' : 'text';
                     return (
-                      <div className="form-group" key={setting.key}>
-                        <label htmlFor={settingId}>
-                          {setting.label}
-                          {setting.required ? ' *' : ''}
-                        </label>
-                        <input
-                          id={settingId}
-                          type={inputType}
-                          value={value}
-                          onChange={(event) =>
-                            handleDraftSettingChange(setting.key, event.target.value)
-                          }
-                          placeholder={setting.placeholder ?? undefined}
-                          required={Boolean(setting.required)}
-                          disabled={isGraphBusy}
-                        />
-                      </div>
+                      <InputControl
+                        key={setting.key}
+                        id={settingId}
+                        label={`${setting.label}${setting.required ? ' *' : ''}`}
+                        type={inputType}
+                        value={value}
+                        onChange={(event) =>
+                          handleDraftSettingChange(setting.key, event.target.value)
+                        }
+                        placeholder={setting.placeholder ?? undefined}
+                        required={Boolean(setting.required)}
+                        disabled={isGraphBusy || isExperimentLocked}
+                      />
                     );
                   })}
                 </div>
@@ -581,7 +680,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
               className="btn danger"
               type="button"
               onClick={() => void handleDeleteNode()}
-              disabled={isGraphBusy}
+              disabled={isGraphBusy || isExperimentLocked}
             >
               Видалити
             </button>
@@ -613,16 +712,14 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
                   stageTechnologies.map((technology) => {
                     const inputId = `auto-${stage}-${technology._id}`;
                     return (
-                      <div className="form-group checkbox" key={technology._id}>
-                        <label htmlFor={inputId}>{technology.name}</label>
-                        <input
-                          id={inputId}
-                          type="checkbox"
-                          checked={selectedIds.includes(technology._id)}
-                          onChange={() => toggleAutoSelection(stage, technology._id)}
-                          disabled={graphGenerating}
-                        />
-                      </div>
+                      <CheckboxField
+                        key={technology._id}
+                        id={inputId}
+                        label={technology.name}
+                        checked={selectedIds.includes(technology._id)}
+                        onChange={() => toggleAutoSelection(stage, technology._id)}
+                        disabled={graphGenerating || isExperimentLocked}
+                      />
                     );
                   })
                 )}
@@ -648,6 +745,35 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
               disabled={!canGenerateGraph}
             >
               {graphGenerating ? 'Автозаповнення...' : 'Згенерувати'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <GraphSettingsModal
+        open={settingsModalOpen}
+        settings={graphSettings}
+        onClose={closeSettingsModal}
+        onSave={handleSaveSettings}
+        isBusy={isGraphBusy}
+        isLocked={isExperimentLocked}
+        errorMessage={graphUpdateError?.message ?? null}
+      />
+
+      <Modal open={resetModalOpen} title="Скинути граф" onClose={closeResetModal}>
+        <div className="node-modal">
+          <p>Скинути граф до початкового стану? Це видалить усі вузли.</p>
+          <div className="graph-panel-actions">
+            <button className="btn ghost" type="button" onClick={closeResetModal}>
+              Скасувати
+            </button>
+            <button
+              className="btn danger"
+              type="button"
+              onClick={() => void handleResetGraph()}
+              disabled={isGraphBusy || isExperimentLocked}
+            >
+              Скинути
             </button>
           </div>
         </div>

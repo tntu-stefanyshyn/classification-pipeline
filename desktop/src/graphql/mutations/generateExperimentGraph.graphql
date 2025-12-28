@@ -10,6 +10,15 @@ mutation GenerateExperimentGraph($input: GenerateExperimentGraphInput!) {
       _id
       experimentId
       createdAt
+      settings {
+        metrics {
+          accuracy
+          f1
+          rocAuc
+          ntps
+        }
+        queues
+      }
       nodes {
         _id
         label

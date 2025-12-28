@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 import { GraphNode } from './GraphNode';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
+import { GraphStructureSettings } from './GraphStructureSettings';
 
 @ObjectType()
 export class GraphStructure extends TimeStamps {
@@ -16,6 +17,10 @@ export class GraphStructure extends TimeStamps {
   @Field(() => [GraphNode])
   @prop({ type: () => [GraphNode], default: [] })
   nodes!: GraphNode[];
+
+  @Field(() => GraphStructureSettings, { nullable: true })
+  @prop({ _id: false, type: () => GraphStructureSettings, default: null })
+  settings?: GraphStructureSettings | null;
 
   @Field(() => Date)
   declare createdAt: Date;

@@ -8,6 +8,8 @@ import { CLASSIFICATION_STAGE_VALUES, ClassificationStage } from '../classes/Cla
 import { GraphStructureModel } from '../models/GraphStructureModel';
 import { Technology } from '../../technologies/classes/Technology';
 import { TechnologyManager } from '../../technologies/services/TechnologyManager';
+import { GraphStructureSettings } from '../classes/GraphStructureSettings';
+import { COMPUTATION_QUEUE_VALUES } from '../../computations/classes/ComputationQueue';
 
 type TechnologyIndex = {
   byStage: Map<ClassificationStage, Technology[]>;
@@ -40,7 +42,21 @@ export class GraphManager {
     experimentId: Types.ObjectId | string,
     nodes: GraphNodeInput[]
   ): Promise<GraphStructure> {
+    this.validateStageOrder(nodes);
     await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } }).exec();
+
+    return this.getByExperimentId(experimentId);
+  }
+
+  async updateGraphSettings(
+    experimentId: Types.ObjectId | string,
+    settings: GraphStructureSettings
+  ): Promise<GraphStructure> {
+    const normalizedSettings = this.normalizeGraphSettings(settings);
+    await GraphStructureModel.updateOne(
+      { experimentId },
+      { $set: { settings: normalizedSettings } }
+    ).exec();
 
     return this.getByExperimentId(experimentId);
   }
@@ -211,6 +227,105 @@ export class GraphManager {
     });
 
     return normalized;
+  }
+
+  private normalizeGraphSettings(settings: GraphStructureSettings): GraphStructureSettings {
+    if (!settings) {
+      throw new Error('Graph settings are required.');
+    }
+
+    const metrics = settings.metrics;
+    if (!metrics) {
+      throw new Error('Graph metrics are required.');
+    }
+
+    const accuracy = Number(metrics.accuracy);
+    const f1 = Number(metrics.f1);
+    const rocAuc = Number(metrics.rocAuc);
+    const ntps = Number(metrics.ntps);
+
+    const weights = [
+      { key: 'accuracy', value: accuracy },
+      { key: 'f1', value: f1 },
+      { key: 'rocAuc', value: rocAuc },
+      { key: 'ntps', value: ntps },
+    ];
+
+    weights.forEach((weight) => {
+      if (!Number.isFinite(weight.value)) {
+        throw new Error(`Metric weight "${weight.key}" must be a number.`);
+      }
+      if (weight.value < 0 || weight.value > 1) {
+        throw new Error(`Metric weight "${weight.key}" must be between 0 and 1.`);
+      }
+    });
+
+    const sum = accuracy + f1 + rocAuc + ntps;
+    if (Math.abs(sum - 1) > 0.0001) {
+      throw new Error('Сума ваг метрик має дорівнювати 1.');
+    }
+
+    if (!Array.isArray(settings.queues)) {
+      throw new Error('Computation queues must be an array.');
+    }
+
+    const normalizedQueues = settings.queues.filter((queue) =>
+      COMPUTATION_QUEUE_VALUES.includes(queue)
+    );
+    if (normalizedQueues.length !== settings.queues.length) {
+      throw new Error('Unsupported computation queue value.');
+    }
+
+    const uniqueQueues = Array.from(new Set(normalizedQueues));
+    if (uniqueQueues.length === 0) {
+      throw new Error('Потрібно обрати хоча б один тип обчислень.');
+    }
+
+    return {
+      metrics: { accuracy, f1, rocAuc, ntps },
+      queues: uniqueQueues,
+    };
+  }
+
+  private validateStageOrder(nodes: GraphNodeInput[]): void {
+    if (!Array.isArray(nodes) || nodes.length === 0) return;
+
+    const stageOrder = new Map(CLASSIFICATION_STAGE_VALUES.map((stage, index) => [stage, index]));
+    const nodeById = new Map<string, GraphNodeInput>();
+
+    nodes.forEach((node) => {
+      const nodeId = node._id.trim();
+      if (!nodeId) {
+        throw new Error('Graph node _id is required');
+      }
+      nodeById.set(nodeId, node);
+    });
+
+    nodes.forEach((node) => {
+      const nodeId = node._id.trim();
+      const stage = node.stage;
+      const stageIndex = stageOrder.get(stage);
+      if (stageIndex === undefined) {
+        throw new Error(`Unsupported classification stage for node ${nodeId}`);
+      }
+
+      const parentIdRaw = typeof node.parentId === 'string' ? node.parentId.trim() : '';
+      if (!parentIdRaw) return;
+
+      const parent = nodeById.get(parentIdRaw);
+      if (!parent) {
+        throw new Error(`Parent node not found for ${nodeId}`);
+      }
+
+      const parentStageIndex = stageOrder.get(parent.stage);
+      if (parentStageIndex === undefined) {
+        throw new Error(`Unsupported parent stage for node ${nodeId}`);
+      }
+
+      if (stageIndex <= parentStageIndex) {
+        throw new Error('Наступний етап має йти після поточного у послідовності класифікації.');
+      }
+    });
   }
 
   private buildTechnologyIndex(technologies: Technology[]): TechnologyIndex {

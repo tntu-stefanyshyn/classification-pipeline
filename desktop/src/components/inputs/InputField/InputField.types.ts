@@ -5,4 +5,5 @@ export type InputFieldProps = {
   placeholder?: string;
   autoComplete?: string;
   id?: string;
+  disabled?: boolean;
 };

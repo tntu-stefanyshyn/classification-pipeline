@@ -4,8 +4,10 @@ import { ComputationQueue } from '../classes/ComputationQueue';
 import { ComputationStatus } from '../classes/ComputationStatus';
 import { ComputationRunModel } from '../models/ComputationRunModel';
 import { GraphManager } from '../../experiments/services/GraphManager';
-import type { GraphNode } from '../../experiments/classes/GraphNode';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
+import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
+import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
+import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
 
 type EnqueueRunsInput = {
   experimentId: string;
@@ -30,7 +32,12 @@ export class ComputationManager {
       filter.queue = queue;
     }
 
-    return ComputationRunModel.find(filter).sort({ createdAt: -1 }).lean<ComputationRun>().exec();
+    const runs = await ComputationRunModel.find(filter)
+      .sort({ createdAt: -1 })
+      .lean<ComputationRun>()
+      .exec();
+    await this.syncExperimentStatus(trimmedId);
+    return runs;
   }
 
   async enqueueRuns(input: EnqueueRunsInput): Promise<ComputationRun[]> {
@@ -53,9 +60,34 @@ export class ComputationManager {
     }
 
     const graph = await this.graphManager.getByExperimentId(trimmedId);
-    const paths = this.buildPaths(graph.nodes ?? []);
+    const graphSettings = graph.settings;
+    if (!graphSettings || !graphSettings.metrics) {
+      throw new Error('Спочатку заповніть налаштування графа.');
+    }
+    if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) {
+      throw new Error('Оберіть хоча б один тип обчислень у налаштуваннях графа.');
+    }
+    if (!graphSettings.queues.includes(input.queue)) {
+      throw new Error('Обраний тип обчислень не дозволений у налаштуваннях графа.');
+    }
+    const metrics = graphSettings.metrics;
+    const weights = [metrics.accuracy, metrics.f1, metrics.rocAuc, metrics.ntps];
+    const hasInvalidWeight = weights.some((value) => !Number.isFinite(value));
+    const sum = weights.reduce((total, value) => total + value, 0);
+    if (hasInvalidWeight || Math.abs(sum - 1) > 0.0001) {
+      throw new Error('Налаштування ваг метрик некоректні. Перевірте значення.');
+    }
+    const nodes = graph.nodes ?? [];
+    const paths = buildGraphPaths(nodes);
     if (paths.length === 0) {
       throw new Error('Graph has no paths to run.');
+    }
+    const nodeById = new Map(nodes.map((node) => [String(node._id), node]));
+    const allPathsHaveClassification = paths.every((path) =>
+      path.some((nodeId) => nodeById.get(nodeId)?.stage === ClassificationStage.CLASSIFICATION)
+    );
+    if (!allPathsHaveClassification) {
+      throw new Error('Усі шляхи мають містити етап класифікації.');
     }
 
     let pathsToEnqueue: string[][] = [];
@@ -85,50 +117,48 @@ export class ComputationManager {
     }));
 
     const created = await ComputationRunModel.insertMany(docs, { ordered: true });
+    await ExperimentModel.updateOne(
+      { _id: experimentObjectId },
+      { $set: { status: ExperimentStatus.computing } }
+    ).exec();
     return created.map((doc) => doc.toObject({ getters: true })) as ComputationRun[];
   }
 
-  private buildPaths(nodes: GraphNode[]): string[][] {
-    if (!nodes || nodes.length === 0) return [];
-    const ids = new Set(nodes.map((node) => String(node._id)));
-    const childrenByParent = new Map<string, string[]>();
+  async stopRun(runId: string): Promise<ComputationRun> {
+    const trimmedId = runId.trim();
+    if (!trimmedId) throw new Error('Run _id is required');
+    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
 
-    nodes.forEach((node) => {
-      const nodeId = String(node._id);
-      const parentId = node.parentId ? String(node.parentId) : '';
-      if (!parentId || !ids.has(parentId)) return;
-      const list = childrenByParent.get(parentId) ?? [];
-      list.push(nodeId);
-      childrenByParent.set(parentId, list);
-    });
+    const run = await ComputationRunModel.findById(trimmedId);
+    if (!run) throw new Error('Computation run not found');
 
-    const roots = nodes
-      .filter((node) => {
-        const parentId = node.parentId ? String(node.parentId) : '';
-        return !parentId || !ids.has(parentId);
-      })
-      .map((node) => String(node._id));
+    if (
+      run.status === ComputationStatus.completed ||
+      run.status === ComputationStatus.failed ||
+      run.status === ComputationStatus.stopped
+    ) {
+      return run.toObject({ getters: true }) as ComputationRun;
+    }
 
-    if (roots.length === 0) return [];
+    run.status = ComputationStatus.stopped;
+    await run.save();
+    await this.syncExperimentStatus(String(run.experimentId));
 
-    const paths: string[][] = [];
-    const visiting = new Set<string>();
+    return run.toObject({ getters: true }) as ComputationRun;
+  }
 
-    const dfs = (nodeId: string, path: string[]) => {
-      if (visiting.has(nodeId)) return;
-      visiting.add(nodeId);
-      const nextPath = [...path, nodeId];
-      const children = childrenByParent.get(nodeId) ?? [];
-      if (children.length === 0) {
-        paths.push(nextPath);
-        visiting.delete(nodeId);
-        return;
-      }
-      children.forEach((childId) => dfs(childId, nextPath));
-      visiting.delete(nodeId);
-    };
+  private async syncExperimentStatus(experimentId: string): Promise<void> {
+    const runs = await ComputationRunModel.find({ experimentId })
+      .select('status')
+      .lean<Pick<ComputationRun, 'status'>>()
+      .exec();
+    if (runs.length === 0) return;
 
-    roots.forEach((rootId) => dfs(rootId, []));
-    return paths;
+    const hasActive = runs.some(
+      (run) => run.status === ComputationStatus.queued || run.status === ComputationStatus.running
+    );
+    const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
+
+    await ExperimentModel.updateOne({ _id: experimentId }, { $set: { status: nextStatus } }).exec();
   }
 }

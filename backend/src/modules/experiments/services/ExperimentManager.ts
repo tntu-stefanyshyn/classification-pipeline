@@ -5,6 +5,7 @@ import { GenerateExperimentGraphInput } from '../classes/GenerateExperimentGraph
 import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentModel } from '../models/ExperimentModel';
 import { GraphManager } from './GraphManager';
+import { ExperimentStatus } from '../classes/ExperimentStatus';
 
 export class ExperimentManager {
   private readonly graphManager = new GraphManager();
@@ -43,6 +44,15 @@ export class ExperimentManager {
     const trimmedId = input._id.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
 
+    const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+    if (!existingExperiment) throw new Error('Experiment not found');
+    if (
+      existingExperiment.status === ExperimentStatus.computing ||
+      existingExperiment.status === ExperimentStatus.completed
+    ) {
+      throw new Error('Редагування експерименту недоступне після початку обчислень.');
+    }
+
     const update: Partial<Experiment> = {};
     const unset: Record<string, 1> = {};
 
@@ -72,9 +82,13 @@ export class ExperimentManager {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
       }
-      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
-      if (!existingExperiment) throw new Error('Experiment not found');
       await this.graphManager.updateGraph(trimmedId, input.graphNodes);
+      update.status = ExperimentStatus.configuring;
+    }
+
+    if (input.graphSettings !== undefined) {
+      await this.graphManager.updateGraphSettings(trimmedId, input.graphSettings);
+      update.status = ExperimentStatus.configuring;
     }
 
     const updateOps =
@@ -98,8 +112,18 @@ export class ExperimentManager {
     if (!experiment) {
       throw new Error('Experiment not found');
     }
+    if (
+      experiment.status === ExperimentStatus.computing ||
+      experiment.status === ExperimentStatus.completed
+    ) {
+      throw new Error('Редагування графа недоступне після початку обчислень.');
+    }
 
     await this.graphManager.generateGraphFromSelections(trimmedId, input.stages ?? []);
+    await ExperimentModel.updateOne(
+      { _id: trimmedId },
+      { $set: { status: ExperimentStatus.configuring } }
+    ).exec();
 
     return experiment;
   }

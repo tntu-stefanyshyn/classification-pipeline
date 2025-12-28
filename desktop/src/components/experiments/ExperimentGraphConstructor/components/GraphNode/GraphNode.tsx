@@ -1,11 +1,13 @@
 import { Handle, Position } from 'reactflow';
 import { stageLabels } from '../../constants/stages';
 import { getStageLabel } from '../../utils/stage';
+import { ClassificationStage } from '../../graphql';
 import type { GraphNodeProps } from './GraphNode.types';
 
 export function GraphNode({ data }: GraphNodeProps) {
   if (data.isRoot) {
     const rootClassName = `org-node root${data.isActive ? ' active' : ''}`;
+    const addDisabled = data.graphActionsDisabled;
     return (
       <div className={rootClassName}>
         <Handle type="source" position={Position.Right} className="graph-node-handle" />
@@ -18,7 +20,7 @@ export function GraphNode({ data }: GraphNodeProps) {
             className="btn ghost small icon"
             type="button"
             onClick={() => data.onAdd(null)}
-            disabled={data.graphActionsDisabled}
+            disabled={addDisabled}
             aria-label="Додати вузол"
             title="Додати вузол"
           >
@@ -41,6 +43,8 @@ export function GraphNode({ data }: GraphNodeProps) {
   const stageLabel = data.stage ? stageLabels[data.stage] : null;
   const meta = stageLabel ?? getStageLabel(data.stage);
   const className = `org-node${data.isActive ? ' active' : ''}`;
+  const addDisabled = data.graphActionsDisabled;
+  const canAddChild = data.stage !== ClassificationStage.CLASSIFICATION;
 
   return (
     <div className={className}>
@@ -56,24 +60,26 @@ export function GraphNode({ data }: GraphNodeProps) {
         <span className="org-node-meta">{meta}</span>
       </button>
       <div className="org-node-actions">
-        <button
-          className="btn ghost small icon"
-          type="button"
-          onClick={() => data.onAdd(data._id)}
-          disabled={data.graphActionsDisabled}
-          aria-label="Додати дочірній вузол"
-          title="Додати дочірній вузол"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 5v14M5 12h14"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth="1.6"
-            />
-          </svg>
-        </button>
+        {canAddChild ? (
+          <button
+            className="btn ghost small icon"
+            type="button"
+            onClick={() => data.onAdd(data._id)}
+            disabled={addDisabled}
+            aria-label="Додати дочірній вузол"
+            title="Додати дочірній вузол"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 5v14M5 12h14"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeWidth="1.6"
+              />
+            </svg>
+          </button>
+        ) : null}
         <button
           className="btn ghost small icon"
           type="button"

@@ -2,6 +2,7 @@ import { Arg, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { ComputationRun } from '../classes/ComputationRun';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
+import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { ComputationManager } from '../services/ComputationManager';
 
 @Resolver()
@@ -21,5 +22,12 @@ export class Computations {
     @Arg('input', () => EnqueueExperimentRunsInput) input: EnqueueExperimentRunsInput
   ): Promise<ComputationRun[]> {
     return this.manager.enqueueRuns(input);
+  }
+
+  @Mutation(() => ComputationRun)
+  stopExperimentRun(
+    @Arg('input', () => StopExperimentRunInput) input: StopExperimentRunInput
+  ): Promise<ComputationRun> {
+    return this.manager.stopRun(input.runId);
   }
 }

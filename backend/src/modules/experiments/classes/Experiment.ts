@@ -22,7 +22,7 @@ export class Experiment extends TimeStamps {
     required: true,
     enum: ExperimentStatus,
     type: () => String,
-    default: ExperimentStatus.queued,
+    default: ExperimentStatus.creating,
   })
   status!: ExperimentStatus;
 

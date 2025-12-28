@@ -1,4 +1,5 @@
 import { useFormikContext } from 'formik';
+import { Alert } from '../../ui/Alert/Alert';
 
 export function FormError() {
   const { errors } = useFormikContext<{ form: string }>();
@@ -6,9 +7,9 @@ export function FormError() {
 
   if (error) {
     return (
-      <div className="alert error-alert" style={{ marginBottom: '0.75rem' }}>
+      <Alert variant="error" className="form-alert">
         {error}
-      </div>
+      </Alert>
     );
   }
   return null;

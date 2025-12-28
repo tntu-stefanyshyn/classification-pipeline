@@ -33,8 +33,10 @@ type ComputationRun {
 enum ComputationStatus {
   completed
   failed
+  idle
   queued
   running
+  stopped
 }
 
 input CreateExperimentInput {
@@ -74,14 +76,28 @@ type Experiment {
 
 enum ExperimentStatus {
   completed
-  failed
-  queued
-  running
+  computing
+  configuring
+  creating
 }
 
 input GenerateExperimentGraphInput {
   _id: ID!
   stages: [GraphStageSelectionInput!]!
+}
+
+type GraphMetricWeights {
+  accuracy: Float!
+  f1: Float!
+  ntps: Float!
+  rocAuc: Float!
+}
+
+input GraphMetricWeightsInput {
+  accuracy: Float!
+  f1: Float!
+  ntps: Float!
+  rocAuc: Float!
 }
 
 type GraphNode {
@@ -124,6 +140,17 @@ type GraphStructure {
   createdAt: DateTimeISO!
   experimentId: ID!
   nodes: [GraphNode!]!
+  settings: GraphStructureSettings
+}
+
+type GraphStructureSettings {
+  metrics: GraphMetricWeights!
+  queues: [ComputationQueue!]!
+}
+
+input GraphStructureSettingsInput {
+  metrics: GraphMetricWeightsInput!
+  queues: [ComputationQueue!]!
 }
 
 input LoginInput {
@@ -139,6 +166,7 @@ type Mutation {
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
+  stopExperimentRun(input: StopExperimentRunInput!): ComputationRun!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
 }
 
@@ -177,6 +205,10 @@ type SignedUploadUrl {
   url: String!
 }
 
+input StopExperimentRunInput {
+  runId: ID!
+}
+
 type Technology {
   _id: ID!
   name: String!
@@ -206,6 +238,7 @@ input UpdateExperimentInput {
   description: String
   fileId: ID
   graphNodes: [GraphNodeInput!]
+  graphSettings: GraphStructureSettingsInput
   name: String
 }
 
@@ -215,6 +248,7 @@ type UploadedFile {
   sizeMb: Int!
   status: String!
   uploadedAt: DateTimeISO!
+  uploadedByName: String
 }
 
 type User {

@@ -1,11 +1,7 @@
-import { useParams } from 'react-router-dom';
-import { ExperimentGraphConstructor } from '../../../components/experiments/ExperimentGraphConstructor/ExperimentGraphConstructor';
+import { ExperimentConstructorPage as ExperimentConstructorPageView } from '../../../components/pages/ExperimentConstructorPage/ExperimentConstructorPage';
 
 export function ExperimentConstructorPage() {
-  const params = useParams();
-  const id = params.id ?? '';
-
-  return <ExperimentGraphConstructor experimentId={id} />;
+  return <ExperimentConstructorPageView />;
 }
 
 export default ExperimentConstructorPage;

@@ -1,17 +1,17 @@
 import { registerEnumType } from 'type-graphql';
 
 export enum ExperimentStatus {
-  queued = 'queued',
-  running = 'running',
-  failed = 'failed',
+  creating = 'creating',
+  configuring = 'configuring',
+  computing = 'computing',
   completed = 'completed',
 }
 
 registerEnumType(ExperimentStatus, { name: 'ExperimentStatus' });
 
 export const EXPERIMENT_STATUS_VALUES: ExperimentStatus[] = [
-  ExperimentStatus.queued,
-  ExperimentStatus.running,
-  ExperimentStatus.failed,
+  ExperimentStatus.creating,
+  ExperimentStatus.configuring,
+  ExperimentStatus.computing,
   ExperimentStatus.completed,
 ];

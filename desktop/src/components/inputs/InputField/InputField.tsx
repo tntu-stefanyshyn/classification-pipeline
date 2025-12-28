@@ -8,6 +8,7 @@ export function InputField({
   placeholder,
   autoComplete,
   id,
+  disabled,
 }: InputFieldProps) {
   const [field, meta] = useField(name);
   const hasError = Boolean(meta.touched && meta.error);
@@ -22,6 +23,7 @@ export function InputField({
         type={type}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        disabled={disabled}
         className={hasError ? 'input-error' : ''}
       />
       <p className="error error-space">{hasError ? meta.error : '\u00A0'}</p>

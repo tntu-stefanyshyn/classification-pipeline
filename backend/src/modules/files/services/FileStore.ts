@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { StorageClient } from '../../storage/services/StorageClient';
 import { UploadedFile } from '../classes/UploadedFile';
 import { UploadedFileModel } from '../models/UploadedFileModel';
@@ -7,6 +8,8 @@ type CreateFileInput = {
   sizeMb: number;
   status?: string;
   storageKey: string;
+  uploadedById?: string;
+  uploadedByName?: string;
 };
 
 export class FileStore {
@@ -27,12 +30,19 @@ export class FileStore {
     if (input.sizeMb <= 0) throw new Error('sizeMb must be positive');
 
     const status = input.status?.trim();
+    const uploadedById = input.uploadedById?.trim() ?? '';
+    const uploadedByName = input.uploadedByName?.trim() ?? '';
     const file = await UploadedFileModel.create({
       filename,
       storageKey,
       sizeMb: input.sizeMb,
       status: status || undefined,
       uploadedAt: new Date(),
+      uploadedByName: uploadedByName || undefined,
+      uploadedById:
+        uploadedById && Types.ObjectId.isValid(uploadedById)
+          ? new Types.ObjectId(uploadedById)
+          : undefined,
     });
 
     return file.toObject({ getters: true });

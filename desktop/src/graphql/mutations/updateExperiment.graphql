@@ -10,6 +10,15 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
       _id
       experimentId
       createdAt
+      settings {
+        metrics {
+          accuracy
+          f1
+          rocAuc
+          ntps
+        }
+        queues
+      }
       nodes {
         _id
         label

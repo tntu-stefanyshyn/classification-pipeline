@@ -23,6 +23,13 @@ export class UploadedFile {
   @prop({ required: true, default: Date.now })
   uploadedAt!: Date;
 
+  @Field({ nullable: true })
+  @prop({ trim: true })
+  uploadedByName?: string;
+
+  @prop({ type: () => Types.ObjectId })
+  uploadedById?: Types.ObjectId;
+
   @prop({ required: true, trim: true })
   storageKey!: string;
 }

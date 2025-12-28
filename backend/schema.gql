@@ -8,6 +8,14 @@ type AuthPayload {
   user: User!
 }
 
+type ClassificationMetric {
+  f1Score: Float!
+  label: String!
+  precision: Float!
+  recall: Float!
+  support: Float!
+}
+
 enum ClassificationStage {
   CLASSIFICATION
   DATA_ENHANCEMENT
@@ -16,9 +24,65 @@ enum ClassificationStage {
   PREPROCESSING
 }
 
+input CompleteExperimentRunInput {
+  resultJson: String
+  runId: ID!
+  statusMessage: String
+}
+
+type ComputationMachineInfo {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  lastSeenAt: DateTimeISO
+  memoryGb: Float
+  platform: String
+  queue: ComputationQueue
+  release: String
+}
+
+input ComputationMachineInfoInput {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  memoryGb: Float
+  platform: String
+  release: String
+}
+
+enum ComputationMode {
+  both
+  cloud
+  local
+}
+
 enum ComputationQueue {
   cloud
   local
+}
+
+type ComputationResult {
+  _id: ID!
+  createdAt: DateTimeISO!
+  experimentId: ID!
+  pathNodeIds: [ID!]!
+  payload: ComputationResultPayload
+  payloadJson: String
+  runId: ID!
+}
+
+type ComputationResultPayload {
+  accuracy: Float
+  classes: [ClassificationMetric!]
+  completedAt: String
+  macroAvg: ClassificationMetric
+  nodes: [String!]
+  pathLength: Float
+  weightedAvg: ClassificationMetric
 }
 
 type ComputationRun {
@@ -26,14 +90,18 @@ type ComputationRun {
   createdAt: DateTimeISO!
   experimentId: ID!
   pathNodeIds: [ID!]!
+  progress: Int
   queue: ComputationQueue!
   status: ComputationStatus!
+  statusMessage: String
+  updatedAt: DateTimeISO!
 }
 
 enum ComputationStatus {
   completed
   failed
   idle
+  paused
   queued
   running
   stopped
@@ -66,6 +134,7 @@ input EnqueueExperimentRunsInput {
 
 type Experiment {
   _id: ID!
+  computationHosts: [ComputationMachineInfo!]
   createdAt: DateTimeISO!
   description: String
   fileId: ID
@@ -79,6 +148,11 @@ enum ExperimentStatus {
   computing
   configuring
   creating
+}
+
+input FailExperimentRunInput {
+  runId: ID!
+  statusMessage: String
 }
 
 input GenerateExperimentGraphInput {
@@ -137,6 +211,7 @@ input GraphStageSelectionInput {
 
 type GraphStructure {
   _id: ID!
+  computationMode: ComputationMode
   createdAt: DateTimeISO!
   experimentId: ID!
   nodes: [GraphNode!]!
@@ -159,19 +234,30 @@ input LoginInput {
 }
 
 type Mutation {
+  claimExperimentRun(
+    machineInfo: ComputationMachineInfoInput
+    queue: ComputationQueue!
+  ): ComputationRun
+  completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
   enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): [ComputationRun!]!
+  failExperimentRun(input: FailExperimentRunInput!): ComputationRun!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
+  pauseExperimentRuns(experimentId: ID!): [ComputationRun!]!
   register(input: RegisterInput!): AuthPayload!
+  resumeExperimentRuns(experimentId: ID!): [ComputationRun!]!
   stopExperimentRun(input: StopExperimentRunInput!): ComputationRun!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
+  updateExperimentRun(input: UpdateExperimentRunInput!): ComputationRun!
 }
 
 type Query {
   experiment(_id: ID!): Experiment
+  experimentResults(experimentId: ID!): [ComputationResult!]!
+  experimentRun(runId: ID!): ComputationRun
   experimentRuns(experimentId: ID!, queue: ComputationQueue): [ComputationRun!]!
   experiments: [Experiment!]!
   health: String!
@@ -237,9 +323,16 @@ input UpdateExperimentInput {
   _id: ID!
   description: String
   fileId: ID
+  graphComputationMode: ComputationMode
   graphNodes: [GraphNodeInput!]
   graphSettings: GraphStructureSettingsInput
   name: String
+}
+
+input UpdateExperimentRunInput {
+  progress: Int
+  runId: ID!
+  statusMessage: String
 }
 
 type UploadedFile {

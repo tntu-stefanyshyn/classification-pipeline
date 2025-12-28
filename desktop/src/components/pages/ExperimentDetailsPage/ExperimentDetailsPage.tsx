@@ -334,7 +334,9 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
           const activeRun =
             runsForPath.find(
               (run) =>
-                run.status === ComputationStatus.running || run.status === ComputationStatus.queued
+                run.status === ComputationStatus.running ||
+                run.status === ComputationStatus.queued ||
+                run.status === ComputationStatus.paused
             ) ?? null;
           const pathLabel = resolvePathLabel(path.nodeIds);
           const actionBusy = enqueueing || stopping;
@@ -577,7 +579,7 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
                 onClick={openSettingsModal}
                 disabled={!experiment || isExperimentLocked}
               >
-                Налаштувати
+                Змінити налаштування
               </button>
             </header>
             {!graphSettingsReady && (

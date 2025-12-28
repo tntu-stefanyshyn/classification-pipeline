@@ -1,0 +1,5 @@
+mutation UpdateExperimentRun($input: UpdateExperimentRunInput!) {
+  updateExperimentRun(input: $input) {
+    _id
+  }
+}

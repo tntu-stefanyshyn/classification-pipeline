@@ -1,0 +1,8 @@
+mutation ResumeExperimentRuns($experimentId: ID!) {
+  resumeExperimentRuns(experimentId: $experimentId) {
+    _id
+    status
+    queue
+    pathNodeIds
+  }
+}

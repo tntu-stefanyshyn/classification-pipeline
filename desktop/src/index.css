@@ -755,6 +755,38 @@ h1 {
   width: 100%;
 }
 
+.graph-status-flow {
+  min-height: 320px;
+  height: 360px;
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+}
+
+.graph-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.graph-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.graph-status-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.graph-status-flow .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
 .react-flow__node {
   font-family: inherit;
 }
@@ -955,6 +987,48 @@ h1 {
   text-transform: lowercase;
 }
 
+.status-node {
+  --node-accent: #0f172a;
+  --node-bg: rgba(15, 23, 42, 0.08);
+  border-color: var(--node-accent);
+  background: var(--node-bg);
+}
+
+.status-node.status-idle {
+  --node-accent: #0f172a;
+  --node-bg: rgba(15, 23, 42, 0.08);
+}
+
+.status-node.status-queued {
+  --node-accent: #2563eb;
+  --node-bg: rgba(37, 99, 235, 0.14);
+}
+
+.status-node.status-running {
+  --node-accent: #f59e0b;
+  --node-bg: rgba(245, 158, 11, 0.16);
+}
+
+.status-node.status-paused {
+  --node-accent: #94a3b8;
+  --node-bg: rgba(148, 163, 184, 0.2);
+}
+
+.status-node.status-failed {
+  --node-accent: #ef4444;
+  --node-bg: rgba(239, 68, 68, 0.16);
+}
+
+.status-node.status-completed {
+  --node-accent: #22c55e;
+  --node-bg: rgba(34, 197, 94, 0.16);
+}
+
+.status-node:hover {
+  border-color: var(--node-accent);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+}
+
 .node-details p {
   margin: 0;
 }
@@ -1055,6 +1129,11 @@ h1 {
   text-transform: capitalize;
 }
 
+.status-idle {
+  background: rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+}
+
 .status-processed {
   background: rgba(34, 197, 94, 0.12);
   color: #15803d;
@@ -1078,6 +1157,11 @@ h1 {
 .status-running {
   background: rgba(251, 191, 36, 0.18);
   color: #b45309;
+}
+
+.status-paused {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
 }
 
 .status-failed {
@@ -1109,6 +1193,17 @@ h1 {
 .status-computing {
   background: rgba(251, 191, 36, 0.18);
   color: #b45309;
+}
+
+.result-snippet {
+  display: inline-block;
+  max-width: 100%;
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .server-info {

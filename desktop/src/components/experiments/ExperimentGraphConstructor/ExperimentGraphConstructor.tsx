@@ -470,7 +470,7 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
           onClick={openSettingsModal}
           disabled={!experiment || isExperimentLocked}
         >
-          Налаштування графа
+          Змінити налаштування
         </button>
         <button
           className="btn danger"

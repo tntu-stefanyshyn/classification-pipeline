@@ -1,9 +1,10 @@
 import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
-import { Field, ID, ObjectType } from 'type-graphql';
+import { Field, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from './ComputationQueue';
 import { ComputationStatus } from './ComputationStatus';
+import { ComputationMachineInfo } from './ComputationMachineInfo';
 
 @ObjectType()
 export class ComputationRun extends TimeStamps {
@@ -31,6 +32,26 @@ export class ComputationRun extends TimeStamps {
   @prop({ required: true, type: () => [Types.ObjectId] })
   pathNodeIds!: Types.ObjectId[];
 
+  @Field(() => Int, { nullable: true })
+  @prop({ min: 0, max: 100 })
+  progress?: number;
+
+  @Field({ nullable: true })
+  @prop({ trim: true })
+  statusMessage?: string;
+
+  @prop({ _id: false, type: () => ComputationMachineInfo })
+  machineInfo?: ComputationMachineInfo;
+
+  @prop({ min: 0, default: 0 })
+  priority?: number;
+
+  @prop({ trim: true })
+  cloudJobId?: string;
+
   @Field(() => Date)
   declare createdAt: Date;
+
+  @Field(() => Date)
+  declare updatedAt: Date;
 }

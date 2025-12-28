@@ -4,5 +4,3 @@ import type { ExperimentDetailsPageProps } from '../../../components/pages/Exper
 export function ExperimentDetailsPage(props: ExperimentDetailsPageProps) {
   return <ExperimentDetailsPageView {...props} />;
 }
-
-export default ExperimentDetailsPage;

@@ -5,3 +5,5 @@
 - Поточні файли:
   - `ARCHITECTURE.md` — огляд архітектури бекенду.
   - `EXPERIMENTS.md` — правила статусів/валідацій та REST звіту.
+  - `AWS_JOBS.md` — налаштування AWS Batch для хмарних обчислень.
+  - `DATABASE.md` — правила роботи з Mongoose (exec/lean/toObject).

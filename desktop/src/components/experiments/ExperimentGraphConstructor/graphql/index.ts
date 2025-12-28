@@ -6,6 +6,7 @@ export {
   ClassificationStage,
   ComputationQueue,
   ExperimentStatus,
+  ComputationMode,
   type GraphNode,
   type GraphStructureSettings,
   type GraphStructureSettingsInput,

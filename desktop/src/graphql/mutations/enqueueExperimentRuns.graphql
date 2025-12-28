@@ -4,7 +4,10 @@ mutation EnqueueExperimentRuns($input: EnqueueExperimentRunsInput!) {
     experimentId
     queue
     status
+    progress
+    statusMessage
     pathNodeIds
     createdAt
+    updatedAt
   }
 }

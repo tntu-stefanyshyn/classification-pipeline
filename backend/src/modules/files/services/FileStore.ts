@@ -52,7 +52,7 @@ export class FileStore {
     const trimmedId = _id.trim();
     if (!trimmedId) throw new Error('File _id is required');
 
-    const file = await UploadedFileModel.findById(trimmedId).lean<UploadedFile>().exec();
+    const file = await UploadedFileModel.findById(trimmedId).lean();
     if (!file) {
       throw new Error('File not found');
     }
@@ -61,7 +61,7 @@ export class FileStore {
     }
 
     await this.getStorage().deleteObject(file.storageKey);
-    await UploadedFileModel.deleteOne({ _id: trimmedId }).exec();
+    await UploadedFileModel.deleteOne({ _id: trimmedId });
     return file;
   }
 

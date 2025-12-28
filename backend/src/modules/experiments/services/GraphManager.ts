@@ -10,6 +10,7 @@ import { Technology } from '../../technologies/classes/Technology';
 import { TechnologyManager } from '../../technologies/services/TechnologyManager';
 import { GraphStructureSettings } from '../classes/GraphStructureSettings';
 import { COMPUTATION_QUEUE_VALUES } from '../../computations/classes/ComputationQueue';
+import { ComputationMode } from '../classes/ComputationMode';
 
 type TechnologyIndex = {
   byStage: Map<ClassificationStage, Technology[]>;
@@ -44,6 +45,19 @@ export class GraphManager {
   ): Promise<GraphStructure> {
     this.validateStageOrder(nodes);
     await GraphStructureModel.updateOne({ experimentId }, { $set: { nodes } }).exec();
+
+    return this.getByExperimentId(experimentId);
+  }
+
+  async updateComputationMode(
+    experimentId: Types.ObjectId | string,
+    computationMode: ComputationMode
+  ): Promise<GraphStructure> {
+    await GraphStructureModel.updateOne(
+      { experimentId },
+      { $set: { computationMode } },
+      { upsert: true }
+    );
 
     return this.getByExperimentId(experimentId);
   }
@@ -417,7 +431,7 @@ export class GraphManager {
       { experimentId: resolvedExperimentId },
       { $set: { nodes: normalizedNodes, createdAt: updatedGraph.createdAt } },
       { upsert: true }
-    ).exec();
+    );
 
     return updatedGraph;
   }

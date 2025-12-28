@@ -1,0 +1,32 @@
+import type { ComputationQueue } from '../../graphql/types.generated';
+
+export type GraphNodeSetting = {
+  key: string;
+  value: string;
+};
+
+export type GraphNode = {
+  _id: string;
+  stage: string;
+  technology: string;
+  settings?: GraphNodeSetting[] | null;
+};
+
+export type HandlerPayload = {
+  run_id: string;
+  experiment_id: string;
+  queue: ComputationQueue;
+  file_id?: string | null;
+  path: Array<{
+    node_id: string;
+    stage: string;
+    technology: string;
+    settings: GraphNodeSetting[];
+  }>;
+};
+
+export type HandlerEvent =
+  | { type: 'progress'; progress?: number; message?: string }
+  | { type: 'result'; result?: Record<string, unknown> }
+  | { type: 'log'; message?: string }
+  | { type: 'error'; message?: string };

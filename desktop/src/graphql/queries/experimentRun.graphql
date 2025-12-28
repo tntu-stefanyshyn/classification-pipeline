@@ -1,0 +1,9 @@
+query ExperimentRun($runId: ID!) {
+  experimentRun(runId: $runId) {
+    _id
+    status
+    statusMessage
+    progress
+    queue
+  }
+}

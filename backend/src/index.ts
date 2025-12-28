@@ -18,11 +18,13 @@ import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
 import { Computations } from './modules/computations/graphql/Computations';
+import { CloudComputationWorker } from './modules/computations/services/CloudComputationWorker';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
 
 async function bootstrap() {
+  let cloudWorker: CloudComputationWorker | null = null;
   const schema = buildSchemaSync({
     resolvers: [
       Health,
@@ -93,6 +95,8 @@ async function bootstrap() {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
     await runSeeders();
+    cloudWorker = new CloudComputationWorker();
+    cloudWorker.start();
   } else {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
@@ -100,6 +104,12 @@ async function bootstrap() {
   app.listen(config.port, () => {
     console.log(`🚀 GraphQL ready at http://localhost:${config.port}${apollo.graphqlPath}`);
   });
+
+  const shutdown = () => {
+    cloudWorker?.stop();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 bootstrap().catch((error) => {

@@ -4,6 +4,7 @@ import { ComputationStatus, ExperimentStatus } from '../graphql';
 export const runStatusLabels: Record<PathStatus, string> = {
   [ComputationStatus.queued]: 'Очікування',
   [ComputationStatus.running]: 'Обчислення',
+  [ComputationStatus.paused]: 'Пауза',
   [ComputationStatus.completed]: 'Завершено',
   [ComputationStatus.failed]: 'Провалився',
   [ComputationStatus.stopped]: 'Зупинено',
@@ -25,26 +26,29 @@ export const graphMetricLabels: Record<string, string> = {
 };
 
 export const runStatusColors: Record<PathStatus, string> = {
-  [ComputationStatus.queued]: '#2563eb',
-  [ComputationStatus.running]: '#f59e0b',
-  [ComputationStatus.failed]: '#ef4444',
-  [ComputationStatus.completed]: '#22c55e',
-  [ComputationStatus.stopped]: '#f472b6',
-  [ComputationStatus.idle]: '#cbd5e1',
+  queued: '#2563eb',
+  running: '#f59e0b',
+  failed: '#ef4444',
+  completed: '#22c55e',
+  stopped: '#f472b6',
+  idle: '#cbd5e1',
+  paused: '#a855f7',
 };
 
 export const runStatusPriority: Record<PathStatus, number> = {
-  [ComputationStatus.running]: 1,
-  [ComputationStatus.queued]: 2,
-  [ComputationStatus.failed]: 3,
-  [ComputationStatus.stopped]: 4,
-  [ComputationStatus.completed]: 5,
-  [ComputationStatus.idle]: 6,
+  running: 1,
+  queued: 2,
+  failed: 3,
+  stopped: 4,
+  completed: 5,
+  idle: 6,
+  paused: 7,
 };
 
 export const statusLegendOrder: PathStatus[] = [
   ComputationStatus.queued,
   ComputationStatus.running,
+  ComputationStatus.paused,
   ComputationStatus.failed,
   ComputationStatus.completed,
   ComputationStatus.stopped,

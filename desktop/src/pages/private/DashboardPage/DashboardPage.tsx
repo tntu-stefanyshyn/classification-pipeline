@@ -1,8 +1,11 @@
-import { DashboardPage as DashboardPageView } from '../../../components/pages/DashboardPage/DashboardPage';
-import type { DashboardPageProps } from '../../../components/pages/DashboardPage/DashboardPage.types';
+import type { FC } from 'react';
+import {
+  DashboardPage as DashboardPageView,
+  type DashboardPageProps,
+} from '../../../components/pages/DashboardPage';
 
-export function DashboardPage(props: DashboardPageProps) {
+const DashboardPage: FC<DashboardPageProps> = (props) => {
   return <DashboardPageView {...props} />;
-}
+};
 
 export default DashboardPage;

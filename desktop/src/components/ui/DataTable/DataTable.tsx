@@ -10,7 +10,7 @@ import type { DataTableProps } from './DataTable.types';
 import { defaultLabels } from './constants/defaultLabels';
 import { isInteractiveTarget } from './utils/isInteractiveTarget';
 
-export function DataTable<TData>({
+const DataTable = <TData,>({
   data,
   columns,
   pageSize = 6,
@@ -20,7 +20,7 @@ export function DataTable<TData>({
   className,
   getRowId,
   onRowClick,
-}: DataTableProps<TData>) {
+}: DataTableProps<TData>) => {
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
@@ -142,4 +142,6 @@ export function DataTable<TData>({
       )}
     </div>
   );
-}
+};
+
+export default DataTable;

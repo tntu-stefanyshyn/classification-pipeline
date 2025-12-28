@@ -1,15 +1,16 @@
 import { NavLink } from 'react-router-dom';
+import type { FC } from 'react';
 import { navItems } from './constants/navItems';
 import type { AppSidebarProps } from './AppSidebar.types';
 
-export function AppSidebar({
+const AppSidebar: FC<AppSidebarProps> = ({
   onLogout,
   isOpen = true,
   isMobile = false,
   onCloseMobile,
   theme,
   onToggleTheme,
-}: AppSidebarProps) {
+}) => {
   return (
     <aside className={`app-sidebar ${isOpen ? 'open' : ''} ${isMobile ? 'mobile' : ''}`}>
       <div className="sidebar-inner">
@@ -54,4 +55,6 @@ export function AppSidebar({
       </div>
     </aside>
   );
-}
+};
+
+export default AppSidebar;

@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
-import { AuthLayout } from '../../layout/AuthLayout/AuthLayout';
+import { useMemo, type FC } from 'react';
+import { AuthLayout } from '../../layout/AuthLayout';
 import { useDashboardDataQuery, useServerInfoQuery } from './graphql';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import type { DashboardPageProps } from './DashboardPage.types';
 
-export function DashboardPage({ onLogout }: DashboardPageProps) {
+const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
   const { data, loading, error, refetch } = useDashboardDataQuery({
     fetchPolicy: 'cache-and-network',
   });
@@ -172,6 +172,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </div>
     </AuthLayout>
   );
-}
+};
 
 export default DashboardPage;

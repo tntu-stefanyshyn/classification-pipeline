@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AppSidebar } from '../AppSidebar/AppSidebar';
+import { useEffect, useMemo, useState, type FC } from 'react';
+import { AppSidebar } from '../AppSidebar';
 import { getIsMobile } from './utils/getIsMobile';
 import type { AuthLayoutProps, ThemeMode } from './AuthLayout.types';
 
-export function AuthLayout({
+const AuthLayout: FC<AuthLayoutProps> = ({
   badge,
   title,
   subtitle,
   actions,
   children,
   onLogout,
-}: AuthLayoutProps) {
+}) => {
   const [theme, setTheme] = useState<ThemeMode>(() =>
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   );
@@ -84,6 +84,6 @@ export function AuthLayout({
       </main>
     </div>
   );
-}
+};
 
 export default AuthLayout;

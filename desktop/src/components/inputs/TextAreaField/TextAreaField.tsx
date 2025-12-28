@@ -1,7 +1,8 @@
 import { useField } from 'formik';
+import type { FC } from 'react';
 import type { TextAreaFieldProps } from './TextAreaField.types';
 
-export function TextAreaField({ name, label, placeholder, id, disabled }: TextAreaFieldProps) {
+const TextAreaField: FC<TextAreaFieldProps> = ({ name, label, placeholder, id, disabled }) => {
   const [field, meta] = useField(name);
   const hasError = Boolean(meta.touched && meta.error);
   const inputId = id ?? name;
@@ -19,6 +20,6 @@ export function TextAreaField({ name, label, placeholder, id, disabled }: TextAr
       <p className="error error-space">{hasError ? meta.error : '\u00A0'}</p>
     </div>
   );
-}
+};
 
 export default TextAreaField;

@@ -1,11 +1,12 @@
 import { useParams } from 'react-router-dom';
-import { ExperimentGraphConstructor } from '../../experiments/ExperimentGraphConstructor/ExperimentGraphConstructor';
+import type { FC } from 'react';
+import { ExperimentGraphConstructor } from '../../experiments/ExperimentGraphConstructor';
 
-export function ExperimentConstructorPage() {
+const ExperimentConstructorPage: FC = () => {
   const params = useParams();
   const id = params.id ?? '';
 
   return <ExperimentGraphConstructor experimentId={id} />;
-}
+};
 
 export default ExperimentConstructorPage;

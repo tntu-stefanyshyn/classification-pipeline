@@ -1,8 +1,11 @@
-import { FilesPage as FilesPageView } from '../../../components/pages/FilesPage/FilesPage';
-import type { FilesPageProps } from '../../../components/pages/FilesPage/FilesPage.types';
+import type { FC } from 'react';
+import {
+  FilesPage as FilesPageView,
+  type FilesPageProps,
+} from '../../../components/pages/FilesPage';
 
-export function FilesPage(props: FilesPageProps) {
+const FilesPage: FC<FilesPageProps> = (props) => {
   return <FilesPageView {...props} />;
-}
+};
 
 export default FilesPage;

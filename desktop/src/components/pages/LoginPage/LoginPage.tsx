@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import LoginForm from '../../auth/LoginForm/LoginForm';
+import type { FC } from 'react';
+import { LoginForm } from '../../auth/LoginForm';
 import type { LoginPageProps } from './LoginPage.types';
 
-export function LoginPage({ onLoginSuccess }: LoginPageProps) {
+const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
   return (
     <main className="page unauth">
       <div className="auth-form-panel">
@@ -22,6 +23,6 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
       </div>
     </main>
   );
-}
+};
 
 export default LoginPage;

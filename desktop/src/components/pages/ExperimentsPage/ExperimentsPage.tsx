@@ -1,18 +1,17 @@
 import { Form, Formik } from 'formik';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type FC } from 'react';
 import type { ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Link, useNavigate } from 'react-router-dom';
-import { AuthLayout } from '../../layout/AuthLayout/AuthLayout';
-import { FileInput } from '../../inputs/FileInput/FileInput';
-import { DataTable } from '../../ui/DataTable/DataTable';
-import { Modal } from '../../ui/Modal/Modal';
+import { AuthLayout } from '../../layout/AuthLayout';
+import { FileInput } from '../../inputs/FileInput';
+import { DataTable, tableLabels } from '../../ui/DataTable';
+import { Modal } from '../../ui/Modal';
 import { isCsvFile } from '../../../utils/fileValidation';
-import { InputField } from '../../inputs/InputField/InputField';
-import { TextAreaField } from '../../inputs/TextAreaField/TextAreaField';
+import { InputField } from '../../inputs/InputField';
+import { TextAreaField } from '../../inputs/TextAreaField';
 import { experimentSchema } from './constants/experimentSchema';
 import { statusLabels } from './constants/statusLabels';
-import { tableLabels } from '../../ui/DataTable/constants/tableLabels';
 import {
   refetchDashboardDataQuery,
   refetchExperimentsQuery,
@@ -29,7 +28,7 @@ import type {
 } from './ExperimentsPage.types';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 
-export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
+const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -351,6 +350,6 @@ export function ExperimentsPage({ onLogout }: ExperimentsPageProps) {
       </Modal>
     </AuthLayout>
   );
-}
+};
 
 export default ExperimentsPage;

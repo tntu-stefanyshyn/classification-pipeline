@@ -1,13 +1,14 @@
+import type { FC } from 'react';
 import type { CheckboxFieldProps } from './CheckboxField.types';
 
-export function CheckboxField({
+const CheckboxField: FC<CheckboxFieldProps> = ({
   label,
   checked,
   onChange,
   id,
   name,
   disabled,
-}: CheckboxFieldProps) {
+}) => {
   const inputId = id ?? name ?? label;
 
   return (
@@ -23,6 +24,6 @@ export function CheckboxField({
       <label htmlFor={inputId}>{label}</label>
     </div>
   );
-}
+};
 
 export default CheckboxField;

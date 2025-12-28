@@ -1,6 +1,11 @@
-import { ExperimentDetailsPage as ExperimentDetailsPageView } from '../../../components/pages/ExperimentDetailsPage/ExperimentDetailsPage';
-import type { ExperimentDetailsPageProps } from '../../../components/pages/ExperimentDetailsPage/ExperimentDetailsPage.types';
+import type { FC } from 'react';
+import {
+  ExperimentDetailsPage as ExperimentDetailsPageView,
+  type ExperimentDetailsPageProps,
+} from '../../../components/pages/ExperimentDetailsPage';
 
-export function ExperimentDetailsPage(props: ExperimentDetailsPageProps) {
+const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = (props) => {
   return <ExperimentDetailsPageView {...props} />;
-}
+};
+
+export default ExperimentDetailsPage;

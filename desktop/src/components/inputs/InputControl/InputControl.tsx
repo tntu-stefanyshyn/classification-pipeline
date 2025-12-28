@@ -1,6 +1,7 @@
+import type { FC } from 'react';
 import type { InputControlProps } from './InputControl.types';
 
-export function InputControl({
+const InputControl: FC<InputControlProps> = ({
   label,
   value,
   onChange,
@@ -16,7 +17,7 @@ export function InputControl({
   required,
   error,
   onBlur,
-}: InputControlProps) {
+}) => {
   const inputId = id ?? name ?? label;
   const hasError = Boolean(error);
 
@@ -42,6 +43,6 @@ export function InputControl({
       <p className="error error-space">{hasError ? error : '\u00A0'}</p>
     </div>
   );
-}
+};
 
 export default InputControl;

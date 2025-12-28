@@ -1,6 +1,9 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { getStageLabel } from '../../../../components/experiments/ExperimentGraphConstructor/utils/stage';
-import type { ClassificationStage } from '../../../../components/experiments/ExperimentGraphConstructor/graphql';
+import type { FC } from 'react';
+import {
+  getStageLabel,
+  type ClassificationStage,
+} from '../../../../../components/experiments/ExperimentGraphConstructor';
 
 export type NodeRunStatus = 'idle' | 'queued' | 'running' | 'paused' | 'failed' | 'completed';
 
@@ -13,7 +16,7 @@ export type StatusGraphNodeData = {
   onInfo: (nodeId: string) => void;
 };
 
-export function StatusGraphNode({ data }: NodeProps<StatusGraphNodeData>) {
+const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
   if (data.isRoot) {
     return (
       <div className={`org-node root status-node status-${data.status}`}>
@@ -60,4 +63,6 @@ export function StatusGraphNode({ data }: NodeProps<StatusGraphNodeData>) {
       </div>
     </div>
   );
-}
+};
+
+export default StatusGraphNode;

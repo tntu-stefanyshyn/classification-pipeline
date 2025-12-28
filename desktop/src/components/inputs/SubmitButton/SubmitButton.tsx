@@ -1,7 +1,8 @@
 import { useFormikContext } from 'formik';
+import type { FC } from 'react';
 import type { SubmitButtonProps } from './SubmitButton.types';
 
-export function SubmitButton({ label, loadingLabel }: SubmitButtonProps) {
+const SubmitButton: FC<SubmitButtonProps> = ({ label, loadingLabel }) => {
   const { isSubmitting, isValid } = useFormikContext();
 
   return (
@@ -9,6 +10,6 @@ export function SubmitButton({ label, loadingLabel }: SubmitButtonProps) {
       {isSubmitting ? (loadingLabel ?? label) : label}
     </button>
   );
-}
+};
 
 export default SubmitButton;

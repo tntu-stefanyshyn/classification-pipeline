@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import RegisterForm from '../../auth/RegisterForm/RegisterForm';
+import type { FC } from 'react';
+import { RegisterForm } from '../../auth/RegisterForm';
 import type { RegisterPageProps } from './RegisterPage.types';
 
-export function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
+const RegisterPage: FC<RegisterPageProps> = ({ onRegisterSuccess }) => {
   return (
     <main className="page unauth">
       <div className="auth-form-panel">
@@ -22,6 +23,6 @@ export function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
       </div>
     </main>
   );
-}
+};
 
 export default RegisterPage;

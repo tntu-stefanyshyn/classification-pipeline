@@ -35,16 +35,19 @@ type ResultPayload =
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const streamToString = async (
-  stream?: Readable | { transformToString?: () => Promise<string> }
-) => {
+type TransformableStream = { transformToString: () => Promise<string> };
+
+const hasTransformToString = (value: unknown): value is TransformableStream =>
+  typeof (value as TransformableStream | undefined)?.transformToString === 'function';
+
+const streamToString = async (stream?: Readable | TransformableStream) => {
   if (!stream) return '';
-  if (typeof stream.transformToString === 'function') {
+  if (hasTransformToString(stream)) {
     return stream.transformToString();
   }
   return new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
-    (stream as Readable)
+    stream
       .on('data', (chunk) => chunks.push(Buffer.from(chunk)))
       .on('error', (error) => reject(error))
       .on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));

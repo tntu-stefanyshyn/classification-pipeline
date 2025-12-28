@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import ReactFlow from 'reactflow';
-import { Modal } from '../../ui/Modal/Modal';
-import { CheckboxField } from '../../inputs/CheckboxField/CheckboxField';
-import { InputControl } from '../../inputs/InputControl/InputControl';
-import { GraphSettingsModal } from '../GraphSettingsModal/GraphSettingsModal';
-import { GraphNode } from './components/GraphNode/GraphNode';
+import { Modal } from '../../ui/Modal';
+import { CheckboxField } from '../../inputs/CheckboxField';
+import { InputControl } from '../../inputs/InputControl';
+import { GraphSettingsModal } from '../GraphSettingsModal';
+import { GraphNode } from './components/GraphNode';
 import { classificationStages, stageLabels } from './constants/stages';
 import { DEFAULT_NODE_TYPE, DEFAULT_STAGE } from './constants/graph';
 import {
@@ -39,7 +39,7 @@ import type {
   StageSelection,
 } from './ExperimentGraphConstructor.types';
 
-export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphConstructorProps) {
+const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ experimentId }) => {
   const location = useLocation();
   const { data, loading, error } = useExperimentQuery({
     variables: { _id: experimentId },
@@ -780,5 +780,5 @@ export function ExperimentGraphConstructor({ experimentId }: ExperimentGraphCons
       </Modal>
     </div>
   );
-}
+};
 export default ExperimentGraphConstructor;

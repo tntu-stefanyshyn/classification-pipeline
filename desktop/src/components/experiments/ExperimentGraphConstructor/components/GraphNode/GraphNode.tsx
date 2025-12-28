@@ -1,10 +1,11 @@
 import { Handle, Position } from 'reactflow';
+import type { FC } from 'react';
 import { stageLabels } from '../../constants/stages';
 import { getStageLabel } from '../../utils/stage';
 import { ClassificationStage } from '../../graphql';
 import type { GraphNodeProps } from './GraphNode.types';
 
-export function GraphNode({ data }: GraphNodeProps) {
+const GraphNode: FC<GraphNodeProps> = ({ data }) => {
   if (data.isRoot) {
     const rootClassName = `org-node root${data.isActive ? ' active' : ''}`;
     const addDisabled = data.graphActionsDisabled;
@@ -121,6 +122,6 @@ export function GraphNode({ data }: GraphNodeProps) {
       </div>
     </div>
   );
-}
+};
 
 export default GraphNode;

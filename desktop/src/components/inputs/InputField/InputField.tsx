@@ -1,7 +1,8 @@
 import { useField } from 'formik';
+import type { FC } from 'react';
 import type { InputFieldProps } from './InputField.types';
 
-export function InputField({
+const InputField: FC<InputFieldProps> = ({
   name,
   label,
   type = 'text',
@@ -9,7 +10,7 @@ export function InputField({
   autoComplete,
   id,
   disabled,
-}: InputFieldProps) {
+}) => {
   const [field, meta] = useField(name);
   const hasError = Boolean(meta.touched && meta.error);
   const inputId = id ?? name;
@@ -29,6 +30,6 @@ export function InputField({
       <p className="error error-space">{hasError ? meta.error : '\u00A0'}</p>
     </div>
   );
-}
+};
 
 export default InputField;

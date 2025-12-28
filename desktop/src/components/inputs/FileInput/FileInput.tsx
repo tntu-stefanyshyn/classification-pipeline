@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import type { FileInputProps } from './FileInput.types';
 
-export const FileInput = forwardRef<HTMLInputElement, FileInputProps>(
+const FileInput = forwardRef<HTMLInputElement, FileInputProps>(
   ({ accept, onChange, multiple, id, name, disabled, className, hidden = true }, ref) => (
     <input
       ref={ref}

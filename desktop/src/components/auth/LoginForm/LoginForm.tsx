@@ -1,13 +1,14 @@
 import { Form, Formik } from 'formik';
-import { InputField } from '../../inputs/InputField/InputField';
-import { SubmitButton } from '../../inputs/SubmitButton/SubmitButton';
-import { FormError } from '../../inputs/FormError/FormError';
+import type { FC } from 'react';
+import { InputField } from '../../inputs/InputField';
+import { SubmitButton } from '../../inputs/SubmitButton';
+import { FormError } from '../../inputs/FormError';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
 import { loginSchema } from './constants/loginSchema';
 import { useLoginMutation } from './graphql';
 import type { LoginFormProps } from './LoginForm.types';
 
-export function LoginForm({ onSuccess }: LoginFormProps) {
+const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
   const [loginMutation] = useLoginMutation();
 
   return (
@@ -44,6 +45,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       </Form>
     </Formik>
   );
-}
+};
 
 export default LoginForm;

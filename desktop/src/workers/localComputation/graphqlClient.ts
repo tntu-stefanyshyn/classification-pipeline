@@ -6,12 +6,6 @@ type GraphQLResponse<T> = {
   errors?: Array<{ message?: string }>;
 };
 
-export const getGraphqlEndpoint = () =>
-  process.env.GRAPHQL_ENDPOINT ||
-  process.env.VITE_GRAPHQL_ENDPOINT ||
-  config.renderer.graphqlEndpoint ||
-  'http://localhost:4000/graphql';
-
 export const isFetchAvailable = () => typeof fetch === 'function';
 
 export class GraphqlClient {
@@ -49,4 +43,7 @@ export class GraphqlClient {
   }
 }
 
-export const createGraphqlClient = () => new GraphqlClient(getGraphqlEndpoint());
+export const createGraphqlClient = () => {
+  console.log(config.renderer.graphqlEndpoint);
+  return new GraphqlClient(config.renderer.graphqlEndpoint);
+};

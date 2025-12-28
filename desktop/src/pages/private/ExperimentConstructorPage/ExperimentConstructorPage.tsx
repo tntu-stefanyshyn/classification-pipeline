@@ -1,7 +1,8 @@
-import { ExperimentConstructorPage as ExperimentConstructorPageView } from '../../../components/pages/ExperimentConstructorPage/ExperimentConstructorPage';
+import type { FC } from 'react';
+import { ExperimentConstructorPage as ExperimentConstructorPageView } from '../../../components/pages/ExperimentConstructorPage';
 
-export function ExperimentConstructorPage() {
+const ExperimentConstructorPage: FC = () => {
   return <ExperimentConstructorPageView />;
-}
+};
 
 export default ExperimentConstructorPage;

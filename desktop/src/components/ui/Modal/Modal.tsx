@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModalProps } from './Modal.types';
 
-export function Modal({ open, title, children, footer, onClose }: ModalProps) {
+const Modal: FC<ModalProps> = ({ open, title, children, footer, onClose }) => {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -51,6 +51,6 @@ export function Modal({ open, title, children, footer, onClose }: ModalProps) {
     </div>,
     document.body
   );
-}
+};
 
 export default Modal;

@@ -1,8 +1,11 @@
-import { LoginPage as LoginPageView } from '../../../components/pages/LoginPage/LoginPage';
-import type { LoginPageProps } from '../../../components/pages/LoginPage/LoginPage.types';
+import type { FC } from 'react';
+import {
+  LoginPage as LoginPageView,
+  type LoginPageProps,
+} from '../../../components/pages/LoginPage';
 
-export function LoginPage(props: LoginPageProps) {
+const LoginPage: FC<LoginPageProps> = (props) => {
   return <LoginPageView {...props} />;
-}
+};
 
 export default LoginPage;

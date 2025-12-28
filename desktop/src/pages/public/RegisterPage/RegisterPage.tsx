@@ -1,8 +1,11 @@
-import { RegisterPage as RegisterPageView } from '../../../components/pages/RegisterPage/RegisterPage';
-import type { RegisterPageProps } from '../../../components/pages/RegisterPage/RegisterPage.types';
+import type { FC } from 'react';
+import {
+  RegisterPage as RegisterPageView,
+  type RegisterPageProps,
+} from '../../../components/pages/RegisterPage';
 
-export function RegisterPage(props: RegisterPageProps) {
+const RegisterPage: FC<RegisterPageProps> = (props) => {
   return <RegisterPageView {...props} />;
-}
+};
 
 export default RegisterPage;

@@ -1,12 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type FC } from 'react';
 import type { ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { AuthLayout } from '../../layout/AuthLayout/AuthLayout';
-import { FileInput } from '../../inputs/FileInput/FileInput';
-import { DataTable } from '../../ui/DataTable/DataTable';
+import { AuthLayout } from '../../layout/AuthLayout';
+import { FileInput } from '../../inputs/FileInput';
+import { DataTable, tableLabels } from '../../ui/DataTable';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { statusLabels } from './constants/statusLabels';
-import { tableLabels } from '../../ui/DataTable/constants/tableLabels';
 import {
   useCreateUploadedFileMutation,
   useDeleteUploadedFileMutation,
@@ -16,7 +15,7 @@ import {
 import type { FileRow, FilesPageProps } from './FilesPage.types';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 
-export function FilesPage({ onLogout }: FilesPageProps) {
+const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -264,6 +263,6 @@ export function FilesPage({ onLogout }: FilesPageProps) {
       </section>
     </AuthLayout>
   );
-}
+};
 
 export default FilesPage;

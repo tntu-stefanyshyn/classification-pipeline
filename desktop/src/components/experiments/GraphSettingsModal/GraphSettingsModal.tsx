@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Modal } from '../../ui/Modal/Modal';
-import { Alert } from '../../ui/Alert/Alert';
-import { CheckboxField } from '../../inputs/CheckboxField/CheckboxField';
-import { InputControl } from '../../inputs/InputControl/InputControl';
+import { useEffect, useMemo, useState, type FC } from 'react';
+import { Modal } from '../../ui/Modal';
+import { Alert } from '../../ui/Alert';
+import { CheckboxField } from '../../inputs/CheckboxField';
+import { InputControl } from '../../inputs/InputControl';
 import { metricKeys, metricLabels, queueLabels, queueOptions } from './constants/labels';
 import { buildSettingsDraft, normalizeMetricInput, validateGraphSettings } from './utils/settings';
 import type {
@@ -11,7 +11,7 @@ import type {
   MetricKey,
 } from './GraphSettingsModal.types';
 
-export function GraphSettingsModal({
+const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
   open,
   settings,
   onClose,
@@ -20,7 +20,7 @@ export function GraphSettingsModal({
   isLocked = false,
   errorMessage,
   title = 'Налаштування графа',
-}: GraphSettingsModalProps) {
+}) => {
   const [settingsDraft, setSettingsDraft] = useState<GraphSettingsDraft | null>(null);
 
   useEffect(() => {
@@ -144,6 +144,6 @@ export function GraphSettingsModal({
       ) : null}
     </Modal>
   );
-}
+};
 
 export default GraphSettingsModal;

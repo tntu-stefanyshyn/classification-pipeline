@@ -1,17 +1,17 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { useEffect } from 'react';
-import { DashboardPage } from '../../pages/private/DashboardPage/DashboardPage';
-import { ExperimentsPage } from '../../pages/private/ExperimentsPage/ExperimentsPage';
-import { ExperimentDetailsPage } from '../../pages/private/ExperimentDetailsPage/ExperimentDetailsPage';
-import { ExperimentConstructorPage } from '../../pages/private/ExperimentConstructorPage/ExperimentConstructorPage';
-import { FilesPage } from '../../pages/private/FilesPage/FilesPage';
-import { LoginPage } from '../../pages/public/LoginPage/LoginPage';
-import { RegisterPage } from '../../pages/public/RegisterPage/RegisterPage';
+import { useEffect, type FC } from 'react';
+import { DashboardPage } from '../../pages/private/DashboardPage';
+import { ExperimentsPage } from '../../pages/private/ExperimentsPage';
+import { ExperimentDetailsPage } from '../../pages/private/ExperimentDetailsPage';
+import { ExperimentConstructorPage } from '../../pages/private/ExperimentConstructorPage';
+import { FilesPage } from '../../pages/private/FilesPage';
+import { LoginPage } from '../../pages/public/LoginPage';
+import { RegisterPage } from '../../pages/public/RegisterPage';
 import { tokenService } from '../../services/tokenService';
 import { useMeQuery } from './graphql';
 import type { AppRouterProps } from './AppRouter.types';
 
-export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRouterProps) {
+const AppRouter: FC<AppRouterProps> = ({ isAuthenticated, onLoginSuccess, onLogout }) => {
   const { data, loading, error } = useMeQuery({
     skip: !isAuthenticated,
     fetchPolicy: 'network-only',
@@ -74,6 +74,6 @@ export function AppRouter({ isAuthenticated, onLoginSuccess, onLogout }: AppRout
       </Routes>
     </HashRouter>
   );
-}
+};
 
 export default AppRouter;

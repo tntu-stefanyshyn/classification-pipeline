@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FC } from 'react';
 import type { FullscreenLayoutProps } from './FullscreenLayout.types';
 
-export function FullscreenLayout({
+const FullscreenLayout: FC<FullscreenLayoutProps> = ({
   badge,
   title,
   subtitle,
   actions,
   children,
-}: FullscreenLayoutProps) {
+}) => {
   const [theme] = useState<'light' | 'dark'>(() =>
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   );
@@ -31,6 +31,6 @@ export function FullscreenLayout({
       </section>
     </main>
   );
-}
+};
 
 export default FullscreenLayout;

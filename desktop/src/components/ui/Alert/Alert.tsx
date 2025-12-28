@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { FC, ReactNode } from 'react';
 import type { AlertProps, AlertVariant } from './Alert.types';
 
 const iconByVariant: Record<AlertVariant, ReactNode> = {
@@ -55,7 +55,7 @@ const iconByVariant: Record<AlertVariant, ReactNode> = {
   ),
 };
 
-export function Alert({ variant = 'info', className, children }: AlertProps) {
+const Alert: FC<AlertProps> = ({ variant = 'info', className, children }) => {
   const classes = ['alert', `alert-${variant}`, className].filter(Boolean).join(' ');
   const role = variant === 'error' ? 'alert' : 'status';
 
@@ -65,6 +65,6 @@ export function Alert({ variant = 'info', className, children }: AlertProps) {
       <span className="alert-text">{children}</span>
     </div>
   );
-}
+};
 
 export default Alert;

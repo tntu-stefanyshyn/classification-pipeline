@@ -1,13 +1,14 @@
 import { Form, Formik } from 'formik';
-import { InputField } from '../../inputs/InputField/InputField';
-import { SubmitButton } from '../../inputs/SubmitButton/SubmitButton';
-import { FormError } from '../../inputs/FormError/FormError';
+import type { FC } from 'react';
+import { InputField } from '../../inputs/InputField';
+import { SubmitButton } from '../../inputs/SubmitButton';
+import { FormError } from '../../inputs/FormError';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
 import { registerSchema } from './constants/registerSchema';
 import { useRegisterMutation } from './graphql';
 import type { RegisterFormProps } from './RegisterForm.types';
 
-export function RegisterForm({ onSuccess }: RegisterFormProps) {
+const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
   const [registerMutation] = useRegisterMutation();
 
   return (
@@ -48,6 +49,6 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       </Form>
     </Formik>
   );
-}
+};
 
 export default RegisterForm;

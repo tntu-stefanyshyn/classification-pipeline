@@ -25,6 +25,7 @@ import { runSeeders } from './seeders';
 
 async function bootstrap() {
   let cloudWorker: CloudComputationWorker | null = null;
+  let shuttingDown = false;
   const schema = buildSchemaSync({
     resolvers: [
       Health,
@@ -101,12 +102,33 @@ async function bootstrap() {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
 
-  app.listen(config.port, () => {
+  const httpServer = app.listen(config.port, () => {
     console.log(`🚀 GraphQL ready at http://localhost:${config.port}${apollo.graphqlPath}`);
   });
 
-  const shutdown = () => {
-    cloudWorker?.stop();
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}, shutting down...`);
+
+    try {
+      cloudWorker?.stop();
+      await apollo.stop();
+      await mongoose.disconnect();
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    } catch (error) {
+      console.error('Failed to shutdown gracefully', error);
+    } finally {
+      process.exit(0);
+    }
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

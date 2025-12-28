@@ -1,7 +1,8 @@
 import { useFormikContext } from 'formik';
-import { Alert } from '../../ui/Alert/Alert';
+import type { FC } from 'react';
+import { Alert } from '../../ui/Alert';
 
-export function FormError() {
+const FormError: FC = () => {
   const { errors } = useFormikContext<{ form: string }>();
   const error = errors.form?.trim();
 
@@ -13,6 +14,6 @@ export function FormError() {
     );
   }
   return null;
-}
+};
 
 export default FormError;

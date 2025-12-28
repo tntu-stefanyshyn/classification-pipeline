@@ -17,7 +17,8 @@
   ],
   "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "prestart": "sudo kill -9 `sudo lsof -t -i:4000`",
+    "start": "ts-node-dev src/index.ts",
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {

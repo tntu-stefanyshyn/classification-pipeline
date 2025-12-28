@@ -49,10 +49,7 @@ export class ComputationManager {
       filter.queue = queue;
     }
 
-    const runs = await ComputationRunModel.find(filter)
-      .sort({ createdAt: -1 })
-      .lean<ComputationRun>()
-      .exec();
+    const runs = await ComputationRunModel.find(filter).sort({ createdAt: -1 }).lean();
     await this.syncExperimentStatus(trimmedId);
     return runs;
   }
@@ -517,10 +514,9 @@ export class ComputationManager {
   }
 
   private async syncExperimentStatus(experimentId: string): Promise<void> {
-    const runs = await ComputationRunModel.find({ experimentId })
+    const runs: Pick<ComputationRun, 'status'>[] = await ComputationRunModel.find({ experimentId })
       .select('status')
-      .lean<Pick<ComputationRun, 'status'>>()
-      .exec();
+      .lean();
     if (runs.length === 0) return;
 
     const hasActive = runs.some(

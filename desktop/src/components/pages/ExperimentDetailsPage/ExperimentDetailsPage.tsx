@@ -1,21 +1,22 @@
 import { Link, useParams } from 'react-router-dom';
 import { Form, Formik } from 'formik';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type FC } from 'react';
 import type { ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import ReactFlow from 'reactflow';
-import { AuthLayout } from '../../layout/AuthLayout/AuthLayout';
-import { DataTable } from '../../ui/DataTable/DataTable';
-import { tableLabels } from '../../ui/DataTable/constants/tableLabels';
-import { Modal } from '../../ui/Modal/Modal';
-import { Alert } from '../../ui/Alert/Alert';
-import { FileInput } from '../../inputs/FileInput/FileInput';
-import { InputField } from '../../inputs/InputField/InputField';
-import { TextAreaField } from '../../inputs/TextAreaField/TextAreaField';
-import { GraphSettingsModal } from '../../experiments/GraphSettingsModal/GraphSettingsModal';
-import { GraphNode } from '../../experiments/ExperimentGraphConstructor/components/GraphNode/GraphNode';
-import { buildFlowElements } from '../../experiments/ExperimentGraphConstructor/utils/flow';
-import { ROOT_NODE_ID } from '../../experiments/ExperimentGraphConstructor/constants/graph';
+import { AuthLayout } from '../../layout/AuthLayout';
+import { Alert } from '../../ui/Alert';
+import { DataTable, tableLabels } from '../../ui/DataTable';
+import { Modal } from '../../ui/Modal';
+import { FileInput } from '../../inputs/FileInput';
+import { InputField } from '../../inputs/InputField';
+import { TextAreaField } from '../../inputs/TextAreaField';
+import { GraphSettingsModal } from '../../experiments/GraphSettingsModal';
+import {
+  GraphNode,
+  buildFlowElements,
+  ROOT_NODE_ID,
+} from '../../experiments/ExperimentGraphConstructor';
 import { config } from '../../../config/config';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { formatWeightPercent } from '../../../utils/metricWeights';
@@ -48,7 +49,7 @@ import type { ExperimentDetailsPageProps, PathStatus } from './ExperimentDetails
 import { buildGraphPaths, type GraphPath } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 
-export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) {
+const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => {
   const params = useParams();
   const id = params.id ?? '';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -939,6 +940,6 @@ export function ExperimentDetailsPage({ onLogout }: ExperimentDetailsPageProps) 
       </Modal>
     </AuthLayout>
   );
-}
+};
 
 export default ExperimentDetailsPage;

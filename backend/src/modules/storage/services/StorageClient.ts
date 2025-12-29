@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { config } from '../../../config/config';
 
@@ -68,5 +68,20 @@ export class StorageClient {
     });
 
     await this.client.send(command);
+  }
+
+  async getSignedDownloadUrl(key: string): Promise<SignedUpload> {
+    const safeKey = key.trim();
+    if (!safeKey) {
+      throw new Error('Storage key is required');
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: safeKey,
+    });
+
+    const url = await getSignedUrl(this.client, command, { expiresIn: this.expiresIn });
+    return { url, key: safeKey, expiresIn: this.expiresIn };
   }
 }

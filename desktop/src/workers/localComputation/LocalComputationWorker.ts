@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { app } from 'electron';
 import { ComputationMachineInfoInput, ComputationQueue } from '../../graphql/types.generated';
+import { config } from '../../config/config';
 import { createGraphqlClient, GraphqlClient, isFetchAvailable } from './graphqlClient';
 import {
   claimExperimentRun,
@@ -82,6 +83,7 @@ export class LocalComputationWorker {
     const abortController = new AbortController();
     const stopWatcher = this.startPauseWatcher(run._id, abortController);
     const payload = buildHandlerPayload(run, experiment);
+    payload.backend_url = config.renderer.graphqlEndpoint;
     try {
       const result = await runPythonHandler(
         payload,

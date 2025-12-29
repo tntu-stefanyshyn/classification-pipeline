@@ -44,7 +44,9 @@ const createWindow = () => {
 
 const handleReady = () => {
   createWindow();
-  // localComputationWorker.start();
+  if (process.env.LOCAL_WORKER_ENABLED !== 'false') {
+    localComputationWorker.start();
+  }
 };
 
 // This method will be called when Electron has finished

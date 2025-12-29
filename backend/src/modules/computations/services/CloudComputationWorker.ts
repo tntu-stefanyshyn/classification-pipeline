@@ -10,6 +10,7 @@ import { ComputationRunModel } from '../models/ComputationRunModel';
 import { ComputationManager } from './ComputationManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
+import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 import type { GraphNode } from '../../experiments/classes/GraphNode';
 
 const DEFAULT_POLL_MS = 5000;
@@ -19,6 +20,8 @@ type HandlerPayload = {
   experiment_id: string;
   queue: string;
   file_id?: string | null;
+  file_s3_bucket?: string;
+  file_s3_key?: string;
   result_s3_bucket?: string;
   result_s3_key?: string;
   path: Array<{
@@ -75,6 +78,7 @@ export class CloudComputationWorker {
   private readonly jobQueue: string;
   private readonly jobDefinition: string;
   private readonly jobNamePrefix: string;
+  private readonly inputBucket: string;
   private readonly resultsBucket: string;
   private readonly resultsPrefix: string;
 
@@ -83,6 +87,7 @@ export class CloudComputationWorker {
     this.jobQueue = config.aws.batchJobQueue;
     this.jobDefinition = config.aws.batchJobDefinition;
     this.jobNamePrefix = config.aws.batchJobNamePrefix || 'experiment-run';
+    this.inputBucket = config.s3.bucket;
     this.resultsBucket = config.aws.resultsBucket || config.s3.bucket;
     this.resultsPrefix = (config.aws.resultsPrefix || 'computations').replace(/^\/+|\/+$/g, '');
 
@@ -206,10 +211,23 @@ export class CloudComputationWorker {
       throw new Error('Experiment graph is empty');
     }
 
+    let fileStorageKey: string | undefined;
+    if (experiment.fileId) {
+      const file = await UploadedFileModel.findById(experiment.fileId).lean();
+      if (!file?.storageKey) {
+        throw new Error('Experiment file not found');
+      }
+      fileStorageKey = file.storageKey;
+      if (!this.inputBucket) {
+        throw new Error('S3 bucket is not configured for experiment files');
+      }
+    }
+
     const payload = this.buildPayload(
       runId,
       experiment._id,
       experiment.fileId,
+      fileStorageKey,
       nodes,
       run.pathNodeIds
     );
@@ -242,6 +260,7 @@ export class CloudComputationWorker {
     runId: string,
     experimentId: Types.ObjectId,
     fileId: Types.ObjectId | undefined,
+    fileStorageKey: string | undefined,
     nodes: GraphNode[],
     pathNodeIds: Types.ObjectId[]
   ): HandlerPayload {
@@ -258,6 +277,9 @@ export class CloudComputationWorker {
       experiment_id: String(experimentId),
       queue: 'cloud',
       file_id: fileId ? String(fileId) : null,
+      ...(fileStorageKey && this.inputBucket
+        ? { file_s3_bucket: this.inputBucket, file_s3_key: fileStorageKey }
+        : {}),
       result_s3_bucket: this.resultsBucket,
       result_s3_key: resultKey,
       path: pathNodes.map((node) => ({

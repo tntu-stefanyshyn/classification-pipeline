@@ -10,6 +10,7 @@ import {
 } from '../classes/ComputationMachineInfo';
 import { ComputationRunModel } from '../models/ComputationRunModel';
 import { ComputationResultModel } from '../models/ComputationResultModel';
+import { OptimizationResult } from '../classes/OptimizationResult';
 import {
   ClassificationMetric,
   ComputationResult,
@@ -17,6 +18,7 @@ import {
 } from '../classes/ComputationResult';
 import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
+import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
@@ -24,6 +26,7 @@ import { UpdateExperimentRunInput } from '../classes/UpdateExperimentRunInput';
 import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
+import { OptimizationRunner } from './OptimizationRunner';
 
 type EnqueueRunsInput = {
   experimentId: string;
@@ -35,6 +38,7 @@ type EnqueueRunsInput = {
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
+  private readonly optimizationRunner = new OptimizationRunner();
 
   async listByExperiment(
     experimentId: string,
@@ -60,6 +64,80 @@ export class ComputationManager {
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     return ComputationResultModel.find({ experimentId: trimmedId }).sort({ createdAt: -1 }).lean();
+  }
+
+  async optimizeExperimentRuns(experimentId: string): Promise<OptimizationResult> {
+    const trimmedId = experimentId.trim();
+    if (!trimmedId) throw new Error('Experiment _id is required');
+    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
+
+    const graph = await GraphStructureModel.findOne({ experimentId: trimmedId }).lean();
+    const metrics = graph?.settings?.metrics;
+    if (!metrics) {
+      throw new Error('Graph metrics are not configured.');
+    }
+
+    const rawResults = await ComputationResultModel.find({ experimentId: trimmedId })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (rawResults.length === 0) {
+      throw new Error('Computation results are missing for optimization.');
+    }
+
+    const seenPaths = new Set<string>();
+    const conveyors = rawResults
+      .map((result) => {
+        const pathNodeIds = (result.pathNodeIds ?? []).map((id) => String(id));
+        const pathKey = pathNodeIds.join('.');
+        if (!pathKey || seenPaths.has(pathKey)) return null;
+        seenPaths.add(pathKey);
+
+        let payload: Record<string, unknown> | null = null;
+        let payloadJson: string | null = null;
+        if (result.payloadJson) {
+          payloadJson = result.payloadJson;
+          try {
+            payload = JSON.parse(result.payloadJson) as Record<string, unknown>;
+            payloadJson = null;
+          } catch {
+            payload = null;
+          }
+        } else if (result.payload) {
+          payload = result.payload as Record<string, unknown>;
+        }
+
+        return {
+          run_id: String(result.runId),
+          path_node_ids: pathNodeIds,
+          payload,
+          payload_json: payloadJson,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+    if (conveyors.length === 0) {
+      throw new Error('No completed paths available for optimization.');
+    }
+
+    const optimization = await this.optimizationRunner.run({
+      weights: {
+        accuracy: metrics.accuracy,
+        f1: metrics.f1,
+        rocAuc: metrics.rocAuc,
+        ntps: metrics.ntps,
+      },
+      conveyors,
+    });
+
+    if (!optimization.best) {
+      throw new Error('Optimization failed to select a path.');
+    }
+
+    return {
+      runId: optimization.best.run_id,
+      pathNodeIds: optimization.best.path_node_ids,
+      score: optimization.best.score,
+    };
   }
 
   async getRunById(runId: string): Promise<ComputationRun | null> {

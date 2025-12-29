@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import urllib.request
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import FastICA, PCA
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
@@ -455,12 +456,44 @@ def _run_classifier(
     model.fit(X_train, y_train)
     y_pred = model.predict(X_val)
 
-    return classification_report(y_val, y_pred, output_dict=True, zero_division=0)
+    report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
+    roc_auc = _compute_roc_auc(model, X_val, y_val)
+    if roc_auc is not None:
+        report["roc_auc"] = roc_auc
+    return report
+
+
+def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
+    scores: Any = None
+    if hasattr(model, "predict_proba"):
+        try:
+            scores = model.predict_proba(X_val)
+        except Exception:
+            scores = None
+    if scores is None and hasattr(model, "decision_function"):
+        try:
+            scores = model.decision_function(X_val)
+        except Exception:
+            scores = None
+    if scores is None:
+        return None
+    try:
+        scores_array = np.asarray(scores)
+        if scores_array.ndim == 1:
+            return float(roc_auc_score(y_val, scores_array))
+        if scores_array.shape[1] == 2:
+            return float(roc_auc_score(y_val, scores_array[:, 1]))
+        return float(
+            roc_auc_score(y_val, scores_array, multi_class="ovr", average="macro")
+        )
+    except Exception:
+        return None
 
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     backend_url = payload.get("backend_url") or os.getenv("COMPUTE_BACKEND_URL", "")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
+    started_at = time.time()
 
     path = payload.get("path") or []
     if backend_url and payload.get("run_id"):
@@ -507,6 +540,9 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     if report is None:
         raise ValueError("Не знайдено етап класифікації")
 
+    duration = max(time.time() - started_at, 0.0)
+    sample_count = max(int(len(df)), 1)
+    report["ntps"] = duration / sample_count
     report["path_length"] = total
     report["nodes"] = [node.get("technology") or node.get("stage") for node in path]
     report["completed_at"] = _timestamp()

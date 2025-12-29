@@ -29,6 +29,8 @@ export const config = {
     cloudPollMs: Number(process.env.CLOUD_WORKER_POLL_MS ?? 5000),
     pythonBin: process.env.PYTHON_BIN ?? 'python3',
     handlerModule: process.env.COMPUTE_HANDLER_MODULE ?? 'aws_jobs.compute_handler',
+    optimizationModule:
+      process.env.OPTIMIZATION_HANDLER_MODULE ?? 'aws_jobs.optimization_handler',
   },
 };
 

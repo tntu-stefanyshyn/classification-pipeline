@@ -1,6 +1,7 @@
 import { Arg, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { ComputationRun } from '../classes/ComputationRun';
 import { ComputationResult } from '../classes/ComputationResult';
+import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
@@ -32,6 +33,13 @@ export class Computations {
     @Arg('experimentId', () => ID) experimentId: string
   ): Promise<ComputationResult[]> {
     return this.manager.listResultsByExperiment(experimentId);
+  }
+
+  @Query(() => OptimizationResult)
+  optimizeExperimentRuns(
+    @Arg('experimentId', () => ID) experimentId: string
+  ): Promise<OptimizationResult> {
+    return this.manager.optimizeExperimentRuns(experimentId);
   }
 
   @Mutation(() => [ComputationRun])

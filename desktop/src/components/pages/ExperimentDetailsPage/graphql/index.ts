@@ -4,6 +4,9 @@ export {
 } from '../../../../graphql/queries/generated/experiment';
 export { useExperimentResultsQuery } from '../../../../graphql/queries/generated/experimentResults';
 export { useExperimentRunsQuery } from '../../../../graphql/queries/generated/experimentRuns';
+export {
+  useOptimizeExperimentRunsLazyQuery,
+} from '../../../../graphql/queries/generated/optimizeExperimentRuns';
 export { useUpdateExperimentMutation } from '../../../../graphql/mutations/generated/updateExperiment';
 export { useEnqueueExperimentRunsMutation } from '../../../../graphql/mutations/generated/enqueueExperimentRuns';
 export { useStopExperimentRunMutation } from '../../../../graphql/mutations/generated/stopExperimentRun';

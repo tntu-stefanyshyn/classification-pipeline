@@ -1,0 +1,7 @@
+query OptimizeExperimentRuns($experimentId: ID!) {
+  optimizeExperimentRuns(experimentId: $experimentId) {
+    runId
+    pathNodeIds
+    score
+  }
+}

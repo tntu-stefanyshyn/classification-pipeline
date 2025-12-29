@@ -39,6 +39,7 @@ import {
   useCreateUploadedFileMutation,
   useExperimentQuery,
   useExperimentRunsQuery,
+  useOptimizeExperimentRunsLazyQuery,
   useSignedUploadUrlLazyQuery,
   useStopExperimentRunMutation,
   useUpdateExperimentMutation,
@@ -89,6 +90,8 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();
+  const [optimizeRuns, { loading: optimizing, error: optimizeError }] =
+    useOptimizeExperimentRunsLazyQuery();
 
   const experiment = data?.experiment;
   const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
@@ -101,6 +104,11 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   );
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [resultsPathId, setResultsPathId] = useState<string | null>(null);
+  const [optimizationResult, setOptimizationResult] = useState<{
+    runId: string;
+    pathNodeIds: string[];
+    score: number;
+  } | null>(null);
   const runs = runsData?.experimentRuns ?? [];
   const isExperimentLocked =
     experiment?.status === ExperimentStatus.computing ||
@@ -124,6 +132,8 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   }, [runs]);
   const resolvePathLabel = (nodeIds: string[]) =>
     pathLabels.get(nodeIds.join('.')) ?? nodeIds.join(' -> ');
+  const formatOptimizationScore = (score: number) =>
+    Number.isFinite(score) ? score.toFixed(4) : String(score);
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
@@ -191,6 +201,29 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     const baseUrl = config.renderer.graphqlEndpoint.replace(/\/graphql\/?$/, '');
     return `${baseUrl}/experiments/${experiment._id}/report`;
   }, [experiment]);
+  const canOptimize = Boolean(experiment && graphSettingsReady);
+
+  const handleOptimizeRuns = async () => {
+    if (!experiment || !canOptimize) return;
+    setOptimizationResult(null);
+    try {
+      const { data: optimizationData } = await optimizeRuns({
+        variables: { experimentId: experiment._id },
+      });
+      const best = optimizationData?.optimizeExperimentRuns;
+      if (!best) {
+        setActionStatus('Не вдалося отримати результат оптимізації.');
+        return;
+      }
+      setOptimizationResult({
+        runId: best.runId,
+        pathNodeIds: best.pathNodeIds,
+        score: best.score,
+      });
+    } catch (_err) {
+      // Error state is handled by optimizeError.
+    }
+  };
 
   const handleCloseModal = () => {
     setEditModalOpen(false);
@@ -653,6 +686,14 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 <h3>Шляхи класифікації</h3>
                 <p className="muted">Таблиця запусків та графовий стан обчислень.</p>
               </div>
+              <button
+                className="btn ghost small"
+                type="button"
+                onClick={() => void handleOptimizeRuns()}
+                disabled={!canOptimize || optimizing}
+              >
+                {optimizing ? 'Оптимізація...' : 'Оптимізувати'}
+              </button>
             </header>
             {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
             {graph && (
@@ -677,6 +718,16 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 {enqueueError && <p className="error">Помилка запуску: {enqueueError.message}</p>}
                 {stopError && <p className="error">Помилка зупинки: {stopError.message}</p>}
                 {runsError && <p className="error">Помилка запусків: {runsError.message}</p>}
+                {optimizeError && (
+                  <Alert variant="error">Помилка оптимізації: {optimizeError.message}</Alert>
+                )}
+                {optimizationResult && (
+                  <Alert variant="success">
+                    Найкращий шлях:{' '}
+                    {resolvePathLabel(optimizationResult.pathNodeIds)}. Оцінка:{' '}
+                    {formatOptimizationScore(optimizationResult.score)}.
+                  </Alert>
+                )}
                 {actionStatus && <p className="muted small">{actionStatus}</p>}
 
                 {shouldShowGraphPreview && (

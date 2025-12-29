@@ -90,6 +90,8 @@ export class CloudComputationWorker {
     this.inputBucket = config.s3.bucket;
     this.resultsBucket = config.aws.resultsBucket || config.s3.bucket;
     this.resultsPrefix = (config.aws.resultsPrefix || 'computations').replace(/^\/+|\/+$/g, '');
+    const resultsRegion =
+      config.aws.resultsRegion || config.aws.region || config.s3.region || undefined;
 
     this.batch = new BatchClient({
       region: config.aws.region || config.s3.region || undefined,
@@ -102,7 +104,7 @@ export class CloudComputationWorker {
           : undefined,
     });
     this.s3 = new S3Client({
-      region: config.aws.region || config.s3.region || undefined,
+      region: resultsRegion,
       credentials:
         config.aws.accessKeyId && config.aws.secretAccessKey
           ? {
@@ -133,7 +135,7 @@ export class CloudComputationWorker {
       try {
         await this.reconcileRuns();
       } catch (error) {
-        console.warn('Cloud worker failed to reconcile runs', error);
+        console.warn('Cloud worker failed to reconcile runs', new Error(error as any).message);
       }
 
       let run = null;

@@ -234,10 +234,7 @@ input LoginInput {
 }
 
 type Mutation {
-  claimExperimentRun(
-    machineInfo: ComputationMachineInfoInput
-    queue: ComputationQueue!
-  ): ComputationRun
+  claimExperimentRun(machineInfo: ComputationMachineInfoInput, queue: ComputationQueue!): ComputationRun
   completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
@@ -254,6 +251,12 @@ type Mutation {
   updateExperimentRun(input: UpdateExperimentRunInput!): ComputationRun!
 }
 
+type OptimizationResult {
+  pathNodeIds: [ID!]!
+  runId: ID!
+  score: Float!
+}
+
 type Query {
   experiment(_id: ID!): Experiment
   experimentResults(experimentId: ID!): [ComputationResult!]!
@@ -262,7 +265,9 @@ type Query {
   experiments: [Experiment!]!
   health: String!
   me: User!
+  optimizeExperimentRuns(experimentId: ID!): OptimizationResult!
   serverInfo: ServerInfo!
+  signedDownloadUrl(fileId: ID!): SignedUploadUrl!
   signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
   technologies: [Technology!]!
   uploadedFiles: [UploadedFile!]!

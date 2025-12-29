@@ -23,6 +23,7 @@ export const config = {
     batchJobNamePrefix: process.env.AWS_BATCH_JOB_NAME_PREFIX ?? 'experiment-run',
     resultsBucket: process.env.AWS_COMPUTATION_RESULTS_BUCKET ?? process.env.AWS_S3_BUCKET ?? '',
     resultsPrefix: process.env.AWS_COMPUTATION_RESULTS_PREFIX ?? 'computations',
+    resultsRegion: process.env.AWS_COMPUTATION_RESULTS_REGION ?? '',
   },
   computations: {
     localPollMs: Number(process.env.LOCAL_WORKER_POLL_MS ?? 3000),

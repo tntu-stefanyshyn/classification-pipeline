@@ -4,10 +4,10 @@ import type { MetricKey } from '../GraphSettingsModal.types';
 export const metricKeys: MetricKey[] = ['accuracy', 'f1', 'rocAuc', 'ntps'];
 
 export const metricLabels: Record<MetricKey, string> = {
-  accuracy: 'Вага точності (%)',
-  f1: 'Вага F1 (%)',
-  rocAuc: 'Вага ROC-AUC (%)',
-  ntps: 'Вага NTPS (%)',
+  accuracy: 'Точність',
+  f1: 'F1',
+  rocAuc: 'ROC-AUC',
+  ntps: 'NTPS',
 };
 
 export const queueLabels: Record<ComputationQueue, string> = {

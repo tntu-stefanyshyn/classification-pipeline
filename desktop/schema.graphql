@@ -30,6 +30,11 @@ input CompleteExperimentRunInput {
   statusMessage: String
 }
 
+type ComputationHistoryEntry {
+  createdAt: DateTimeISO!
+  message: String!
+}
+
 type ComputationMachineInfo {
   appVersion: String
   arch: String
@@ -77,11 +82,19 @@ type ComputationResult {
 
 type ComputationResultPayload {
   accuracy: Float
+  accuracyScores: [Float!]
+  classCount: Int
+  classLabels: [String!]
   classes: [ClassificationMetric!]
   completedAt: String
+  confusionMatrix: [[Int!]!]
+  durationSeconds: Float
+  f1Scores: [Float!]
   macroAvg: ClassificationMetric
   nodes: [String!]
   pathLength: Float
+  rocAucScores: [Float!]
+  sampleCount: Int
   weightedAvg: ClassificationMetric
 }
 
@@ -89,6 +102,7 @@ type ComputationRun {
   _id: ID!
   createdAt: DateTimeISO!
   experimentId: ID!
+  history: [ComputationHistoryEntry!]!
   pathNodeIds: [ID!]!
   progress: Int
   queue: ComputationQueue!
@@ -129,6 +143,7 @@ input EnqueueExperimentRunsInput {
   experimentId: ID!
   pathNodeIds: [ID!]
   queue: ComputationQueue!
+  rerun: Boolean
   runAll: Boolean
 }
 
@@ -234,7 +249,10 @@ input LoginInput {
 }
 
 type Mutation {
-  claimExperimentRun(machineInfo: ComputationMachineInfoInput, queue: ComputationQueue!): ComputationRun
+  claimExperimentRun(
+    machineInfo: ComputationMachineInfoInput
+    queue: ComputationQueue!
+  ): ComputationRun
   completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!

@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  aws-jobs:
+    build: ./aws-jobs
+    container_name: aws-jobs
+    volumes:
+      - ./aws-jobs:/app
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_JOBS_IN_CONTAINER=1
+    command: python -u src/aws_jobs/compute_handler.py
+    restart: unless-stopped

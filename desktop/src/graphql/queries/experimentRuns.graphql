@@ -6,6 +6,10 @@ query ExperimentRuns($experimentId: ID!, $queue: ComputationQueue) {
     status
     progress
     statusMessage
+    history {
+      message
+      createdAt
+    }
     pathNodeIds
     createdAt
     updatedAt

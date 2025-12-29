@@ -1,7 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { Form, Formik } from 'formik';
-import { useMemo, useRef, useState, type FC } from 'react';
-import type { ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type FC, ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import ReactFlow from 'reactflow';
 import { AuthLayout } from '../../layout/AuthLayout';
@@ -38,6 +37,7 @@ import {
   useEnqueueExperimentRunsMutation,
   useCreateUploadedFileMutation,
   useExperimentQuery,
+  useExperimentResultsQuery,
   useExperimentRunsQuery,
   useOptimizeExperimentRunsLazyQuery,
   useSignedUploadUrlLazyQuery,
@@ -49,6 +49,142 @@ import {
 import type { ExperimentDetailsPageProps, PathStatus } from './ExperimentDetailsPage.types';
 import { buildGraphPaths, type GraphPath } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
+
+type ResultPayload = {
+  accuracyScores?: number[];
+  f1Scores?: number[];
+  rocAucScores?: number[];
+  sampleCount?: number;
+  durationSeconds?: number;
+  confusionMatrix?: number[][];
+  classLabels?: string[];
+  classCount?: number;
+};
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const toNumberArray = (value: unknown): number[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const values = value
+    .map((entry) => toNumber(entry))
+    .filter((entry): entry is number => entry !== null);
+  return values.length ? values : undefined;
+};
+
+const toNumberMatrix = (value: unknown): number[][] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const rows = value
+    .map((row) => {
+      if (!Array.isArray(row)) return null;
+      const values = row
+        .map((entry) => toNumber(entry))
+        .filter((entry): entry is number => entry !== null);
+      return values.length ? values : null;
+    })
+    .filter((row): row is number[] => Boolean(row));
+  return rows.length ? rows : undefined;
+};
+
+const toStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const values = value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean);
+  return values.length ? values : undefined;
+};
+
+const readValue = (raw: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    if (key in raw) {
+      return raw[key];
+    }
+  }
+  return undefined;
+};
+
+const parseResultPayload = (payloadJson?: string | null): ResultPayload | null => {
+  if (!payloadJson) return null;
+  try {
+    const raw = JSON.parse(payloadJson) as Record<string, unknown>;
+    if (!raw || typeof raw !== 'object') return null;
+
+    const accuracyScores = toNumberArray(readValue(raw, ['accuracy_scores', 'accuracyScores']));
+    const f1Scores = toNumberArray(readValue(raw, ['f1_scores', 'f1Scores']));
+    const rocAucScores = toNumberArray(readValue(raw, ['roc_auc_scores', 'rocAucScores']));
+    const sampleCount = toNumber(readValue(raw, ['sample_count', 'sampleCount']));
+    const durationSeconds = toNumber(readValue(raw, ['duration_seconds', 'durationSeconds']));
+    const confusionMatrix = toNumberMatrix(readValue(raw, ['confusion_matrix', 'confusionMatrix']));
+    const classLabels = toStringArray(readValue(raw, ['class_labels', 'classLabels']));
+    const classCount = toNumber(readValue(raw, ['class_count', 'classCount']));
+
+    const hasData =
+      Boolean(accuracyScores?.length) ||
+      Boolean(f1Scores?.length) ||
+      Boolean(rocAucScores?.length) ||
+      sampleCount !== null ||
+      durationSeconds !== null ||
+      Boolean(confusionMatrix?.length) ||
+      Boolean(classLabels?.length) ||
+      classCount !== null;
+
+    if (!hasData) return null;
+
+    return {
+      accuracyScores,
+      f1Scores,
+      rocAucScores,
+      sampleCount: sampleCount ?? undefined,
+      durationSeconds: durationSeconds ?? undefined,
+      confusionMatrix,
+      classLabels,
+      classCount: classCount ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const formatMetricValue = (value: number) => {
+  if (!Number.isFinite(value)) return '—';
+  return value
+    .toFixed(4)
+    .replace(/\.0+$/, '')
+    .replace(/(\.\d*[1-9])0+$/, '$1');
+};
+
+const formatMetricList = (values?: number[]) => {
+  if (!values || values.length === 0) return '—';
+  return values.map((value) => formatMetricValue(value)).join(', ');
+};
+
+const formatDuration = (seconds?: number) => {
+  if (!seconds || !Number.isFinite(seconds)) return '—';
+  if (seconds < 60) return `${seconds.toFixed(1)} с`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes} хв ${remainder.toFixed(0)} с`;
+};
+
+const formatCount = (value?: number) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return Math.round(value).toLocaleString();
+};
+
+const resolveClassLabels = (payload: ResultPayload | null) => {
+  if (!payload) return [];
+  const matrixSize = payload.confusionMatrix?.length ?? 0;
+  const count = matrixSize || payload.classCount || payload.classLabels?.length || 0;
+  if (!count) return [];
+  const labels = payload.classLabels ?? [];
+  return Array.from({ length: count }, (_, index) => labels[index] ?? `Клас ${index + 1}`);
+};
 
 const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => {
   const params = useParams();
@@ -83,6 +219,15 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     error: runsError,
     refetch: refetchRuns,
   } = useExperimentRunsQuery({
+    variables: { experimentId: id },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  });
+  const {
+    data: resultsData,
+    loading: resultsLoading,
+    error: resultsError,
+  } = useExperimentResultsQuery({
     variables: { experimentId: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
@@ -274,6 +419,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             experimentId: experiment._id,
             queue: defaultQueue,
             pathNodeIds: path.nodeIds,
+            rerun: true,
           },
         },
       });
@@ -358,6 +504,14 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             </svg>
           </button>
         ),
+      },
+      {
+        header: 'Остання активність',
+        id: 'results',
+        cell: ({ row }) => {
+          const [latestResult] = runsByPath.get(row.original.id) ?? [];
+          return <span>{latestResult?.history?.[0].message}</span>;
+        },
       },
       {
         header: 'Дії',
@@ -536,6 +690,38 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const selectedResultsPath = resultsPathId ? (graphPathMap.get(resultsPathId) ?? null) : null;
   const selectedRuns = resultsPathId ? (runsByPath.get(resultsPathId) ?? []) : [];
   const latestResultRun = selectedRuns[0] ?? null;
+  const results = resultsData?.experimentResults ?? [];
+  const resultsByRunId = useMemo(
+    () => new Map(results.map((result) => [result.runId, result])),
+    [results]
+  );
+  const latestResult = latestResultRun ? resultsByRunId.get(latestResultRun._id) : null;
+  const latestResultPayload = useMemo(
+    () => parseResultPayload(latestResult?.payloadJson),
+    [latestResult?.payloadJson]
+  );
+  const historyEntries = useMemo(() => {
+    if (!latestResultRun?.history?.length) return [];
+    return [...latestResultRun.history].sort(
+      (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
+    );
+  }, [latestResultRun?.history]);
+  const latestHistoryEntry =
+    historyEntries.length > 0 ? historyEntries[historyEntries.length - 1] : null;
+  const latestStatusMessage =
+    latestResultRun?.statusMessage?.trim() || latestHistoryEntry?.message || null;
+  const progressValue =
+    typeof latestResultRun?.progress === 'number' && Number.isFinite(latestResultRun.progress)
+      ? Math.max(0, Math.min(100, latestResultRun.progress))
+      : null;
+  const resolvedClassLabels = useMemo(
+    () => resolveClassLabels(latestResultPayload),
+    [latestResultPayload]
+  );
+  const resolvedClassCount =
+    latestResultPayload?.classCount ??
+    (resolvedClassLabels.length ? resolvedClassLabels.length : undefined);
+  const confusionMatrix = latestResultPayload?.confusionMatrix ?? [];
   const datasetFile = useMemo(() => {
     if (!experiment?.fileId) return null;
     return uploadedFiles.find((file) => file._id === experiment.fileId) ?? null;
@@ -723,8 +909,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 )}
                 {optimizationResult && (
                   <Alert variant="success">
-                    Найкращий шлях:{' '}
-                    {resolvePathLabel(optimizationResult.pathNodeIds)}. Оцінка:{' '}
+                    Найкращий шлях: {resolvePathLabel(optimizationResult.pathNodeIds)}. Оцінка:{' '}
                     {formatOptimizationScore(optimizationResult.score)}.
                   </Alert>
                 )}
@@ -794,18 +979,166 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               <p className="muted small">Вузлів у шляху: {selectedResultsPath.nodeIds.length}</p>
               {latestResultRun ? (
                 <div className="result-details">
-                  <p>
-                    Статус:{' '}
-                    <span className={`status-pill status-${latestResultRun.status}`}>
-                      {runStatusLabels[latestResultRun.status] ?? latestResultRun.status}
-                    </span>
-                  </p>
-                  <p>Черга: {resolveQueueLabel(latestResultRun.queue)}</p>
-                  <p>Останній запуск: {new Date(latestResultRun.createdAt).toLocaleString()}</p>
-                  <p>Всього запусків: {selectedRuns.length}</p>
-                  <p className="muted small">
-                    Результати з&apos;являться після завершення обчислень.
-                  </p>
+                  <div className="result-section">
+                    <div className="result-section-head">
+                      <div>
+                        <h4 className="result-section-title">Поточний стан</h4>
+                        <p className="muted small">
+                          Останнє оновлення: {new Date(latestResultRun.updatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <span className={`status-pill status-${latestResultRun.status}`}>
+                        {runStatusLabels[latestResultRun.status] ?? latestResultRun.status}
+                      </span>
+                    </div>
+                    <div className="result-meta-grid">
+                      <div className="result-meta-item">
+                        <span className="muted small">Черга</span>
+                        <span>{resolveQueueLabel(latestResultRun.queue)}</span>
+                      </div>
+                      <div className="result-meta-item">
+                        <span className="muted small">Останній запуск</span>
+                        <span>{new Date(latestResultRun.createdAt).toLocaleString()}</span>
+                      </div>
+                      <div className="result-meta-item">
+                        <span className="muted small">Всього запусків</span>
+                        <span>{selectedRuns.length}</span>
+                      </div>
+                    </div>
+                    {progressValue !== null ? (
+                      <div className="result-progress">
+                        <div className="result-progress-track">
+                          <div
+                            className="result-progress-fill"
+                            style={{ width: `${progressValue}%` }}
+                          />
+                        </div>
+                        <span className="result-progress-value">{progressValue}%</span>
+                      </div>
+                    ) : null}
+                    {latestStatusMessage ? (
+                      <div className="result-message">
+                        <span className="muted small">Поточне повідомлення</span>
+                        <span>{latestStatusMessage}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="result-section">
+                    <div className="result-section-head">
+                      <div>
+                        <h4 className="result-section-title">Історія виконання</h4>
+                        <p className="muted small">Кроки, події та метрики процесу.</p>
+                      </div>
+                      <span className="result-count">{historyEntries.length}</span>
+                    </div>
+                    {historyEntries.length ? (
+                      <ol className="history-list">
+                        {historyEntries.map((entry, index) => (
+                          <li key={`${entry.createdAt}-${index}`} className="history-item">
+                            <span className="history-time">
+                              {new Date(entry.createdAt).toLocaleString()}
+                            </span>
+                            <span className="history-message">{entry.message}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="muted small">Історія поки що порожня.</p>
+                    )}
+                  </div>
+                  <div className="result-section">
+                    <div className="result-section-head">
+                      <div>
+                        <h4 className="result-section-title">Результати</h4>
+                        {latestResult ? (
+                          <p className="muted small">
+                            Отримано: {new Date(latestResult.createdAt).toLocaleString()}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    {resultsLoading && <p className="muted small">Завантаження результатів...</p>}
+                    {resultsError && (
+                      <p className="error">Помилка результатів: {resultsError.message}</p>
+                    )}
+                    {latestResultPayload ? (
+                      <>
+                        <div className="result-metrics">
+                          <div className="result-metric">
+                            <span className="muted small">Точність (accuracy)</span>
+                            <span className="result-metric-value">
+                              {formatMetricList(latestResultPayload.accuracyScores)}
+                            </span>
+                          </div>
+                          <div className="result-metric">
+                            <span className="muted small">F1</span>
+                            <span className="result-metric-value">
+                              {formatMetricList(latestResultPayload.f1Scores)}
+                            </span>
+                          </div>
+                          <div className="result-metric">
+                            <span className="muted small">ROC-AUC</span>
+                            <span className="result-metric-value">
+                              {formatMetricList(latestResultPayload.rocAucScores)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="result-meta-grid">
+                          <div className="result-meta-item">
+                            <span className="muted small">Кількість записів</span>
+                            <span>{formatCount(latestResultPayload.sampleCount)}</span>
+                          </div>
+                          <div className="result-meta-item">
+                            <span className="muted small">Час виконання</span>
+                            <span>{formatDuration(latestResultPayload.durationSeconds)}</span>
+                          </div>
+                          <div className="result-meta-item">
+                            <span className="muted small">Кількість класів</span>
+                            <span>{formatCount(resolvedClassCount)}</span>
+                          </div>
+                        </div>
+                        {resolvedClassLabels.length ? (
+                          <p className="muted small">Класи: {resolvedClassLabels.join(', ')}</p>
+                        ) : null}
+                        {confusionMatrix.length ? (
+                          <div className="result-confusion">
+                            <table className="confusion-table">
+                              <thead>
+                                <tr>
+                                  <th />
+                                  {resolvedClassLabels.map((label, index) => (
+                                    <th key={`${label}-${index}`}>{label}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {confusionMatrix.map((row, rowIndex) => (
+                                  <tr key={`row-${rowIndex}`}>
+                                    <th>
+                                      {resolvedClassLabels[rowIndex] ?? `Клас ${rowIndex + 1}`}
+                                    </th>
+                                    {row.map((value, colIndex) => (
+                                      <td key={`cell-${rowIndex}-${colIndex}`}>
+                                        {formatCount(value)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="muted small">Дані конфюжин-матриці відсутні.</p>
+                        )}
+                      </>
+                    ) : !resultsLoading && !resultsError ? (
+                      <p className="muted small">
+                        {latestResultRun.status === ComputationStatus.completed
+                          ? 'Результат ще не збережено.'
+                          : 'Результати зʼявляться після завершення обчислень.'}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ) : (
                 <p className="muted">Запуски для цього шляху ще не виконувались.</p>

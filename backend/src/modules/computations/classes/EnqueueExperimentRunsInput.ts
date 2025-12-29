@@ -14,4 +14,7 @@ export class EnqueueExperimentRunsInput {
 
   @Field({ nullable: true })
   runAll?: boolean;
+
+  @Field({ nullable: true })
+  rerun?: boolean;
 }

@@ -4,9 +4,6 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { HandlerEvent, HandlerPayload } from './types';
 
-const DEFAULT_PYTHON_BIN = 'python3';
-const DEFAULT_HANDLER_MODULE = 'aws_jobs.compute_handler';
-
 export type PythonHandlerOptions = {
   pythonBin?: string;
   handlerModule?: string;
@@ -42,24 +39,29 @@ export const runPythonHandler = (
   options: PythonHandlerOptions,
   callbacks: PythonHandlerCallbacks
 ): Promise<Record<string, unknown> | null> => {
-  const pythonBin = options.pythonBin ?? process.env.PYTHON_BIN ?? DEFAULT_PYTHON_BIN;
-  const handlerModule =
-    options.handlerModule ?? process.env.COMPUTE_HANDLER_MODULE ?? DEFAULT_HANDLER_MODULE;
-  const pythonPath = resolvePythonPath();
-  const envPythonPath = process.env.PYTHONPATH ?? '';
-  const pythonEnv = {
-    ...process.env,
-    PYTHONPATH: [pythonPath, envPythonPath].filter(Boolean).join(path.delimiter),
-  };
-
   return new Promise((resolve, reject) => {
     let result: Record<string, unknown> | null = null;
     let aborted = false;
     let abortTimer: NodeJS.Timeout | null = null;
-    const proc = spawn(pythonBin, ['-m', handlerModule], {
-      env: pythonEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const image = 'aws-jobs-image';
+
+    const proc = spawn(
+      'docker',
+      [
+        'run',
+        '--rm',
+        '-i',
+        '-v',
+        `${process.cwd()}:/app`,
+        image,
+        'python',
+        '-m',
+        'aws_jobs.compute_handler',
+      ],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
 
     const handleEvent = async (event: HandlerEvent) => {
       try {

@@ -1,3 +1,24 @@
+# aws-jobs Docker instructions
+
+Build the image and run the worker service with Docker Compose:
+
+```bash
+docker-compose build aws-jobs
+docker-compose up -d aws-jobs
+```
+
+Run in the foreground (logs):
+
+```bash
+docker-compose up aws-jobs
+```
+
+Notes:
+
+- The compose file forwards `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` from your host environment. Export them before running, or provide a `.env` file in the repo root.
+- The service mounts the local `aws-jobs/` folder into the container at `/app` so code changes are immediate.
+- If you prefer an immutable image (no mounts), remove the `volumes` section in `docker-compose.yml`.
+
 # AWS jobs (Python)
 
 Міні-воркспейс для ML задач класифікації, сумісний з AWS оточенням.

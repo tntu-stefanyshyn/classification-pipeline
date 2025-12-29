@@ -5,6 +5,7 @@ import { Field, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from './ComputationQueue';
 import { ComputationStatus } from './ComputationStatus';
 import { ComputationMachineInfo } from './ComputationMachineInfo';
+import { ComputationHistoryEntry } from './ComputationHistoryEntry';
 
 @ObjectType()
 export class ComputationRun extends TimeStamps {
@@ -39,6 +40,10 @@ export class ComputationRun extends TimeStamps {
   @Field({ nullable: true })
   @prop({ trim: true })
   statusMessage?: string;
+
+  @Field(() => [ComputationHistoryEntry])
+  @prop({ _id: false, type: () => [ComputationHistoryEntry], default: [] })
+  history!: ComputationHistoryEntry[];
 
   @prop({ _id: false, type: () => ComputationMachineInfo })
   machineInfo?: ComputationMachineInfo;

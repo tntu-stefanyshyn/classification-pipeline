@@ -5,15 +5,21 @@ import tempfile
 import urllib.request
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import boto3
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import FastICA, PCA
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -26,6 +32,22 @@ def _emit(event: Dict[str, Any]) -> None:
 
 def _emit_progress(progress: int, message: str) -> None:
     _emit({"type": "progress", "progress": progress, "message": message})
+
+
+def _append_history(history: List[Dict[str, Any]], message: str) -> None:
+    message = message.strip()
+    if not message:
+        return
+    history.append({"message": message, "timestamp": _timestamp()})
+
+
+def _emit_log(message: str, history: Optional[List[Dict[str, Any]]] = None) -> None:
+    message = message.strip()
+    if not message:
+        return
+    _emit({"type": "log", "message": message})
+    if history is not None:
+        _append_history(history, message)
 
 
 def _timestamp() -> str:
@@ -438,10 +460,91 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
 
 
 def _run_classifier(
-    X: pd.DataFrame, y: pd.Series, technology: str, settings: Dict[str, str]
+    X: pd.DataFrame,
+    y: pd.Series,
+    technology: str,
+    settings: Dict[str, str],
+    log: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
     random_state = _to_int(settings.get("random_state"), 42)
+    folds = _to_int(
+        settings.get("cv_folds")
+        or settings.get("cross_validation_folds")
+        or settings.get("k_folds")
+        or settings.get("folds")
+    )
+
+    def emit(message: str) -> None:
+        if log:
+            log(message)
+
+    labels = np.unique(y)
+
+    if folds and folds > 1:
+        folds = max(2, folds)
+        if len(y) < folds:
+            folds = len(y)
+        if folds >= 2:
+            try:
+                splitter = StratifiedKFold(
+                    n_splits=folds, shuffle=True, random_state=random_state
+                )
+                splits = splitter.split(X, y)
+            except Exception:
+                splitter = KFold(n_splits=folds, shuffle=True, random_state=random_state)
+                splits = splitter.split(X)
+
+            all_true: List[Any] = []
+            all_pred: List[Any] = []
+            accuracy_scores: List[float] = []
+            f1_scores: List[float] = []
+            roc_auc_scores: List[Optional[float]] = []
+            confusion_total: Optional[np.ndarray] = None
+
+            for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
+                emit(f"Крос-валідація: прохід {fold_index}/{folds}")
+                X_train = X.iloc[train_idx]
+                y_train = y.iloc[train_idx]
+                X_val = X.iloc[val_idx]
+                y_val = y.iloc[val_idx]
+
+                model = _build_classifier(technology, settings)
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_val)
+
+                emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
+                accuracy_scores.append(float(accuracy_score(y_val, y_pred)))
+                f1_scores.append(float(f1_score(y_val, y_pred, average="weighted")))
+                roc_auc_scores.append(_compute_roc_auc(model, X_val, y_val))
+
+                all_true.extend(list(y_val))
+                all_pred.extend(list(y_pred))
+
+                matrix = confusion_matrix(y_val, y_pred, labels=labels)
+                confusion_total = (
+                    matrix
+                    if confusion_total is None
+                    else confusion_total + matrix
+                )
+
+            report = classification_report(
+                all_true, all_pred, labels=labels, output_dict=True, zero_division=0
+            )
+            roc_values = [score for score in roc_auc_scores if score is not None]
+            if roc_values:
+                report["roc_auc"] = float(np.mean(roc_values))
+
+            report["accuracy_scores"] = accuracy_scores
+            report["f1_scores"] = f1_scores
+            report["roc_auc_scores"] = roc_auc_scores
+            report["confusion_matrix"] = (
+                confusion_total.tolist() if confusion_total is not None else []
+            )
+            report["class_labels"] = [str(label) for label in labels]
+            report["class_count"] = int(len(labels))
+            report["cv_folds"] = folds
+            return report
 
     try:
         X_train, X_val, y_train, y_val = train_test_split(
@@ -456,10 +559,19 @@ def _run_classifier(
     model.fit(X_train, y_train)
     y_pred = model.predict(X_val)
 
+    emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
     report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
     roc_auc = _compute_roc_auc(model, X_val, y_val)
     if roc_auc is not None:
         report["roc_auc"] = roc_auc
+
+    report["accuracy_scores"] = [float(accuracy_score(y_val, y_pred))]
+    report["f1_scores"] = [float(f1_score(y_val, y_pred, average="weighted"))]
+    report["roc_auc_scores"] = [roc_auc] if roc_auc is not None else []
+    report["confusion_matrix"] = confusion_matrix(y_val, y_pred, labels=labels).tolist()
+    report["class_labels"] = [str(label) for label in labels]
+    report["class_count"] = int(len(labels))
+    report["cv_folds"] = 1
     return report
 
 
@@ -494,6 +606,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     backend_url = payload.get("backend_url") or os.getenv("COMPUTE_BACKEND_URL", "")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
+    history: List[Dict[str, Any]] = []
 
     path = payload.get("path") or []
     if backend_url and payload.get("run_id"):
@@ -502,14 +615,23 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
+    _emit_log("Запуск обчислення", history)
     _emit_progress(0, "Запуск обчислення")
 
     if not path:
+        _emit_log("Немає кроків для обчислення", history)
         _emit_progress(100, "Немає кроків для обчислення")
-        return {"path_length": 0, "nodes": [], "completed_at": _timestamp()}
+        return {
+            "path_length": 0,
+            "nodes": [],
+            "completed_at": _timestamp(),
+            "history": history,
+        }
 
+    _emit_log("Зчитування EEG файлу", history)
     _emit_progress(5, "Зчитування EEG файлу")
     df = _load_dataframe(payload, backend_url or None)
+    _emit_log("EEG файл зчитано", history)
     _emit_progress(10, "EEG файл зчитано")
 
     target_column = _resolve_target_column(df, payload, path)
@@ -524,6 +646,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         label = technology or stage or f"крок {index}"
         progress = 10 + int((index / total) * 80)
         _emit_progress(progress, f"Крок {index}/{total}: {label}")
+        _emit_log(f"Початок етапу: {label}", history)
 
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
@@ -534,8 +657,16 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif stage == "DIMENSIONALITY_REDUCTION":
             X = _apply_pca(X, settings)
         elif stage == "CLASSIFICATION":
-            report = _run_classifier(X, y, technology or "svm", settings)
+            report = _run_classifier(
+                X,
+                y,
+                technology or "svm",
+                settings,
+                log=lambda message: _emit_log(message, history),
+            )
+            _emit_log(f"Завершено етап: {label}", history)
             break
+        _emit_log(f"Завершено етап: {label}", history)
 
     if report is None:
         raise ValueError("Не знайдено етап класифікації")
@@ -543,10 +674,14 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     duration = max(time.time() - started_at, 0.0)
     sample_count = max(int(len(df)), 1)
     report["ntps"] = duration / sample_count
+    report["sample_count"] = sample_count
+    report["duration_seconds"] = duration
     report["path_length"] = total
     report["nodes"] = [node.get("technology") or node.get("stage") for node in path]
     report["completed_at"] = _timestamp()
+    report["history"] = history
 
+    _emit_log("Обчислення завершено", history)
     _emit_progress(100, "Обчислення завершено")
     return report
 

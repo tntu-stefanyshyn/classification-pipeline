@@ -1,7 +1,7 @@
 import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
-import { Field, ID, ObjectType } from 'type-graphql';
+import { Field, Float, ID, Int, ObjectType } from 'type-graphql';
 
 @ObjectType()
 export class ClassificationMetric {
@@ -32,6 +32,18 @@ export class ComputationResultPayload {
   @prop()
   accuracy?: number;
 
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  accuracyScores?: number[];
+
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  f1Scores?: number[];
+
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  rocAucScores?: number[];
+
   @Field(() => ClassificationMetric, { nullable: true })
   @prop({ _id: false, type: () => ClassificationMetric })
   macroAvg?: ClassificationMetric;
@@ -43,6 +55,26 @@ export class ComputationResultPayload {
   @Field(() => [ClassificationMetric], { nullable: true })
   @prop({ _id: false, type: () => [ClassificationMetric], default: [] })
   classes?: ClassificationMetric[];
+
+  @Field(() => Int, { nullable: true })
+  @prop()
+  sampleCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  @prop()
+  durationSeconds?: number;
+
+  @Field(() => [[Int]], { nullable: true })
+  @prop({ type: () => [[Number]], default: [] })
+  confusionMatrix?: number[][];
+
+  @Field(() => [String], { nullable: true })
+  @prop({ type: () => [String], default: [] })
+  classLabels?: string[];
+
+  @Field(() => Int, { nullable: true })
+  @prop()
+  classCount?: number;
 
   @Field({ nullable: true })
   @prop()

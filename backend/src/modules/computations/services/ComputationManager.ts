@@ -4,6 +4,7 @@ import { config } from '../../../config/config';
 import { ComputationRun } from '../classes/ComputationRun';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { ComputationStatus } from '../classes/ComputationStatus';
+import { ComputationHistoryEntry } from '../classes/ComputationHistoryEntry';
 import {
   ComputationMachineInfo,
   ComputationMachineInfoInput,
@@ -27,13 +28,7 @@ import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInpu
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
-
-type EnqueueRunsInput = {
-  experimentId: string;
-  queue: ComputationQueue;
-  pathNodeIds?: string[];
-  runAll?: boolean;
-};
+import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -148,12 +143,13 @@ export class ComputationManager {
     return ComputationRunModel.findById(trimmedId).lean();
   }
 
-  async enqueueRuns(input: EnqueueRunsInput): Promise<ComputationRun[]> {
+  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<ComputationRun[]> {
     const trimmedId = input.experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     const runAll = Boolean(input.runAll);
+    const rerun = Boolean(input.rerun);
     const pathNodeIds = (input.pathNodeIds ?? []).map((id) => id.trim()).filter(Boolean);
     if (runAll && pathNodeIds.length > 0) {
       throw new Error('Provide either runAll or pathNodeIds, not both.');
@@ -233,7 +229,7 @@ export class ComputationManager {
       existingRuns.map((run) => run.pathNodeIds.map((id) => String(id)).join('.'))
     );
     const dedupedPaths = pathsToEnqueue.filter((path) => !existingPathKeys.has(path.join('.')));
-    if (dedupedPaths.length === 0) {
+    if (!rerun && dedupedPaths.length === 0) {
       throw new Error(runAll ? 'Усі шляхи вже мають обчислення.' : 'Цей шлях уже має обчислення.');
     }
 
@@ -318,21 +314,34 @@ export class ComputationManager {
     }
 
     const update: Record<string, unknown> = {};
+    let historyEntry: ComputationHistoryEntry | null = null;
     if (typeof input.progress === 'number' && Number.isFinite(input.progress)) {
       update.progress = Math.max(0, Math.min(100, Math.round(input.progress)));
     }
     if (typeof input.statusMessage === 'string') {
       update.statusMessage = input.statusMessage.trim();
     }
-    if (Object.keys(update).length === 0) {
+    if (typeof update.statusMessage === 'string' && update.statusMessage) {
+      const lastMessage = existing.history?.[existing.history.length - 1]?.message;
+      if (lastMessage !== update.statusMessage) {
+        historyEntry = this.buildHistoryEntry(update.statusMessage);
+      }
+    }
+    if (Object.keys(update).length === 0 && !historyEntry) {
       throw new Error('Update data is required');
     }
 
-    const updated = await ComputationRunModel.findByIdAndUpdate(
-      trimmedId,
-      { $set: update },
-      { new: true }
-    ).lean();
+    const updateOps: Record<string, unknown> = {};
+    if (Object.keys(update).length > 0) {
+      updateOps.$set = update;
+    }
+    if (historyEntry) {
+      updateOps.$push = { history: historyEntry };
+    }
+
+    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
+      new: true,
+    }).lean();
     if (!updated) throw new Error('Computation run not found');
     return updated;
   }
@@ -358,6 +367,7 @@ export class ComputationManager {
       }
     }
     const structuredPayload = parsedPayload ? this.buildResultPayload(parsedPayload) : null;
+    const historyFromPayload = parsedPayload ? this.parseHistoryEntries(parsedPayload.history) : [];
 
     await ComputationResultModel.create({
       runId: run._id,
@@ -372,17 +382,24 @@ export class ComputationManager {
     });
 
     const statusMessage = input.statusMessage?.trim() || 'Завершено';
-    const updated = await ComputationRunModel.findByIdAndUpdate(
-      trimmedId,
-      {
-        $set: {
-          status: ComputationStatus.completed,
-          progress: 100,
-          statusMessage,
-        },
+    const completionEntry = this.buildHistoryEntry(statusMessage);
+    const historyUpdates = this.mergeHistoryEntries(run.history, [
+      ...historyFromPayload,
+      completionEntry,
+    ]);
+    const updateOps: Record<string, unknown> = {
+      $set: {
+        status: ComputationStatus.completed,
+        progress: 100,
+        statusMessage,
       },
-      { new: true }
-    ).lean();
+    };
+    if (historyUpdates.length > 0) {
+      updateOps.$push = { history: { $each: historyUpdates } };
+    }
+    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
+      new: true,
+    }).lean();
 
     if (!updated) throw new Error('Computation run not found');
     await this.syncExperimentStatus(String(run.experimentId));
@@ -401,16 +418,20 @@ export class ComputationManager {
     }
 
     const statusMessage = input.statusMessage?.trim() || 'Помилка';
-    const updated = await ComputationRunModel.findByIdAndUpdate(
-      trimmedId,
-      {
-        $set: {
-          status: ComputationStatus.failed,
-          statusMessage,
-        },
+    const failureEntry = this.buildHistoryEntry(statusMessage);
+    const historyUpdates = this.mergeHistoryEntries(existing.history, [failureEntry]);
+    const updateOps: Record<string, unknown> = {
+      $set: {
+        status: ComputationStatus.failed,
+        statusMessage,
       },
-      { new: true }
-    ).lean();
+    };
+    if (historyUpdates.length > 0) {
+      updateOps.$push = { history: { $each: historyUpdates } };
+    }
+    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
+      new: true,
+    }).lean();
     if (!updated) throw new Error('Computation run not found');
     await this.syncExperimentStatus(String(existing.experimentId));
     return updated;
@@ -624,6 +645,42 @@ export class ComputationManager {
       }
 
       if (
+        normalizedKey === 'accuracy_scores' ||
+        normalizedKey === 'accuracy-scores' ||
+        normalizedKey === 'accuracyscores'
+      ) {
+        const scores = this.toNumberArray(value);
+        if (scores?.length) {
+          payload.accuracyScores = scores;
+        }
+        return;
+      }
+
+      if (
+        normalizedKey === 'f1_scores' ||
+        normalizedKey === 'f1-scores' ||
+        normalizedKey === 'f1scores'
+      ) {
+        const scores = this.toNumberArray(value);
+        if (scores?.length) {
+          payload.f1Scores = scores;
+        }
+        return;
+      }
+
+      if (
+        normalizedKey === 'roc_auc_scores' ||
+        normalizedKey === 'roc-auc-scores' ||
+        normalizedKey === 'rocaucscores'
+      ) {
+        const scores = this.toNumberArray(value);
+        if (scores?.length) {
+          payload.rocAucScores = scores;
+        }
+        return;
+      }
+
+      if (
         normalizedKey === 'macro avg' ||
         normalizedKey === 'macro_avg' ||
         normalizedKey === 'macroavg'
@@ -651,6 +708,61 @@ export class ComputationManager {
         const pathLength = this.toNumber(value);
         if (pathLength !== null) {
           payload.pathLength = pathLength;
+        }
+        return;
+      }
+
+      if (
+        normalizedKey === 'sample_count' ||
+        normalizedKey === 'samples' ||
+        normalizedKey === 'records_count' ||
+        normalizedKey === 'samplecount'
+      ) {
+        const sampleCount = this.toNumber(value);
+        if (sampleCount !== null) {
+          payload.sampleCount = sampleCount;
+        }
+        return;
+      }
+
+      if (
+        normalizedKey === 'duration_seconds' ||
+        normalizedKey === 'duration_sec' ||
+        normalizedKey === 'duration' ||
+        normalizedKey === 'path_duration' ||
+        normalizedKey === 'path_duration_seconds'
+      ) {
+        const durationSeconds = this.toNumber(value);
+        if (durationSeconds !== null) {
+          payload.durationSeconds = durationSeconds;
+        }
+        return;
+      }
+
+      if (
+        normalizedKey === 'confusion_matrix' ||
+        normalizedKey === 'confusionmatrix' ||
+        normalizedKey === 'confusion'
+      ) {
+        const matrix = this.toNumberMatrix(value);
+        if (matrix?.length) {
+          payload.confusionMatrix = matrix;
+        }
+        return;
+      }
+
+      if (normalizedKey === 'class_labels' || normalizedKey === 'classlabels') {
+        const labels = this.toStringArray(value);
+        if (labels?.length) {
+          payload.classLabels = labels;
+        }
+        return;
+      }
+
+      if (normalizedKey === 'class_count' || normalizedKey === 'classcount') {
+        const classCount = this.toNumber(value);
+        if (classCount !== null) {
+          payload.classCount = classCount;
         }
         return;
       }
@@ -684,9 +796,17 @@ export class ComputationManager {
 
     const hasPayload =
       payload.accuracy !== undefined ||
+      Boolean(payload.accuracyScores?.length) ||
+      Boolean(payload.f1Scores?.length) ||
+      Boolean(payload.rocAucScores?.length) ||
       payload.macroAvg !== undefined ||
       payload.weightedAvg !== undefined ||
       Boolean(payload.classes?.length) ||
+      payload.sampleCount !== undefined ||
+      payload.durationSeconds !== undefined ||
+      Boolean(payload.confusionMatrix?.length) ||
+      Boolean(payload.classLabels?.length) ||
+      payload.classCount !== undefined ||
       payload.pathLength !== undefined ||
       Boolean(payload.nodes?.length) ||
       payload.completedAt !== undefined;
@@ -714,6 +834,88 @@ export class ComputationManager {
       f1Score,
       support,
     };
+  }
+
+  private buildHistoryEntry(message: string, timestamp?: Date): ComputationHistoryEntry {
+    return {
+      message: message.trim(),
+      createdAt: timestamp ?? new Date(),
+    };
+  }
+
+  private parseHistoryEntries(value: unknown): ComputationHistoryEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => {
+        if (!entry) return null;
+        if (typeof entry === 'string') {
+          return this.buildHistoryEntry(entry);
+        }
+        if (typeof entry === 'object') {
+          const raw = entry as Record<string, unknown>;
+          const message = typeof raw.message === 'string' ? raw.message.trim() : '';
+          if (!message) return null;
+          const timestampRaw =
+            raw.createdAt ?? raw.created_at ?? raw.timestamp ?? raw.time ?? raw.at ?? null;
+          const timestamp =
+            typeof timestampRaw === 'string' && timestampRaw.trim()
+              ? new Date(timestampRaw)
+              : timestampRaw instanceof Date
+                ? timestampRaw
+                : null;
+          const normalizedTimestamp =
+            timestamp instanceof Date && !Number.isNaN(timestamp.getTime()) ? timestamp : undefined;
+          return this.buildHistoryEntry(message, normalizedTimestamp);
+        }
+        return null;
+      })
+      .filter((entry): entry is ComputationHistoryEntry => Boolean(entry?.message));
+  }
+
+  private mergeHistoryEntries(
+    existing: ComputationHistoryEntry[] | undefined,
+    incoming: ComputationHistoryEntry[]
+  ): ComputationHistoryEntry[] {
+    if (!incoming.length) return [];
+    const merged: ComputationHistoryEntry[] = [];
+    const lastExistingMessage = existing?.[existing.length - 1]?.message;
+    incoming.forEach((entry) => {
+      const lastMessage = merged.length ? merged[merged.length - 1]?.message : lastExistingMessage;
+      if (entry.message && entry.message !== lastMessage) {
+        merged.push(entry);
+      }
+    });
+    return merged;
+  }
+
+  private toNumberArray(value: unknown): number[] | null {
+    if (!Array.isArray(value)) return null;
+    const numbers = value
+      .map((entry) => this.toNumber(entry))
+      .filter((entry): entry is number => entry !== null);
+    return numbers.length > 0 ? numbers : null;
+  }
+
+  private toNumberMatrix(value: unknown): number[][] | null {
+    if (!Array.isArray(value)) return null;
+    const matrix = value
+      .map((row) => {
+        if (!Array.isArray(row)) return null;
+        const numbers = row
+          .map((entry) => this.toNumber(entry))
+          .filter((entry): entry is number => entry !== null);
+        return numbers.length > 0 ? numbers : null;
+      })
+      .filter((row): row is number[] => Boolean(row));
+    return matrix.length > 0 ? matrix : null;
+  }
+
+  private toStringArray(value: unknown): string[] | null {
+    if (!Array.isArray(value)) return null;
+    const values = value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean);
+    return values.length > 0 ? values : null;
   }
 
   private toNumber(value: unknown): number | null {

@@ -1,15 +1,11 @@
 import { BatchClient, CancelJobCommand, TerminateJobCommand } from '@aws-sdk/client-batch';
 import { Types } from 'mongoose';
 import { config } from '../../../config/config';
-import { ComputationRun } from '../classes/ComputationRun';
 import { ComputationQueue } from '../classes/ComputationQueue';
-import { ComputationStatus } from '../classes/ComputationStatus';
-import { ComputationHistoryEntry } from '../classes/ComputationHistoryEntry';
 import {
-  ComputationMachineInfo,
-  ComputationMachineInfoInput,
-} from '../classes/ComputationMachineInfo';
-import { ComputationRunModel } from '../models/ComputationRunModel';
+  PipelineMachineInfo,
+  PipelineMachineInfoInput,
+} from '../../../core/pipeline/classes/PipelineMachineInfo';
 import { ComputationResultModel } from '../models/ComputationResultModel';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import {
@@ -23,36 +19,19 @@ import { GraphStructureModel } from '../../experiments/models/GraphStructureMode
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
-import { UpdateExperimentRunInput } from '../classes/UpdateExperimentRunInput';
 import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
+import { Pipeline, PipelineBaseService, PipelineModel } from '../../../core/pipeline';
+import { PipelineStatus } from '../../../core/pipeline/enums';
+import { PipelineHistoryItem } from '../../../core/pipeline/classes/PipelineHistoryItem';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
   private readonly optimizationRunner = new OptimizationRunner();
-
-  async listByExperiment(
-    experimentId: string,
-    queue?: ComputationQueue
-  ): Promise<ComputationRun[]> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    const filter: Record<string, unknown> = { experimentId: trimmedId };
-    if (queue) {
-      filter.queue = queue;
-    }
-
-    const runs = await ComputationRunModel.find(filter).sort({ createdAt: -1 }).lean();
-    await this.syncExperimentStatus(trimmedId);
-    return runs;
-  }
-
   async listResultsByExperiment(experimentId: string): Promise<ComputationResult[]> {
     const trimmedId = experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
@@ -135,35 +114,21 @@ export class ComputationManager {
     };
   }
 
-  async getRunById(runId: string): Promise<ComputationRun | null> {
-    const trimmedId = runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    return ComputationRunModel.findById(trimmedId).lean();
-  }
-
-  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<ComputationRun[]> {
-    const trimmedId = input.experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    const runAll = Boolean(input.runAll);
-    const rerun = Boolean(input.rerun);
-    const pathNodeIds = (input.pathNodeIds ?? []).map((id) => id.trim()).filter(Boolean);
-    if (runAll && pathNodeIds.length > 0) {
+  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<Pipeline[]> {
+    const { experimentId, queue, pipelineId, rerun, runAll } = input;
+    if (runAll && pipelineId) {
       throw new Error('Provide either runAll or pathNodeIds, not both.');
     }
-    if (!runAll && pathNodeIds.length === 0) {
+    if (!runAll && !pipelineId) {
       throw new Error('Path node ids are required for a single run.');
     }
 
-    const experiment = await ExperimentModel.findById(trimmedId).lean();
+    const experiment = await ExperimentModel.findById(experimentId).lean();
     if (!experiment) {
       throw new Error('Experiment not found');
     }
 
-    const graph = await this.graphManager.getByExperimentId(trimmedId);
+    const graph = await this.graphManager.getByExperimentId(experimentId);
     const graphSettings = graph.settings;
     if (!graphSettings || !graphSettings.metrics) {
       throw new Error('Спочатку заповніть налаштування графа.');
@@ -206,12 +171,13 @@ export class ComputationManager {
     let pathsToEnqueue: string[][] = [];
     if (runAll) {
       pathsToEnqueue = paths;
-    } else {
-      const normalizedPath = pathNodeIds.map((id) => {
+    } else if (pipelineId) {
+      const pipeline = await PipelineBaseService.getById(pipelineId);
+      const normalizedPath = pipeline.pathNodeIds.map((id) => {
         if (!Types.ObjectId.isValid(id)) {
           throw new Error(`Invalid graph node id: ${id}`);
         }
-        return id;
+        return id.toString();
       });
       const pathKeys = new Set(paths.map((path) => path.join('.')));
       const normalizedKey = normalizedPath.join('.');
@@ -221,12 +187,9 @@ export class ComputationManager {
       pathsToEnqueue = [normalizedPath];
     }
 
-    const experimentObjectId = new Types.ObjectId(trimmedId);
-    const existingRuns = await ComputationRunModel.find({
-      experimentId: experimentObjectId,
-    }).lean();
+    const pipelines = await PipelineBaseService.listByExperiment(experimentId);
     const existingPathKeys = new Set(
-      existingRuns.map((run) => run.pathNodeIds.map((id) => String(id)).join('.'))
+      pipelines.map((run) => run.pathNodeIds.map((id) => String(id)).join('.'))
     );
     const dedupedPaths = pathsToEnqueue.filter((path) => !existingPathKeys.has(path.join('.')));
     if (!rerun && dedupedPaths.length === 0) {
@@ -234,53 +197,53 @@ export class ComputationManager {
     }
 
     const docs = dedupedPaths.map((path) => ({
-      experimentId: experimentObjectId,
+      experimentId,
       queue: input.queue,
-      status: ComputationStatus.queued,
+      status: PipelineStatus.queued,
       progress: 0,
       statusMessage: 'В черзі',
       priority: 0,
       pathNodeIds: path.map((id) => new Types.ObjectId(id)),
     }));
 
-    const created = await ComputationRunModel.insertMany(docs, { ordered: true });
+    const created = await PipelineModel.insertMany(docs, { ordered: true });
     await ExperimentModel.updateOne(
-      { _id: experimentObjectId },
+      { _id: experimentId },
       { $set: { status: ExperimentStatus.computing } }
     ).exec();
-    return created.map((doc) => doc.toObject({ getters: true })) as ComputationRun[];
+    return created.map((doc) => doc.toObject({ getters: true })) as Pipeline[];
   }
 
-  async stopRun(runId: string): Promise<ComputationRun> {
+  async stopRun(runId: string): Promise<Pipeline> {
     const trimmedId = runId.trim();
     if (!trimmedId) throw new Error('Run _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
 
-    const run = await ComputationRunModel.findById(trimmedId);
+    const run = await PipelineModel.findById(trimmedId);
     if (!run) throw new Error('Computation run not found');
 
     if (
-      run.status === ComputationStatus.completed ||
-      run.status === ComputationStatus.failed ||
-      run.status === ComputationStatus.stopped
+      run.status === PipelineStatus.completed ||
+      run.status === PipelineStatus.failed ||
+      run.status === PipelineStatus.stopped
     ) {
-      return run.toObject({ getters: true }) as ComputationRun;
+      return run.toObject({ getters: true }) as Pipeline;
     }
 
-    run.status = ComputationStatus.stopped;
+    run.status = PipelineStatus.stopped;
     await run.save();
     await this.syncExperimentStatus(String(run.experimentId));
 
-    return run.toObject({ getters: true }) as ComputationRun;
+    return run.toObject({ getters: true }) as Pipeline;
   }
 
   async claimNextRun(
     queue: ComputationQueue,
-    machineInfo?: ComputationMachineInfoInput
-  ): Promise<ComputationRun | null> {
+    machineInfo?: PipelineMachineInfoInput
+  ): Promise<Pipeline | null> {
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
     const updateSet: Record<string, unknown> = {
-      status: ComputationStatus.running,
+      status: PipelineStatus.running,
       progress: 0,
       statusMessage: 'Запущено',
       priority: 0,
@@ -289,8 +252,8 @@ export class ComputationManager {
       updateSet.machineInfo = normalizedMachineInfo;
     }
 
-    const run = await ComputationRunModel.findOneAndUpdate(
-      { queue, status: ComputationStatus.queued },
+    const run = await PipelineModel.findOneAndUpdate(
+      { queue, status: PipelineStatus.queued },
       { $set: updateSet },
       { sort: { priority: -1, createdAt: 1 }, new: true }
     ).lean();
@@ -302,58 +265,14 @@ export class ComputationManager {
     return run;
   }
 
-  async updateRun(input: UpdateExperimentRunInput): Promise<ComputationRun> {
+  async completeRun(input: CompleteExperimentRunInput): Promise<Pipeline> {
     const trimmedId = input.runId.trim();
     if (!trimmedId) throw new Error('Run _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
 
-    const existing = await ComputationRunModel.findById(trimmedId).lean();
-    if (!existing) throw new Error('Computation run not found');
-    if (existing.status === ComputationStatus.paused) {
-      return existing;
-    }
-
-    const update: Record<string, unknown> = {};
-    let historyEntry: ComputationHistoryEntry | null = null;
-    if (typeof input.progress === 'number' && Number.isFinite(input.progress)) {
-      update.progress = Math.max(0, Math.min(100, Math.round(input.progress)));
-    }
-    if (typeof input.statusMessage === 'string') {
-      update.statusMessage = input.statusMessage.trim();
-    }
-    if (typeof update.statusMessage === 'string' && update.statusMessage) {
-      const lastMessage = existing.history?.[existing.history.length - 1]?.message;
-      if (lastMessage !== update.statusMessage) {
-        historyEntry = this.buildHistoryEntry(update.statusMessage);
-      }
-    }
-    if (Object.keys(update).length === 0 && !historyEntry) {
-      throw new Error('Update data is required');
-    }
-
-    const updateOps: Record<string, unknown> = {};
-    if (Object.keys(update).length > 0) {
-      updateOps.$set = update;
-    }
-    if (historyEntry) {
-      updateOps.$push = { history: historyEntry };
-    }
-
-    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
-      new: true,
-    }).lean();
-    if (!updated) throw new Error('Computation run not found');
-    return updated;
-  }
-
-  async completeRun(input: CompleteExperimentRunInput): Promise<ComputationRun> {
-    const trimmedId = input.runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    const run = await ComputationRunModel.findById(trimmedId).lean();
+    const run = await PipelineModel.findById(trimmedId).lean();
     if (!run) throw new Error('Computation run not found');
-    if (run.status === ComputationStatus.paused) {
+    if (run.status === PipelineStatus.paused) {
       return run;
     }
 
@@ -389,7 +308,7 @@ export class ComputationManager {
     ]);
     const updateOps: Record<string, unknown> = {
       $set: {
-        status: ComputationStatus.completed,
+        status: PipelineStatus.completed,
         progress: 100,
         statusMessage,
       },
@@ -397,7 +316,7 @@ export class ComputationManager {
     if (historyUpdates.length > 0) {
       updateOps.$push = { history: { $each: historyUpdates } };
     }
-    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
+    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
       new: true,
     }).lean();
 
@@ -406,14 +325,14 @@ export class ComputationManager {
     return updated;
   }
 
-  async failRun(input: FailExperimentRunInput): Promise<ComputationRun> {
+  async failRun(input: FailExperimentRunInput): Promise<Pipeline> {
     const trimmedId = input.runId.trim();
     if (!trimmedId) throw new Error('Run _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
 
-    const existing = await ComputationRunModel.findById(trimmedId).lean();
+    const existing = await PipelineModel.findById(trimmedId).lean();
     if (!existing) throw new Error('Computation run not found');
-    if (existing.status === ComputationStatus.paused) {
+    if (existing.status === PipelineStatus.paused) {
       return existing;
     }
 
@@ -422,14 +341,14 @@ export class ComputationManager {
     const historyUpdates = this.mergeHistoryEntries(existing.history, [failureEntry]);
     const updateOps: Record<string, unknown> = {
       $set: {
-        status: ComputationStatus.failed,
+        status: PipelineStatus.failed,
         statusMessage,
       },
     };
     if (historyUpdates.length > 0) {
       updateOps.$push = { history: { $each: historyUpdates } };
     }
-    const updated = await ComputationRunModel.findByIdAndUpdate(trimmedId, updateOps, {
+    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
       new: true,
     }).lean();
     if (!updated) throw new Error('Computation run not found');
@@ -437,25 +356,25 @@ export class ComputationManager {
     return updated;
   }
 
-  async pauseExperimentRuns(experimentId: string): Promise<ComputationRun[]> {
+  async pauseExperimentRuns(experimentId: string): Promise<Pipeline[]> {
     const trimmedId = experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     const experimentObjectId = new Types.ObjectId(trimmedId);
-    const runs = await ComputationRunModel.find({
+    const runs = await PipelineModel.find({
       experimentId: experimentObjectId,
-      status: { $in: [ComputationStatus.queued, ComputationStatus.running] },
+      status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
     }).lean();
 
     if (runs.length === 0) return [];
 
     const runIds = runs.map((run) => run._id);
-    await ComputationRunModel.updateMany(
+    await PipelineModel.updateMany(
       { _id: { $in: runIds } },
       {
         $set: {
-          status: ComputationStatus.paused,
+          status: PipelineStatus.paused,
           statusMessage: 'Пауза',
         },
       }
@@ -468,28 +387,28 @@ export class ComputationManager {
       }
     }
 
-    return ComputationRunModel.find({ _id: { $in: runIds } }).lean();
+    return PipelineModel.find({ _id: { $in: runIds } }).lean();
   }
 
-  async resumeExperimentRuns(experimentId: string): Promise<ComputationRun[]> {
+  async resumeExperimentRuns(experimentId: string): Promise<Pipeline[]> {
     const trimmedId = experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     const experimentObjectId = new Types.ObjectId(trimmedId);
-    const runs = await ComputationRunModel.find({
+    const runs = await PipelineModel.find({
       experimentId: experimentObjectId,
-      status: ComputationStatus.paused,
+      status: PipelineStatus.paused,
     }).lean();
 
     if (runs.length === 0) return [];
 
     const runIds = runs.map((run) => run._id);
-    await ComputationRunModel.updateMany(
+    await PipelineModel.updateMany(
       { _id: { $in: runIds } },
       {
         $set: {
-          status: ComputationStatus.queued,
+          status: PipelineStatus.queued,
           progress: 0,
           statusMessage: 'В черзі',
           priority: 1,
@@ -500,14 +419,14 @@ export class ComputationManager {
       }
     );
 
-    return ComputationRunModel.find({ _id: { $in: runIds } }).lean();
+    return PipelineModel.find({ _id: { $in: runIds } }).lean();
   }
 
   private normalizeMachineInfo(
     queue: ComputationQueue,
-    input?: ComputationMachineInfoInput
-  ): ComputationMachineInfo {
-    const normalized: ComputationMachineInfo = {
+    input?: PipelineMachineInfoInput
+  ): PipelineMachineInfo {
+    const normalized: PipelineMachineInfo = {
       queue,
       lastSeenAt: new Date(),
     };
@@ -543,7 +462,7 @@ export class ComputationManager {
 
   private async registerMachineInfo(
     experimentId: Types.ObjectId,
-    machineInfo: ComputationMachineInfo
+    machineInfo: PipelineMachineInfo
   ) {
     const experiment = await ExperimentModel.findById(experimentId).lean();
     if (!experiment) return;
@@ -613,16 +532,16 @@ export class ComputationManager {
   }
 
   private async syncExperimentStatus(experimentId: string): Promise<void> {
-    const runs: Pick<ComputationRun, 'status'>[] = await ComputationRunModel.find({ experimentId })
+    const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
       .select('status')
       .lean();
     if (runs.length === 0) return;
 
     const hasActive = runs.some(
       (run) =>
-        run.status === ComputationStatus.queued ||
-        run.status === ComputationStatus.running ||
-        run.status === ComputationStatus.paused
+        run.status === PipelineStatus.queued ||
+        run.status === PipelineStatus.running ||
+        run.status === PipelineStatus.paused
     );
     const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
 
@@ -836,14 +755,14 @@ export class ComputationManager {
     };
   }
 
-  private buildHistoryEntry(message: string, timestamp?: Date): ComputationHistoryEntry {
+  private buildHistoryEntry(message: string, timestamp?: Date): PipelineHistoryItem {
     return {
       message: message.trim(),
       createdAt: timestamp ?? new Date(),
     };
   }
 
-  private parseHistoryEntries(value: unknown): ComputationHistoryEntry[] {
+  private parseHistoryEntries(value: unknown): PipelineHistoryItem[] {
     if (!Array.isArray(value)) return [];
     return value
       .map((entry) => {
@@ -869,15 +788,15 @@ export class ComputationManager {
         }
         return null;
       })
-      .filter((entry): entry is ComputationHistoryEntry => Boolean(entry?.message));
+      .filter((entry): entry is PipelineHistoryItem => Boolean(entry?.message));
   }
 
   private mergeHistoryEntries(
-    existing: ComputationHistoryEntry[] | undefined,
-    incoming: ComputationHistoryEntry[]
-  ): ComputationHistoryEntry[] {
+    existing: PipelineHistoryItem[] | undefined,
+    incoming: PipelineHistoryItem[]
+  ): PipelineHistoryItem[] {
     if (!incoming.length) return [];
-    const merged: ComputationHistoryEntry[] = [];
+    const merged: PipelineHistoryItem[] = [];
     const lastExistingMessage = existing?.[existing.length - 1]?.message;
     incoming.forEach((entry) => {
       const lastMessage = merged.length ? merged[merged.length - 1]?.message : lastExistingMessage;

@@ -1,5 +1,6 @@
 import { Field, ID, InputType } from 'type-graphql';
 import { ComputationQueue } from './ComputationQueue';
+import { ObjectIdOrSting } from '../../../types/context';
 
 @InputType()
 export class EnqueueExperimentRunsInput {
@@ -9,8 +10,8 @@ export class EnqueueExperimentRunsInput {
   @Field(() => ComputationQueue)
   queue!: ComputationQueue;
 
-  @Field(() => [ID], { nullable: true })
-  pathNodeIds?: string[];
+  @Field(() => ID, { nullable: true })
+  pipelineId?: ObjectIdOrSting;
 
   @Field({ nullable: true })
   runAll?: boolean;

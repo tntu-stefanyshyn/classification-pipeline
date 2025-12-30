@@ -2,13 +2,13 @@ import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
-import { ComputationQueue } from './ComputationQueue';
-import { ComputationStatus } from './ComputationStatus';
-import { ComputationMachineInfo } from './ComputationMachineInfo';
-import { ComputationHistoryEntry } from './ComputationHistoryEntry';
+import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
+import { PipelineStatus } from '../enums';
+import { PipelineMachineInfo } from './PipelineMachineInfo';
+import { PipelineHistoryItem } from './PipelineHistoryItem';
 
 @ObjectType()
-export class ComputationRun extends TimeStamps {
+export class Pipeline extends TimeStamps {
   @Field(() => ID)
   _id!: Types.ObjectId;
 
@@ -16,18 +16,21 @@ export class ComputationRun extends TimeStamps {
   @prop({ required: true, index: true, type: () => Types.ObjectId })
   experimentId!: Types.ObjectId;
 
+  @Field(() => ID)
+  @prop({ required: true, index: true, type: () => Types.ObjectId })
+  graphStructureId!: Types.ObjectId;
+
   @Field(() => ComputationQueue)
   @prop({ required: true, enum: ComputationQueue, type: () => String })
   queue!: ComputationQueue;
 
-  @Field(() => ComputationStatus)
+  @Field(() => PipelineStatus)
   @prop({
     required: true,
-    enum: ComputationStatus,
+    enum: PipelineStatus,
     type: () => String,
-    default: ComputationStatus.queued,
   })
-  status!: ComputationStatus;
+  status!: PipelineStatus;
 
   @Field(() => [ID])
   @prop({ required: true, type: () => [Types.ObjectId] })
@@ -41,12 +44,12 @@ export class ComputationRun extends TimeStamps {
   @prop({ trim: true })
   statusMessage?: string;
 
-  @Field(() => [ComputationHistoryEntry])
-  @prop({ _id: false, type: () => [ComputationHistoryEntry], default: [] })
-  history!: ComputationHistoryEntry[];
+  @Field(() => [PipelineHistoryItem])
+  @prop({ _id: false, type: () => [PipelineHistoryItem], default: [] })
+  history!: PipelineHistoryItem[];
 
-  @prop({ _id: false, type: () => ComputationMachineInfo })
-  machineInfo?: ComputationMachineInfo;
+  @prop({ _id: false, type: () => PipelineMachineInfo })
+  machineInfo?: PipelineMachineInfo;
 
   @prop({ min: 0, default: 0 })
   priority?: number;

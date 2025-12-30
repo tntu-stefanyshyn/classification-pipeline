@@ -1,4 +1,4 @@
-mutation ClaimExperimentRun($queue: ComputationQueue!, $machineInfo: ComputationMachineInfoInput) {
+mutation ClaimExperimentRun($queue: ComputationQueue!, $machineInfo: PipelineMachineInfoInput) {
   claimExperimentRun(queue: $queue, machineInfo: $machineInfo) {
     _id
     experimentId

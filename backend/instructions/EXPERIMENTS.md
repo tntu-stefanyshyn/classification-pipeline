@@ -19,7 +19,7 @@
 
 - `stopExperimentRun(input: { runId })` sets status to `stopped` and returns the run.
 - `enqueueExperimentRuns` checks graph settings and classification stage coverage.
-- `ComputationStatus.idle` is reserved for UI path status with no runs (runs should not be stored as `idle`).
+- `PipelineStatus.idle` is reserved for UI path status with no runs (runs should not be stored as `idle`).
 
 ## REST report
 

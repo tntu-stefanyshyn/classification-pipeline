@@ -17,14 +17,14 @@ import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphRepor
 import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
-import { Computations } from './modules/computations/graphql/Computations';
-import { CloudComputationWorker } from './modules/computations/services/CloudComputationWorker';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
+import { ComputationResolver } from './modules/computations';
+import { PipelineResolver } from './core/pipeline/graphql/pipeline';
 
 async function bootstrap() {
-  let cloudWorker: CloudComputationWorker | null = null;
+  // let cloudWorker: CloudComputationWorker | null = null;
   let shuttingDown = false;
   const schema = buildSchemaSync({
     resolvers: [
@@ -35,7 +35,8 @@ async function bootstrap() {
       Technologies,
       Storage,
       Files,
-      Computations,
+      ComputationResolver,
+      PipelineResolver,
     ],
     orphanedTypes: [User],
     validate: { forbidUnknownValues: false },
@@ -96,8 +97,8 @@ async function bootstrap() {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
     await runSeeders();
-    cloudWorker = new CloudComputationWorker();
-    cloudWorker.start();
+    // cloudWorker = new CloudComputationWorker();
+    // cloudWorker.start();
   } else {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
@@ -112,7 +113,7 @@ async function bootstrap() {
     console.log(`Received ${signal}, shutting down...`);
 
     try {
-      cloudWorker?.stop();
+      // cloudWorker?.stop();
       await apollo.stop();
       await mongoose.disconnect();
       await new Promise<void>((resolve, reject) => {

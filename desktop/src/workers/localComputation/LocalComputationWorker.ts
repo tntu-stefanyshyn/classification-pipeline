@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { app } from 'electron';
-import { ComputationMachineInfoInput, ComputationQueue } from '../../graphql/types.generated';
+import { PipelineMachineInfoInput, ComputationQueue } from '../../graphql/types.generated';
 import { config } from '../../config/config';
 import { createGraphqlClient, GraphqlClient, isFetchAvailable } from './graphqlClient';
 import {
@@ -23,7 +23,7 @@ export class LocalComputationWorker {
   private running = false;
   private stopping = false;
   private client: GraphqlClient | null = null;
-  private cachedMachineInfo: ComputationMachineInfoInput | null = null;
+  private cachedMachineInfo: PipelineMachineInfoInput | null = null;
 
   start() {
     if (this.running) return;
@@ -181,7 +181,7 @@ export class LocalComputationWorker {
     return this.client;
   }
 
-  private getMachineInfo(): ComputationMachineInfoInput {
+  private getMachineInfo(): PipelineMachineInfoInput {
     if (this.cachedMachineInfo) return this.cachedMachineInfo;
     const cpus = os.cpus();
     const cpuModel = cpus[0]?.model?.trim();

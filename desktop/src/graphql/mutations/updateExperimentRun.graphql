@@ -1,4 +1,4 @@
-mutation UpdateExperimentRun($input: UpdateExperimentRunInput!) {
+mutation UpdateExperimentRun($input: UpdatePipelineInput!) {
   updateExperimentRun(input: $input) {
     _id
   }

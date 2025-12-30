@@ -2,7 +2,7 @@ import { prop } from '@typegoose/typegoose';
 import { Field, ObjectType } from 'type-graphql';
 
 @ObjectType()
-export class ComputationHistoryEntry {
+export class PipelineHistoryItem {
   @Field()
   @prop({ required: true, trim: true })
   message!: string;

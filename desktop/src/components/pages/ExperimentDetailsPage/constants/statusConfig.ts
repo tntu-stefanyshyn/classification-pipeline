@@ -1,4 +1,4 @@
-import { ComputationStatus } from '../graphql';
+import { PipelineStatus } from '../graphql';
 
 export const graphMetricLabels: Record<string, string> = {
   accuracy: 'Точність',
@@ -7,7 +7,7 @@ export const graphMetricLabels: Record<string, string> = {
   ntps: 'NTPS',
 };
 
-export const runStatusColors: Record<ComputationStatus, string> = {
+export const runStatusColors: Record<PipelineStatus, string> = {
   queued: '#2563eb',
   running: '#f59e0b',
   failed: '#ef4444',
@@ -17,7 +17,7 @@ export const runStatusColors: Record<ComputationStatus, string> = {
   paused: '#a855f7',
 };
 
-export const runStatusPriority: Record<ComputationStatus, number> = {
+export const runStatusPriority: Record<PipelineStatus, number> = {
   running: 1,
   queued: 2,
   failed: 3,
@@ -27,12 +27,12 @@ export const runStatusPriority: Record<ComputationStatus, number> = {
   paused: 7,
 };
 
-export const statusLegendOrder: ComputationStatus[] = [
-  ComputationStatus.queued,
-  ComputationStatus.running,
-  ComputationStatus.paused,
-  ComputationStatus.failed,
-  ComputationStatus.completed,
-  ComputationStatus.stopped,
-  ComputationStatus.idle,
+export const statusLegendOrder: PipelineStatus[] = [
+  PipelineStatus.queued,
+  PipelineStatus.running,
+  PipelineStatus.paused,
+  PipelineStatus.failed,
+  PipelineStatus.completed,
+  PipelineStatus.stopped,
+  PipelineStatus.idle,
 ];

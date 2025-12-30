@@ -1,4 +1,4 @@
-import { ComputationQueue, ComputationStatus, ExperimentStatus } from '../graphql/types.generated';
+import { ComputationQueue, PipelineStatus, ExperimentStatus } from '../graphql/types.generated';
 
 const uk = {
   computationQueue: { cloud: 'Хмарна черга', local: 'Локальна черга' } satisfies Record<
@@ -13,7 +13,7 @@ const uk = {
     failed: 'Провалився',
     stopped: 'Зупинено',
     idle: 'Немає запусків',
-  } satisfies Record<ComputationStatus, string>,
+  } satisfies Record<PipelineStatus, string>,
   experimentStatus: {
     creating: 'Створення',
     configuring: 'Налаштування',

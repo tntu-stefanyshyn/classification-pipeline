@@ -1,9 +1,9 @@
 import { prop } from '@typegoose/typegoose';
 import { Field, Float, InputType, Int, ObjectType } from 'type-graphql';
-import { ComputationQueue } from './ComputationQueue';
+import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 
 @ObjectType()
-export class ComputationMachineInfo {
+export class PipelineMachineInfo {
   @Field({ nullable: true })
   @prop({ trim: true })
   hostname?: string;
@@ -46,7 +46,7 @@ export class ComputationMachineInfo {
 }
 
 @InputType()
-export class ComputationMachineInfoInput {
+export class PipelineMachineInfoInput {
   @Field({ nullable: true })
   hostname?: string;
 

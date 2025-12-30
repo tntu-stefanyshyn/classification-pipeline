@@ -1,6 +1,6 @@
-import { ComputationHistoryEntry } from '../../../../../../../../../graphql/types.generated';
+import { PipelineHistoryItem } from '../../../../../../../../../graphql/types.generated';
 
-export type HistoryItem = Pick<ComputationHistoryEntry, 'createdAt' | 'message'>;
+export type HistoryItem = Pick<PipelineHistoryItem, 'createdAt' | 'message'>;
 
 export interface HistoryTableProps {
   history: HistoryItem[];

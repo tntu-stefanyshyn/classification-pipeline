@@ -5,8 +5,8 @@ import { Readable } from 'node:stream';
 import { Types } from 'mongoose';
 import { config } from '../../../config/config';
 import { ComputationQueue } from '../classes/ComputationQueue';
-import { ComputationStatus } from '../classes/ComputationStatus';
-import { ComputationRunModel } from '../models/ComputationRunModel';
+import { PipelineStatus } from '../classes/PipelineStatus';
+import { PipelineModel } from '../models/PipelineModel';
 import { ComputationManager } from './ComputationManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
@@ -162,9 +162,9 @@ export class CloudComputationWorker {
   }
 
   private async reconcileRuns() {
-    const runningRuns = await ComputationRunModel.find({
+    const runningRuns = await PipelineModel.find({
       queue: ComputationQueue.cloud,
-      status: ComputationStatus.running,
+      status: PipelineStatus.running,
     })
       .sort({ createdAt: 1 })
       .lean();
@@ -194,11 +194,11 @@ export class CloudComputationWorker {
       throw new Error(`Invalid run id: ${runId}`);
     }
 
-    const run = await ComputationRunModel.findById(runId).lean();
+    const run = await PipelineModel.findById(runId).lean();
     if (!run) {
       throw new Error('Computation run not found');
     }
-    if (run.status !== ComputationStatus.running) {
+    if (run.status !== PipelineStatus.running) {
       return;
     }
 
@@ -247,8 +247,8 @@ export class CloudComputationWorker {
 
     const jobId = submitResponse.jobId ?? '';
     const statusMessage = jobId ? `AWS: ${jobId}` : 'Відправлено в AWS';
-    await ComputationRunModel.findOneAndUpdate(
-      { _id: runId, status: ComputationStatus.running },
+    await PipelineModel.findOneAndUpdate(
+      { _id: runId, status: PipelineStatus.running },
       {
         $set: {
           statusMessage,

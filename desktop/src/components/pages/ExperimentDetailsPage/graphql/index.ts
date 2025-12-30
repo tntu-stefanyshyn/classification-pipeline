@@ -17,7 +17,7 @@ export {
   ClassificationStage,
   ComputationMode,
   ComputationQueue,
-  ComputationStatus,
+  PipelineStatus,
   ExperimentStatus,
 } from '../../../../graphql/types.generated';
 export type { GraphNode } from '../../../../graphql/types.generated';

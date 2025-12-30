@@ -1,9 +1,10 @@
 import { Field, ID, InputType, Int } from 'type-graphql';
+import { ObjectIdOrSting } from '../../../types/context';
 
 @InputType()
-export class UpdateExperimentRunInput {
+export class UpdatePipelineInput {
   @Field(() => ID)
-  runId!: string;
+  pipelineId!: ObjectIdOrSting;
 
   @Field(() => Int, { nullable: true })
   progress?: number;

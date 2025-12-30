@@ -13,7 +13,7 @@ import {
 import {
   ClassificationStage,
   ComputationQueue,
-  ComputationStatus,
+  PipelineStatus,
 } from '../../../graphql/types.generated';
 import {
   runStatusColors,
@@ -36,6 +36,7 @@ const ComputationCard: FC = () => {
   const params = useParams();
   const id = params.id ?? '';
   const { data, refetch } = useExperimentQuery({
+    pollInterval: 5000,
     variables: { _id: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
@@ -46,6 +47,7 @@ const ComputationCard: FC = () => {
     error: runsError,
     refetch: refetchRuns,
   } = useExperimentRunsQuery({
+    pollInterval: 5000,
     variables: { experimentId: id },
     skip: !id,
     fetchPolicy: 'cache-and-network',
@@ -141,11 +143,11 @@ const ComputationCard: FC = () => {
     return null;
   }, [allPathsHaveClassification, graph, graphPaths.length, graphSettingsReady, queueAllowed]);
   const pathStatusMap = useMemo(() => {
-    const map = new Map<string, ComputationStatus>();
+    const map = new Map<string, PipelineStatus>();
     graphPaths.forEach((path) => {
       const runsForPath = runsByPath.get(path.id) ?? [];
       if (runsForPath.length === 0) {
-        map.set(path.id, ComputationStatus.idle);
+        map.set(path.id, PipelineStatus.idle);
         return;
       }
       map.set(path.id, runsForPath[0].status);
@@ -234,9 +236,9 @@ const ComputationCard: FC = () => {
       header: 'Статус',
       id: 'status',
       cell: ({ row }) => {
-        const status = pathStatusMap.get(row.original.status) ?? ComputationStatus.idle;
-        return status === ComputationStatus.idle ? (
-          <span className="muted small">{uk.computationStatus[ComputationStatus.idle]}</span>
+        const status = pathStatusMap.get(row.original.status) ?? PipelineStatus.idle;
+        return status === PipelineStatus.idle ? (
+          <span className="muted small">{uk.computationStatus[PipelineStatus.idle]}</span>
         ) : (
           <span className={`status-pill status-${status}`}>
             {uk.computationStatus[status] ?? status}
@@ -283,9 +285,9 @@ const ComputationCard: FC = () => {
       cell: ({ row }) => {
         const { status, pathNodeIds, _id } = row.original;
         const activeRun =
-          status === ComputationStatus.running ||
-          status === ComputationStatus.queued ||
-          status === ComputationStatus.paused;
+          status === PipelineStatus.running ||
+          status === PipelineStatus.queued ||
+          status === PipelineStatus.paused;
 
         const actionBusy = enqueueing || stopping;
         const hasActive = Boolean(activeRun);
@@ -361,7 +363,7 @@ const ComputationCard: FC = () => {
   const edgeColorMap = useMemo(() => {
     const map = new Map<string, { color: string; priority: number }>();
     graphPaths.forEach((path) => {
-      const status = pathStatusMap.get(path.id) ?? ComputationStatus.idle;
+      const status = pathStatusMap.get(path.id) ?? PipelineStatus.idle;
       const color = runStatusColors[status];
       const priority = runStatusPriority[status];
       const nodeChain = [ROOT_NODE_ID, ...path.nodeIds];

@@ -30,12 +30,12 @@ input CompleteExperimentRunInput {
   statusMessage: String
 }
 
-type ComputationHistoryEntry {
+type PipelineHistoryItem {
   createdAt: DateTimeISO!
   message: String!
 }
 
-type ComputationMachineInfo {
+type PipelineMachineInfo {
   appVersion: String
   arch: String
   cores: Int
@@ -48,7 +48,7 @@ type ComputationMachineInfo {
   release: String
 }
 
-input ComputationMachineInfoInput {
+input PipelineMachineInfoInput {
   appVersion: String
   arch: String
   cores: Int
@@ -98,21 +98,21 @@ type ComputationResultPayload {
   weightedAvg: ClassificationMetric
 }
 
-type ComputationRun {
+type Pipeline {
   _id: ID!
   createdAt: DateTimeISO!
   experimentId: ID!
-  history: [ComputationHistoryEntry!]!
+  history: [PipelineHistoryItem!]!
   pathNodeIds: [ID!]!
   pathNodes: [GraphNode!]!
   progress: Int
   queue: ComputationQueue!
-  status: ComputationStatus!
+  status: PipelineStatus!
   statusMessage: String
   updatedAt: DateTimeISO!
 }
 
-enum ComputationStatus {
+enum PipelineStatus {
   completed
   failed
   idle
@@ -150,7 +150,7 @@ input EnqueueExperimentRunsInput {
 
 type Experiment {
   _id: ID!
-  computationHosts: [ComputationMachineInfo!]
+  computationHosts: [PipelineMachineInfo!]
   createdAt: DateTimeISO!
   description: String
   fileId: ID
@@ -250,24 +250,21 @@ input LoginInput {
 }
 
 type Mutation {
-  claimExperimentRun(
-    machineInfo: ComputationMachineInfoInput
-    queue: ComputationQueue!
-  ): ComputationRun
-  completeExperimentRun(input: CompleteExperimentRunInput!): ComputationRun!
+  claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
+  completeExperimentRun(input: CompleteExperimentRunInput!): Pipeline!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
-  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): [ComputationRun!]!
-  failExperimentRun(input: FailExperimentRunInput!): ComputationRun!
+  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): [Pipeline!]!
+  failExperimentRun(input: FailExperimentRunInput!): Pipeline!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
-  pauseExperimentRuns(experimentId: ID!): [ComputationRun!]!
+  pauseExperimentRuns(experimentId: ID!): [Pipeline!]!
   register(input: RegisterInput!): AuthPayload!
-  resumeExperimentRuns(experimentId: ID!): [ComputationRun!]!
-  stopExperimentRun(input: StopExperimentRunInput!): ComputationRun!
+  resumeExperimentRuns(experimentId: ID!): [Pipeline!]!
+  stopExperimentRun(input: StopExperimentRunInput!): Pipeline!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
-  updateExperimentRun(input: UpdateExperimentRunInput!): ComputationRun!
+  updateExperimentRun(input: UpdatePipelineInput!): Pipeline!
 }
 
 type OptimizationResult {
@@ -279,8 +276,8 @@ type OptimizationResult {
 type Query {
   experiment(_id: ID!): Experiment
   experimentResults(experimentId: ID!): [ComputationResult!]!
-  experimentRun(runId: ID!): ComputationRun
-  experimentRuns(experimentId: ID!, queue: ComputationQueue): [ComputationRun!]!
+  experimentRun(runId: ID!): Pipeline
+  experimentRuns(experimentId: ID!, queue: ComputationQueue): [Pipeline!]!
   experiments: [Experiment!]!
   health: String!
   me: User!
@@ -353,7 +350,7 @@ input UpdateExperimentInput {
   name: String
 }
 
-input UpdateExperimentRunInput {
+input UpdatePipelineInput {
   progress: Int
   runId: ID!
   statusMessage: String

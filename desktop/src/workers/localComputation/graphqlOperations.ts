@@ -1,9 +1,9 @@
 import type {
   CompleteExperimentRunInput,
   ComputationQueue,
-  ComputationMachineInfoInput,
+  PipelineMachineInfoInput,
   FailExperimentRunInput,
-  UpdateExperimentRunInput,
+  UpdatePipelineInput,
 } from '../../graphql/types.generated';
 import {
   ClaimExperimentRunDocument,
@@ -40,7 +40,7 @@ import { GraphqlClient } from './graphqlClient';
 export const claimExperimentRun = async (
   client: GraphqlClient,
   queue: ComputationQueue,
-  machineInfo?: ComputationMachineInfoInput
+  machineInfo?: PipelineMachineInfoInput
 ) => {
   const data = await client.request<
     ClaimExperimentRunMutation,
@@ -65,10 +65,7 @@ export const fetchExperimentRun = async (client: GraphqlClient, runId: string) =
   return data.experimentRun ?? null;
 };
 
-export const updateExperimentRun = async (
-  client: GraphqlClient,
-  input: UpdateExperimentRunInput
-) => {
+export const updateExperimentRun = async (client: GraphqlClient, input: UpdatePipelineInput) => {
   await client.request<UpdateExperimentRunMutation, UpdateExperimentRunMutationVariables>(
     UpdateExperimentRunDocument,
     { input }

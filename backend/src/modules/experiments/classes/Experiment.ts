@@ -3,7 +3,7 @@ import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 import { ExperimentStatus } from './ExperimentStatus';
-import { ComputationMachineInfo } from '../../computations/classes/ComputationMachineInfo';
+import { PipelineMachineInfo } from '../../../core/pipeline/classes/PipelineMachineInfo';
 
 @ObjectType()
 export class Experiment extends TimeStamps {
@@ -31,9 +31,9 @@ export class Experiment extends TimeStamps {
   @prop({ type: () => Types.ObjectId })
   fileId?: Types.ObjectId;
 
-  @Field(() => [ComputationMachineInfo], { nullable: true })
-  @prop({ _id: false, type: () => [ComputationMachineInfo], default: [] })
-  computationHosts?: ComputationMachineInfo[];
+  @Field(() => [PipelineMachineInfo], { nullable: true })
+  @prop({ _id: false, type: () => [PipelineMachineInfo], default: [] })
+  computationHosts?: PipelineMachineInfo[];
 
   @Field(() => Date)
   declare createdAt: Date;

@@ -1,22 +1,4 @@
-import type { PathStatus } from '../ExperimentDetailsPage.types';
-import { ComputationStatus, ExperimentStatus } from '../graphql';
-
-export const runStatusLabels: Record<PathStatus, string> = {
-  [ComputationStatus.queued]: 'Очікування',
-  [ComputationStatus.running]: 'Обчислення',
-  [ComputationStatus.paused]: 'Пауза',
-  [ComputationStatus.completed]: 'Завершено',
-  [ComputationStatus.failed]: 'Провалився',
-  [ComputationStatus.stopped]: 'Зупинено',
-  [ComputationStatus.idle]: 'Немає запусків',
-};
-
-export const experimentStatusLabels: Record<ExperimentStatus, string> = {
-  [ExperimentStatus.creating]: 'Створення',
-  [ExperimentStatus.configuring]: 'Налаштування',
-  [ExperimentStatus.computing]: 'Обчислення',
-  [ExperimentStatus.completed]: 'Завершено',
-};
+import { ComputationStatus } from '../graphql';
 
 export const graphMetricLabels: Record<string, string> = {
   accuracy: 'Точність',
@@ -25,7 +7,7 @@ export const graphMetricLabels: Record<string, string> = {
   ntps: 'NTPS',
 };
 
-export const runStatusColors: Record<PathStatus, string> = {
+export const runStatusColors: Record<ComputationStatus, string> = {
   queued: '#2563eb',
   running: '#f59e0b',
   failed: '#ef4444',
@@ -35,7 +17,7 @@ export const runStatusColors: Record<PathStatus, string> = {
   paused: '#a855f7',
 };
 
-export const runStatusPriority: Record<PathStatus, number> = {
+export const runStatusPriority: Record<ComputationStatus, number> = {
   running: 1,
   queued: 2,
   failed: 3,
@@ -45,7 +27,7 @@ export const runStatusPriority: Record<PathStatus, number> = {
   paused: 7,
 };
 
-export const statusLegendOrder: PathStatus[] = [
+export const statusLegendOrder: ComputationStatus[] = [
   ComputationStatus.queued,
   ComputationStatus.running,
   ComputationStatus.paused,

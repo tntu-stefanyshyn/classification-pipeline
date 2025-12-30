@@ -104,6 +104,7 @@ type ComputationRun {
   experimentId: ID!
   history: [ComputationHistoryEntry!]!
   pathNodeIds: [ID!]!
+  pathNodes: [GraphNode!]!
   progress: Int
   queue: ComputationQueue!
   status: ComputationStatus!

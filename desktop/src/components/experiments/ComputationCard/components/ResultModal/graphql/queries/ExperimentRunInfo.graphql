@@ -1,0 +1,18 @@
+query ExperimentRunInfo($experimentRunId: ID!) {
+  experimentRun(runId: $experimentRunId) {
+    _id
+    status
+    updatedAt
+    queue
+    statusMessage
+    progress
+    pathNodes {
+      _id
+      label
+    }
+    history {
+      createdAt
+      message
+    }
+  }
+}

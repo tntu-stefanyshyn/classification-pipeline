@@ -1,4 +1,4 @@
-import { Arg, ID, Mutation, Query, Resolver } from 'type-graphql';
+import { Arg, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
 import { ComputationRun } from '../classes/ComputationRun';
 import { ComputationResult } from '../classes/ComputationResult';
 import { OptimizationResult } from '../classes/OptimizationResult';
@@ -10,10 +10,30 @@ import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInpu
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMachineInfoInput } from '../classes/ComputationMachineInfo';
 import { ComputationManager } from '../services/ComputationManager';
+import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
+import { GraphNode } from '../../experiments/classes/GraphNode';
 
-@Resolver()
+@Resolver(() => ComputationRun)
 export class Computations {
   private readonly manager = new ComputationManager();
+
+  @FieldResolver(() => [GraphNode])
+  async pathNodes(@Root() { experimentId, pathNodeIds }: ComputationRun): Promise<GraphNode[]> {
+    const graphNodes = await GraphStructureModel.aggregate<GraphNode>([
+      { $match: { experimentId } },
+      { $unwind: '$nodes' },
+      { $replaceRoot: { newRoot: '$nodes' } },
+      { $match: { _id: { $in: pathNodeIds } } },
+    ]);
+
+    const nodeMap = new Map(graphNodes.map((n) => [n._id.toString(), n]));
+
+    const orderedNodes = pathNodeIds
+      .map((id) => nodeMap.get(id.toString()))
+      .filter(Boolean) as typeof graphNodes;
+
+    return orderedNodes;
+  }
 
   @Query(() => [ComputationRun])
   experimentRuns(

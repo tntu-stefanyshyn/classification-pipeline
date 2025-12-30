@@ -6,9 +6,16 @@ import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentModel } from '../models/ExperimentModel';
 import { GraphManager } from './GraphManager';
 import { ExperimentStatus } from '../classes/ExperimentStatus';
+import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowType } from '../../../core/workflow/enums';
+import { Transitions } from '../../../core/workflow/services/WorkflowManager.types.';
+import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusInput';
 
 export class ExperimentManager {
   private readonly graphManager = new GraphManager();
+  private readonly pipelineManager = new PipelineManager();
+  private readonly workflowManager = new WorkflowManager();
 
   async list(): Promise<Experiment[]> {
     const experiments = await ExperimentModel.find().sort({ createdAt: -1 }).lean();
@@ -137,5 +144,34 @@ export class ExperimentManager {
     ).exec();
 
     return experiment;
+  }
+
+  private readonly transitions: Transitions<ExperimentStatus> = [
+    {
+      from: ExperimentStatus.creating,
+      to: ExperimentStatus.configuring,
+    },
+    {
+      from: ExperimentStatus.configuring,
+      to: ExperimentStatus.computing,
+      sideEffect: async ({ instanceId }) => {
+        await this.pipelineManager.generatePipelinesFromGraphStructure(instanceId);
+      },
+    },
+    {
+      from: ExperimentStatus.computing,
+      to: ExperimentStatus.completed,
+    },
+  ];
+
+  async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {
+    await this.workflowManager.changeStatus({
+      instanceId: experimentId,
+      status,
+      transitions: this.transitions,
+      type: WorkflowType.EXPERIMENT,
+    });
+
+    return true;
   }
 }

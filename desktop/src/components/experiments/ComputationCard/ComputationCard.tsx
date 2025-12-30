@@ -53,7 +53,6 @@ const ComputationCard: FC = () => {
     fetchPolicy: 'cache-and-network',
   });
   const [resultsPathId, setResultsPathId] = useState<string | null>(null);
-  console.log(resultsPathId);
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();

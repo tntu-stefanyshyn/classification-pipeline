@@ -1,0 +1,3 @@
+mutation ChangeExperimentStatus($input: ChangeExperimentStatusInput!) {
+  changeExperimentStatus(input: $input)
+}

@@ -29,6 +29,7 @@ import { buildGraphPaths } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import ComputationCard from '../../experiments/ComputationCard/ComputationCard';
 import uk from '../../../i18n/uk';
+import ChangeExperimentStatusButton from '../../experiments/ChangeExperimentStatusButton/ChangeExperimentStatusButton';
 
 const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => {
   const params = useParams();
@@ -279,7 +280,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               </Alert>
             )}
           </section>
-
+          <ChangeExperimentStatusButton />
           <ComputationCard />
         </div>
       )}

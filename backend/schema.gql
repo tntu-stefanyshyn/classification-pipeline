@@ -8,6 +8,11 @@ type AuthPayload {
   user: User!
 }
 
+input ChangeExperimentStatusInput {
+  experimentId: String!
+  status: ExperimentStatus!
+}
+
 type ClassificationMetric {
   f1Score: Float!
   label: String!
@@ -197,6 +202,7 @@ input LoginInput {
 }
 
 type Mutation {
+  changeExperimentStatus(input: ChangeExperimentStatusInput!): Boolean!
   claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
   completeExperimentRun(input: CompleteExperimentRunInput!): Pipeline!
   createExperiment(input: CreateExperimentInput!): Experiment!

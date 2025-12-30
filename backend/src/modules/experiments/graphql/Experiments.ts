@@ -55,12 +55,11 @@ export class Experiments {
     return this.manager.generateGraph(input);
   }
 
-  @Mutation(() => Experiment)
+  @Mutation(() => Boolean)
   changeExperimentStatus(
     @Arg('input', () => ChangeExperimentStatusInput) input: ChangeExperimentStatusInput
   ): Promise<boolean> {
     return this.experimentManager.changeStatus(input);
   }
-
   // #endregion Mutation
 }

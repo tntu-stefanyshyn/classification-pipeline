@@ -1,6 +1,10 @@
 import os from 'node:os';
 import { app } from 'electron';
-import { PipelineMachineInfoInput, ComputationQueue } from '../../graphql/types.generated';
+import {
+  PipelineMachineInfoInput,
+  ComputationQueue,
+  UpdatePipelineInput,
+} from '../../graphql/types.generated';
 import { config } from '../../config/config';
 import { createGraphqlClient, GraphqlClient, isFetchAvailable } from './graphqlClient';
 import {
@@ -142,8 +146,11 @@ export class LocalComputationWorker {
     };
   }
 
-  private async updateRun(runId: string, update: { progress?: number; statusMessage?: string }) {
-    const input: { runId: string; progress?: number; statusMessage?: string } = { runId };
+  private async updateRun(
+    pipelineId: string,
+    update: { progress?: number; statusMessage?: string }
+  ) {
+    const input: UpdatePipelineInput = { pipelineId };
 
     if (typeof update.progress === 'number' && Number.isFinite(update.progress)) {
       input.progress = Math.max(0, Math.min(100, Math.round(update.progress)));

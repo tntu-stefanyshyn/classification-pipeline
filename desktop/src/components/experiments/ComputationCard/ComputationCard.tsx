@@ -177,7 +177,7 @@ const ComputationCard: FC = () => {
     }
   };
 
-  const handleStartPath = async (pathNodeIds: string[], isRecompute = false) => {
+  const handleStartPath = async (pipelineId: string, isRecompute = false) => {
     if (!experiment || !canStartComputations) {
       setActionStatus(runBlocker ?? 'Спочатку налаштуйте обчислення.');
       return;
@@ -188,18 +188,15 @@ const ComputationCard: FC = () => {
           input: {
             experimentId: experiment._id,
             queue: defaultQueue,
-            pathNodeIds,
+            pipelineId,
             rerun: true,
           },
         },
       });
       const created = result.data?.enqueueExperimentRuns ?? [];
       const queueLabel = defaultQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
-      const label = resolvePathLabel(pathNodeIds);
       setActionStatus(
-        `${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу: ${label} (${
-          created.length
-        }).`
+        `${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу (${created.length}).`
       );
       await Promise.all([refetchRuns(), refetch()]);
     } catch (_err) {
@@ -299,7 +296,7 @@ const ComputationCard: FC = () => {
             <button
               className="btn ghost small icon"
               type="button"
-              onClick={() => void handleStartPath(pathNodeIds)}
+              onClick={() => void handleStartPath(_id)}
               disabled={!canRun}
               aria-label="Запустити шлях"
               title="Запуск"
@@ -323,7 +320,7 @@ const ComputationCard: FC = () => {
             <button
               className="btn ghost small icon"
               type="button"
-              onClick={() => void handleStartPath(pathNodeIds, true)}
+              onClick={() => void handleStartPath(_id, true)}
               disabled={!canRecompute}
               aria-label="Перезапустити шлях"
               title="Перезапустити"

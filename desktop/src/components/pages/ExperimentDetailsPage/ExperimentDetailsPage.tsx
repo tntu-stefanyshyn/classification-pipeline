@@ -192,7 +192,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             <article className="card stat-card">
               <p className="muted">Статус</p>
               <span className={`status-pill status-${experiment.status}`}>
-                {uk.experimentStatus[experiment.status] ?? experiment.status}
+                {uk.experimentStatus[experiment.status!] ?? experiment.status}
               </span>
             </article>
             <article className="card stat-card">

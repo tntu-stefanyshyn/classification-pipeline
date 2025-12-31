@@ -4,11 +4,11 @@ import { PipelineModel } from '../models/PipelineModel';
 import { UpdatePipelineInput } from '../classes/UpdatePipelineInput';
 import { PipelineStatus } from '../enums';
 import { PipelineHistoryItem } from '../classes/PipelineHistoryItem';
-import { ObjectIdOrSting } from '../../../types/context';
+import { ObjectIdOrString } from '../../../types/context';
 
 class PipelineBaseServiceClass {
   async listByExperiment(
-    experimentId: ObjectIdOrSting,
+    experimentId: ObjectIdOrString,
     queue?: ComputationQueue
   ): Promise<Pipeline[]> {
     return PipelineModel.find({ experimentId, ...(queue ? { queue } : {}) })
@@ -16,7 +16,7 @@ class PipelineBaseServiceClass {
       .lean();
   }
 
-  async getById(pipelineId: ObjectIdOrSting): Promise<Pipeline> {
+  async getById(pipelineId: ObjectIdOrString): Promise<Pipeline> {
     const pipeline = await PipelineModel.findById(pipelineId).lean();
     if (!pipeline) throw new Error('Шляху не знайдено');
     return pipeline;
@@ -24,9 +24,9 @@ class PipelineBaseServiceClass {
 
   async update({ pipelineId, progress, statusMessage }: UpdatePipelineInput): Promise<Pipeline> {
     const pipeline = await this.getById(pipelineId);
-    if (pipeline.status === PipelineStatus.paused) {
-      return pipeline;
-    }
+    // if (pipeline.status === PipelineStatus.paused) {
+    //   return pipeline;
+    // }
 
     await PipelineModel.updateOne(
       { _id: pipelineId },

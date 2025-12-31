@@ -3,7 +3,6 @@ import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
-import { PipelineStatus } from '../enums';
 import { PipelineMachineInfo } from './PipelineMachineInfo';
 import { PipelineHistoryItem } from './PipelineHistoryItem';
 
@@ -23,14 +22,6 @@ export class Pipeline extends TimeStamps {
   @Field(() => ComputationQueue)
   @prop({ required: true, enum: ComputationQueue, type: () => String })
   queue!: ComputationQueue;
-
-  @Field(() => PipelineStatus)
-  @prop({
-    required: true,
-    enum: PipelineStatus,
-    type: () => String,
-  })
-  status!: PipelineStatus;
 
   @Field(() => [ID])
   @prop({ required: true, type: () => [Types.ObjectId] })

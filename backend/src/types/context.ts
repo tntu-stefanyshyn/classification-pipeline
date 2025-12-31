@@ -6,4 +6,4 @@ export type GraphQLContext = {
   res: Response;
 };
 
-export type ObjectIdOrSting = Types.ObjectId | string;
+export type ObjectIdOrString = Types.ObjectId | string;

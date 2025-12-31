@@ -2,7 +2,6 @@ import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
-import { ExperimentStatus } from './ExperimentStatus';
 import { PipelineMachineInfo } from '../../../core/pipeline/classes/PipelineMachineInfo';
 
 @ObjectType()
@@ -17,15 +16,6 @@ export class Experiment extends TimeStamps {
   @Field({ nullable: true })
   @prop({ trim: true })
   description?: string;
-
-  @Field(() => ExperimentStatus)
-  @prop({
-    required: true,
-    enum: ExperimentStatus,
-    type: () => String,
-    default: ExperimentStatus.creating,
-  })
-  status!: ExperimentStatus;
 
   @Field(() => ID, { nullable: true })
   @prop({ type: () => Types.ObjectId })

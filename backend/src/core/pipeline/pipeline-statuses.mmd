@@ -1,0 +1,19 @@
+stateDiagram-v2
+  [*] --> idle
+
+  idle --> queued : submit
+  queued --> running : start
+
+  running --> paused : pause
+  paused --> running : resume
+
+  running --> completed : success
+  running --> failed : error
+  running --> idle : stop
+
+  paused --> idle : stop
+  queued --> idle : stop
+
+  failed --> queued : retry
+
+  completed --> [*]

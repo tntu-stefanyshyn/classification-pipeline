@@ -4,9 +4,14 @@ import { buildGraphPaths } from '../../../modules/experiments/utils/buildGraphPa
 import { PipelineModel } from '../models/PipelineModel';
 import { PipelineStatus } from '../enums';
 import { Pipeline } from '../classes/Pipeline';
+import { WorkflowManager } from '../../workflow/services/WorkflowManager';
+import { WorkflowType } from '../../workflow/enums';
+import { Transitions } from '../../workflow/services/WorkflowManager.types.';
+import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 
 export class PipelineManager {
   private readonly graphManager = new GraphManager();
+  private readonly workflowManager = new WorkflowManager();
 
   async generatePipelinesFromGraphStructure(
     experimentId: Types.ObjectId | string
@@ -29,7 +34,154 @@ export class PipelineManager {
         )
       )
     );
+    const pipelines = results.flat();
 
-    return results.flat();
+    await Promise.all(
+      pipelines.map((pipeline) =>
+        this.workflowManager.create({
+          instanceId: pipeline._id,
+          status: PipelineStatus.idle,
+          type: WorkflowType.PIPELINE,
+        })
+      )
+    );
+
+    return pipelines;
+  }
+
+  private readonly transitions: Transitions<PipelineStatus> = [
+    {
+      from: PipelineStatus.idle,
+      to: PipelineStatus.queued,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          {
+            $set: {
+              status: PipelineStatus.queued,
+              progress: 0,
+              statusMessage: 'В черзі',
+              priority: 0,
+            },
+            $unset: { machineInfo: '' },
+          }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.queued,
+      to: PipelineStatus.running,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          {
+            $set: {
+              status: PipelineStatus.running,
+              progress: 0,
+              statusMessage: 'Запущено',
+            },
+          }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.running,
+      to: PipelineStatus.paused,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          {
+            $set: { status: PipelineStatus.paused, statusMessage: 'Пауза' },
+            $unset: { machineInfo: '', cloudJobId: '' },
+          }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.paused,
+      to: PipelineStatus.running,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          {
+            $set: { status: PipelineStatus.running, statusMessage: 'Запущено' },
+          }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.running,
+      to: PipelineStatus.completed,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $set: { status: PipelineStatus.completed, progress: 100, statusMessage: 'Завершено' } }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.running,
+      to: PipelineStatus.failed,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $set: { status: PipelineStatus.failed, statusMessage: 'Помилка' } }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.running,
+      to: PipelineStatus.idle,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.paused,
+      to: PipelineStatus.idle,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.queued,
+      to: PipelineStatus.idle,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+        ).exec();
+      },
+    },
+    {
+      from: PipelineStatus.failed,
+      to: PipelineStatus.queued,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          {
+            $set: { status: PipelineStatus.queued, progress: 0, statusMessage: 'В черзі' },
+            $unset: { machineInfo: '', cloudJobId: '' },
+          }
+        ).exec();
+      },
+    },
+  ];
+
+  async changeStatus({ pipelineId, status }: ChangePipelineStatusInput) {
+    await this.workflowManager.changeStatus({
+      instanceId: pipelineId,
+      status,
+      transitions: this.transitions,
+      type: WorkflowType.PIPELINE,
+    });
+
+    return true;
   }
 }

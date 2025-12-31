@@ -22,6 +22,7 @@ export class UpdateExperimentInput {
 
   @Field(() => GraphStructureSettings, { nullable: true })
   graphSettings?: GraphStructureSettings;
+
   @Field(() => ComputationMode, { nullable: true })
   graphComputationMode?: ComputationMode;
 }

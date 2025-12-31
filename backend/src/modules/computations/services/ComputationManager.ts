@@ -27,11 +27,15 @@ import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInpu
 import { Pipeline, PipelineBaseService, PipelineModel } from '../../../core/pipeline';
 import { PipelineStatus } from '../../../core/pipeline/enums';
 import { PipelineHistoryItem } from '../../../core/pipeline/classes/PipelineHistoryItem';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowType } from '../../../core/workflow/enums';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
   private readonly optimizationRunner = new OptimizationRunner();
+  private readonly workflowManager = new WorkflowManager();
+
   async listResultsByExperiment(experimentId: string): Promise<ComputationResult[]> {
     const trimmedId = experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
@@ -214,27 +218,20 @@ export class ComputationManager {
     return created.map((doc) => doc.toObject({ getters: true })) as Pipeline[];
   }
 
-  async stopRun(runId: string): Promise<Pipeline> {
-    const trimmedId = runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    const run = await PipelineModel.findById(trimmedId);
-    if (!run) throw new Error('Computation run not found');
-
+  async stopRun(pipelineId: string): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(pipelineId);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
     if (
-      run.status === PipelineStatus.completed ||
-      run.status === PipelineStatus.failed ||
-      run.status === PipelineStatus.stopped
+      workflow.status === PipelineStatus.completed ||
+      workflow.status === PipelineStatus.failed ||
+      workflow.status === PipelineStatus.stopped
     ) {
-      return run.toObject({ getters: true }) as Pipeline;
+      return pipeline;
     }
-
-    run.status = PipelineStatus.stopped;
-    await run.save();
-    await this.syncExperimentStatus(String(run.experimentId));
-
-    return run.toObject({ getters: true }) as Pipeline;
+    return pipeline;
   }
 
   async claimNextRun(
@@ -272,9 +269,9 @@ export class ComputationManager {
 
     const run = await PipelineModel.findById(trimmedId).lean();
     if (!run) throw new Error('Computation run not found');
-    if (run.status === PipelineStatus.paused) {
-      return run;
-    }
+    // if (run.status === PipelineStatus.paused) {
+    //   return run;
+    // }
 
     const rawResult = input.resultJson?.trim();
     let parsedPayload: Record<string, unknown> | null = null;
@@ -332,9 +329,9 @@ export class ComputationManager {
 
     const existing = await PipelineModel.findById(trimmedId).lean();
     if (!existing) throw new Error('Computation run not found');
-    if (existing.status === PipelineStatus.paused) {
-      return existing;
-    }
+    // if (existing.status === PipelineStatus.paused) {
+    //   return existing;
+    // }
 
     const statusMessage = input.statusMessage?.trim() || 'Помилка';
     const failureEntry = this.buildHistoryEntry(statusMessage);
@@ -532,9 +529,10 @@ export class ComputationManager {
   }
 
   private async syncExperimentStatus(experimentId: string): Promise<void> {
-    const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
-      .select('status')
-      .lean();
+    // const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
+    //   .select('status')
+    //   .lean();
+    const runs: any[] = [];
     if (runs.length === 0) return;
 
     const hasActive = runs.some(

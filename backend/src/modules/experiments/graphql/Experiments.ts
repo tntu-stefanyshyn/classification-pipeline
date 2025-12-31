@@ -7,17 +7,30 @@ import { ExperimentManager } from '../services/ExperimentManager';
 import { GraphManager } from '../services/GraphManager';
 import { GraphStructure } from '../classes/GraphStructure';
 import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusInput';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowType } from '../../../core/workflow/enums';
+import { ExperimentStatus } from '../classes/ExperimentStatus';
 
 @Resolver(() => Experiment)
 export class Experiments {
   private readonly manager = new ExperimentManager();
   private readonly experimentManager = new ExperimentManager();
   private readonly graphManager = new GraphManager();
+  private readonly workflowManager = new WorkflowManager();
 
   // #region FieldResolver
   @FieldResolver(() => GraphStructure, { nullable: true })
   graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
     return this.graphManager.getByExperimentId(experiment._id);
+  }
+
+  @FieldResolver(() => ExperimentStatus, { nullable: true })
+  async status(@Root() { _id }: Experiment) {
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: _id,
+      type: WorkflowType.EXPERIMENT,
+    });
+    return workflow.status;
   }
   // #endregion FieldResolver
 
@@ -42,17 +55,42 @@ export class Experiments {
   }
 
   @Mutation(() => Experiment)
-  updateExperiment(
+  async updateExperiment(
     @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
   ): Promise<Experiment> {
-    return this.manager.update(input);
+    const experiment = await this.manager.update(input);
+    if (input.graphSettings || input.graphNodes || input.fileId) {
+      const workflow = await this.workflowManager.getWorkflow({
+        instanceId: input._id,
+        type: WorkflowType.EXPERIMENT,
+      });
+      if (workflow.status !== ExperimentStatus.configuring) {
+        await this.experimentManager.changeStatus({
+          experimentId: input._id,
+          status: ExperimentStatus.configuring,
+        });
+      }
+    }
+    return experiment;
   }
 
   @Mutation(() => Experiment)
-  generateExperimentGraph(
+  async generateExperimentGraph(
     @Arg('input', () => GenerateExperimentGraphInput) input: GenerateExperimentGraphInput
   ): Promise<Experiment> {
-    return this.manager.generateGraph(input);
+    const experiment = await this.manager.generateGraph(input);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: input._id,
+      type: WorkflowType.EXPERIMENT,
+    });
+    if (workflow.status !== ExperimentStatus.configuring) {
+      await this.experimentManager.changeStatus({
+        experimentId: input._id,
+        status: ExperimentStatus.configuring,
+      });
+    }
+
+    return experiment;
   }
 
   @Mutation(() => Boolean)

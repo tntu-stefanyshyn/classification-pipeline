@@ -44,18 +44,24 @@ export class ExperimentManager {
     });
 
     await this.graphManager.createDefaultGraph(experiment._id);
+    await this.workflowManager.create({
+      instanceId: experiment._id,
+      status: ExperimentStatus.creating,
+      type: WorkflowType.EXPERIMENT,
+    });
     return experiment.toObject({ getters: true });
   }
 
   async update(input: UpdateExperimentInput): Promise<Experiment> {
-    const trimmedId = input._id.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-
-    const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+    const existingExperiment = await ExperimentModel.findById(input._id).lean();
     if (!existingExperiment) throw new Error('Experiment not found');
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: input._id,
+      type: WorkflowType.EXPERIMENT,
+    });
     if (
-      existingExperiment.status === ExperimentStatus.computing ||
-      existingExperiment.status === ExperimentStatus.completed
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.completed
     ) {
       throw new Error('Редагування експерименту недоступне після початку обчислень.');
     }
@@ -88,7 +94,7 @@ export class ExperimentManager {
     const requiresGraphUpdate =
       input.graphNodes !== undefined || input.graphComputationMode !== undefined;
     if (requiresGraphUpdate) {
-      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+      const existingExperiment = await ExperimentModel.findById(input._id).lean();
       if (!existingExperiment) throw new Error('Experiment not found');
     }
 
@@ -96,22 +102,20 @@ export class ExperimentManager {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
       }
-      await this.graphManager.updateGraph(trimmedId, input.graphNodes);
-      update.status = ExperimentStatus.configuring;
+      await this.graphManager.updateGraph(input._id, input.graphNodes);
     }
 
     if (input.graphSettings !== undefined) {
-      await this.graphManager.updateGraphSettings(trimmedId, input.graphSettings);
-      update.status = ExperimentStatus.configuring;
+      await this.graphManager.updateGraphSettings(input._id, input.graphSettings);
     }
 
     if (input.graphComputationMode !== undefined) {
-      await this.graphManager.updateComputationMode(trimmedId, input.graphComputationMode);
+      await this.graphManager.updateComputationMode(input._id, input.graphComputationMode);
     }
 
     const updateOps =
       Object.keys(unset).length > 0 ? { $set: update, $unset: unset } : { $set: update };
-    const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, updateOps, {
+    const experiment = await ExperimentModel.findOneAndUpdate({ _id: input._id }, updateOps, {
       new: true,
     }).lean();
 
@@ -130,9 +134,13 @@ export class ExperimentManager {
     if (!experiment) {
       throw new Error('Experiment not found');
     }
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: input._id,
+      type: WorkflowType.EXPERIMENT,
+    });
     if (
-      experiment.status === ExperimentStatus.computing ||
-      experiment.status === ExperimentStatus.completed
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.completed
     ) {
       throw new Error('Редагування графа недоступне після початку обчислень.');
     }

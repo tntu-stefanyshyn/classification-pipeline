@@ -3,7 +3,7 @@ import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
-import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
+import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationManager } from '../services/ComputationManager';
 import { Pipeline } from '../../../core/pipeline';
@@ -63,10 +63,10 @@ export class ComputationResolver {
   }
 
   @Mutation(() => Boolean)
-  async completeExperimentRun(
-    @Arg('input', () => CompleteExperimentRunInput) input: CompleteExperimentRunInput
+  async completePipeline(
+    @Arg('input', () => CompletePipelineInput) input: CompletePipelineInput
   ): Promise<boolean> {
-    await this.manager.completeRun(input);
+    await this.manager.completePipeline(input);
     return true;
   }
 

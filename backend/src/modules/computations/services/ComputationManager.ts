@@ -8,18 +8,13 @@ import {
 } from '../../../core/pipeline/classes/PipelineMachineInfo';
 import { ComputationResultModel } from '../models/ComputationResultModel';
 import { OptimizationResult } from '../classes/OptimizationResult';
-import {
-  ClassificationMetric,
-  ComputationResult,
-  ComputationResultPayload,
-} from '../classes/ComputationResult';
+import { ComputationResult } from '../classes/ComputationResult';
 import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
-import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
@@ -31,13 +26,13 @@ import {
   pipelinesCollectionName,
 } from '../../../core/pipeline';
 import { PipelineStatus } from '../../../core/pipeline/enums';
-import { PipelineHistoryItem } from '../../../core/pipeline/classes/PipelineHistoryItem';
 import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
 import { WorkflowType } from '../../../core/workflow/enums';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
 import { stringIdToObjectId } from '../../../utils';
 import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { ObjectIdOrString } from '../../../types/context';
+import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -74,8 +69,8 @@ export class ComputationManager {
 
     const seenPaths = new Set<string>();
     const conveyors = rawResults
-      .map((result) => {
-        const pathNodeIds = (result.pathNodeIds ?? []).map((id) => String(id));
+      .map((result: any) => {
+        const pathNodeIds = (result.pathNodeIds ?? []).map((id: any) => String(id));
         const pathKey = pathNodeIds.join('.');
         if (!pathKey || seenPaths.has(pathKey)) return null;
         seenPaths.add(pathKey);
@@ -247,40 +242,15 @@ export class ComputationManager {
     return pipeline;
   }
 
-  async completeRun(input: CompleteExperimentRunInput) {
-    const pipelineId = input.runId.trim();
-
+  async completePipeline({ payload, pipelineId }: CompletePipelineInput) {
     const pipeline = await PipelineBaseService.getById(pipelineId);
 
-    const rawResult = input.resultJson?.trim();
-    let parsedPayload: Record<string, unknown> | null = null;
-    if (rawResult) {
-      try {
-        parsedPayload = JSON.parse(rawResult) as Record<string, unknown>;
-      } catch {
-        throw new Error('Result JSON is invalid');
-      }
-    }
-    const structuredPayload = parsedPayload ? this.buildResultPayload(parsedPayload) : null;
-
-    await ComputationResultModel.create({
-      runId: pipeline._id,
-      experimentId: pipeline.experimentId,
-      pathNodeIds: pipeline.pathNodeIds,
-      payloadJson: rawResult
-        ? rawResult
-        : parsedPayload
-          ? JSON.stringify(parsedPayload)
-          : undefined,
-      ...(structuredPayload ? { payload: structuredPayload } : {}),
-    });
-
-    const message = input.statusMessage?.trim() || 'Завершено';
+    await ComputationResultModel.create({ payload, pipelineId });
 
     await this.pipelineManager.changeStatus({
       pipelineId: pipeline._id,
       status: PipelineStatus.completed,
-      message,
+      message: 'Завершено',
     });
   }
 
@@ -484,305 +454,5 @@ export class ComputationManager {
     const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
 
     await ExperimentModel.updateOne({ _id: experimentId }, { $set: { status: nextStatus } }).exec();
-  }
-
-  private buildResultPayload(raw: Record<string, unknown>): ComputationResultPayload | null {
-    const payload: ComputationResultPayload = {};
-    const classMetrics: ClassificationMetric[] = [];
-
-    Object.entries(raw).forEach(([key, value]) => {
-      const normalizedKey = key.trim().toLowerCase();
-
-      if (normalizedKey === 'accuracy') {
-        const accuracy = this.toNumber(value);
-        if (accuracy !== null) {
-          payload.accuracy = accuracy;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'accuracy_scores' ||
-        normalizedKey === 'accuracy-scores' ||
-        normalizedKey === 'accuracyscores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.accuracyScores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'f1_scores' ||
-        normalizedKey === 'f1-scores' ||
-        normalizedKey === 'f1scores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.f1Scores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'roc_auc_scores' ||
-        normalizedKey === 'roc-auc-scores' ||
-        normalizedKey === 'rocaucscores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.rocAucScores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'macro avg' ||
-        normalizedKey === 'macro_avg' ||
-        normalizedKey === 'macroavg'
-      ) {
-        const metric = this.parseMetric('macro avg', value);
-        if (metric) {
-          payload.macroAvg = metric;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'weighted avg' ||
-        normalizedKey === 'weighted_avg' ||
-        normalizedKey === 'weightedavg'
-      ) {
-        const metric = this.parseMetric('weighted avg', value);
-        if (metric) {
-          payload.weightedAvg = metric;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'path_length' || normalizedKey === 'pathlength') {
-        const pathLength = this.toNumber(value);
-        if (pathLength !== null) {
-          payload.pathLength = pathLength;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'sample_count' ||
-        normalizedKey === 'samples' ||
-        normalizedKey === 'records_count' ||
-        normalizedKey === 'samplecount'
-      ) {
-        const sampleCount = this.toNumber(value);
-        if (sampleCount !== null) {
-          payload.sampleCount = sampleCount;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'duration_seconds' ||
-        normalizedKey === 'duration_sec' ||
-        normalizedKey === 'duration' ||
-        normalizedKey === 'path_duration' ||
-        normalizedKey === 'path_duration_seconds'
-      ) {
-        const durationSeconds = this.toNumber(value);
-        if (durationSeconds !== null) {
-          payload.durationSeconds = durationSeconds;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'confusion_matrix' ||
-        normalizedKey === 'confusionmatrix' ||
-        normalizedKey === 'confusion'
-      ) {
-        const matrix = this.toNumberMatrix(value);
-        if (matrix?.length) {
-          payload.confusionMatrix = matrix;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'class_labels' || normalizedKey === 'classlabels') {
-        const labels = this.toStringArray(value);
-        if (labels?.length) {
-          payload.classLabels = labels;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'class_count' || normalizedKey === 'classcount') {
-        const classCount = this.toNumber(value);
-        if (classCount !== null) {
-          payload.classCount = classCount;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'completed_at' || normalizedKey === 'completedat') {
-        if (typeof value === 'string' && value.trim()) {
-          payload.completedAt = value.trim();
-        }
-        return;
-      }
-
-      if (normalizedKey === 'nodes' && Array.isArray(value)) {
-        const nodes = value
-          .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-          .filter(Boolean);
-        if (nodes.length > 0) {
-          payload.nodes = nodes;
-        }
-        return;
-      }
-
-      const metric = this.parseMetric(key, value);
-      if (metric) {
-        classMetrics.push(metric);
-      }
-    });
-
-    if (classMetrics.length > 0) {
-      payload.classes = classMetrics;
-    }
-
-    const hasPayload =
-      payload.accuracy !== undefined ||
-      Boolean(payload.accuracyScores?.length) ||
-      Boolean(payload.f1Scores?.length) ||
-      Boolean(payload.rocAucScores?.length) ||
-      payload.macroAvg !== undefined ||
-      payload.weightedAvg !== undefined ||
-      Boolean(payload.classes?.length) ||
-      payload.sampleCount !== undefined ||
-      payload.durationSeconds !== undefined ||
-      Boolean(payload.confusionMatrix?.length) ||
-      Boolean(payload.classLabels?.length) ||
-      payload.classCount !== undefined ||
-      payload.pathLength !== undefined ||
-      Boolean(payload.nodes?.length) ||
-      payload.completedAt !== undefined;
-
-    return hasPayload ? payload : null;
-  }
-
-  private parseMetric(label: string, value: unknown): ClassificationMetric | null {
-    if (!value || typeof value !== 'object') return null;
-    const raw = value as Record<string, unknown>;
-
-    const precision = this.toNumber(raw.precision);
-    const recall = this.toNumber(raw.recall);
-    const f1Score = this.toNumber(raw['f1-score'] ?? raw.f1Score ?? raw.f1_score);
-    const support = this.toNumber(raw.support);
-
-    if (precision === null || recall === null || f1Score === null || support === null) {
-      return null;
-    }
-
-    return {
-      label: label.trim(),
-      precision,
-      recall,
-      f1Score,
-      support,
-    };
-  }
-
-  private buildHistoryEntry(message: string, timestamp?: Date): PipelineHistoryItem {
-    return {
-      message: message.trim(),
-      createdAt: timestamp ?? new Date(),
-    };
-  }
-
-  private parseHistoryEntries(value: unknown): PipelineHistoryItem[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => {
-        if (!entry) return null;
-        if (typeof entry === 'string') {
-          return this.buildHistoryEntry(entry);
-        }
-        if (typeof entry === 'object') {
-          const raw = entry as Record<string, unknown>;
-          const message = typeof raw.message === 'string' ? raw.message.trim() : '';
-          if (!message) return null;
-          const timestampRaw =
-            raw.createdAt ?? raw.created_at ?? raw.timestamp ?? raw.time ?? raw.at ?? null;
-          const timestamp =
-            typeof timestampRaw === 'string' && timestampRaw.trim()
-              ? new Date(timestampRaw)
-              : timestampRaw instanceof Date
-                ? timestampRaw
-                : null;
-          const normalizedTimestamp =
-            timestamp instanceof Date && !Number.isNaN(timestamp.getTime()) ? timestamp : undefined;
-          return this.buildHistoryEntry(message, normalizedTimestamp);
-        }
-        return null;
-      })
-      .filter((entry): entry is PipelineHistoryItem => Boolean(entry?.message));
-  }
-
-  private mergeHistoryEntries(
-    existing: PipelineHistoryItem[] | undefined,
-    incoming: PipelineHistoryItem[]
-  ): PipelineHistoryItem[] {
-    if (!incoming.length) return [];
-    const merged: PipelineHistoryItem[] = [];
-    const lastExistingMessage = existing?.[existing.length - 1]?.message;
-    incoming.forEach((entry) => {
-      const lastMessage = merged.length ? merged[merged.length - 1]?.message : lastExistingMessage;
-      if (entry.message && entry.message !== lastMessage) {
-        merged.push(entry);
-      }
-    });
-    return merged;
-  }
-
-  private toNumberArray(value: unknown): number[] | null {
-    if (!Array.isArray(value)) return null;
-    const numbers = value
-      .map((entry) => this.toNumber(entry))
-      .filter((entry): entry is number => entry !== null);
-    return numbers.length > 0 ? numbers : null;
-  }
-
-  private toNumberMatrix(value: unknown): number[][] | null {
-    if (!Array.isArray(value)) return null;
-    const matrix = value
-      .map((row) => {
-        if (!Array.isArray(row)) return null;
-        const numbers = row
-          .map((entry) => this.toNumber(entry))
-          .filter((entry): entry is number => entry !== null);
-        return numbers.length > 0 ? numbers : null;
-      })
-      .filter((row): row is number[] => Boolean(row));
-    return matrix.length > 0 ? matrix : null;
-  }
-
-  private toStringArray(value: unknown): string[] | null {
-    if (!Array.isArray(value)) return null;
-    const values = value
-      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-      .filter(Boolean);
-    return values.length > 0 ? values : null;
-  }
-
-  private toNumber(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : null;
-    }
-    return null;
   }
 }

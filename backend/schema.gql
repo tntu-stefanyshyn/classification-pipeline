@@ -18,14 +18,6 @@ input ChangePipelineStatusInput {
   status: PipelineStatus!
 }
 
-type ClassificationMetric {
-  f1Score: Float!
-  label: String!
-  precision: Float!
-  recall: Float!
-  support: Float!
-}
-
 enum ClassificationStage {
   CLASSIFICATION
   DATA_ENHANCEMENT
@@ -34,10 +26,9 @@ enum ClassificationStage {
   PREPROCESSING
 }
 
-input CompleteExperimentRunInput {
-  resultJson: String
-  runId: ID!
-  statusMessage: String
+input CompletePipelineInput {
+  payload: ComputationResultPayloadInput!
+  pipelineId: ID!
 }
 
 enum ComputationMode {
@@ -54,29 +45,28 @@ enum ComputationQueue {
 type ComputationResult {
   _id: ID!
   createdAt: DateTimeISO!
-  experimentId: ID!
-  pathNodeIds: [ID!]!
-  payload: ComputationResultPayload
-  payloadJson: String
-  runId: ID!
+  payload: ComputationResultPayload!
+  pipelineId: ID!
 }
 
 type ComputationResultPayload {
-  accuracy: Float
-  accuracyScores: [Float!]
-  classCount: Int
-  classLabels: [String!]
-  classes: [ClassificationMetric!]
-  completedAt: String
-  confusionMatrix: [[Int!]!]
-  durationSeconds: Float
-  f1Scores: [Float!]
-  macroAvg: ClassificationMetric
-  nodes: [String!]
-  pathLength: Float
-  rocAucScores: [Float!]
-  sampleCount: Int
-  weightedAvg: ClassificationMetric
+  accuracyScores: [Float!]!
+  classLabels: [String!]!
+  confusionMatrix: [[Int!]!]!
+  duration: Float!
+  f1Scores: [Float!]!
+  rocAucScores: [Float!]!
+  sampleCount: Int!
+}
+
+input ComputationResultPayloadInput {
+  accuracyScores: [Float!]!
+  classLabels: [String!]!
+  confusionMatrixes: [[[Int!]!]!]!
+  duration: Float!
+  f1Scores: [Float!]!
+  rocAucScores: [Float!]!
+  sampleCount: Int!
 }
 
 input CreateExperimentInput {
@@ -212,7 +202,7 @@ type Mutation {
   changeExperimentStatus(input: ChangeExperimentStatusInput!): Boolean!
   changePipelineStatus(input: ChangePipelineStatusInput!): Boolean!
   claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
-  completeExperimentRun(input: CompleteExperimentRunInput!): Boolean!
+  completePipeline(input: CompletePipelineInput!): Boolean!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!

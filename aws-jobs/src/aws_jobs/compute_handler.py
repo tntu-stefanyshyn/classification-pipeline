@@ -3,7 +3,6 @@ import os
 import sys
 import tempfile
 import time
-from python_graphql_client import GraphqlClient # type: ignore
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -23,6 +22,9 @@ from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from graphql.completePipeline import completePipeline 
+from graphql.graphqlRequest import graphqlRequest 
+
 
 def _emit(message: str) -> None:
     sys.stdout.write(json.dumps({"message": message, "timestamp": datetime.utcnow().isoformat() + "Z"}, ensure_ascii=True) + "\n")
@@ -40,43 +42,7 @@ def _load_payload() -> Dict[str, Any]:
         raise ValueError("PAYLOAD_NOT_FOUND", raw)
     return json.loads(raw)
 
-
-def _store_result(payload: Dict[str, Any], data: Dict[str, Any]) -> None:
-    if not isinstance(payload, dict):
-        return
-    bucket = payload.get("result_s3_bucket") or os.getenv("COMPUTE_RESULT_S3_BUCKET", "")
-    key = payload.get("result_s3_key") or os.getenv("COMPUTE_RESULT_S3_KEY", "")
-    if not bucket or not key:
-        return
-
-    body = json.dumps(data, ensure_ascii=True)
-    boto3.client("s3").put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=body.encode("utf-8"),
-        ContentType="application/json",
-    )
-
-
-def _graphql_request(
-    url: str, query: str, variables: Optional[Dict[str, Any]] = None, token: Optional[str] = None, operationName: Optional[str] = None
-) -> Dict[str, Any]:
-    client = GraphqlClient(endpoint=url)
-    headers = {"content-type": "application/json"}
-    if token:
-        headers["authorization"] = f"Bearer {token}"
-
-    body = query
-    # Some callers pass operationName separately; include it in variables if needed
-    response = client.execute(query=body, variables=variables or {}, headers=headers)
-    if not isinstance(response, dict):
-        raise ValueError("GraphQL client returned unexpected response")
-    if response.get("errors"):
-        message = response["errors"][0].get("message") or "GraphQL request failed"
-        raise ValueError(message)
-    if "data" not in response:
-        raise ValueError("GraphQL response is empty")
-    return response["data"]
+     
 
 
 def _fetch_path_from_backend(
@@ -90,7 +56,7 @@ def _fetch_path_from_backend(
         }
       }
     """
-    run_payload = _graphql_request(backend_url, run_query, {"runId": pipelineId}, token,  operationName="ExperimentRun")
+    run_payload = graphqlRequest(backend_url, run_query, {"runId": pipelineId}, token)
     run = run_payload.get("experimentRun")
     if not run:
         raise ValueError("PIPELINE_NOT_FOUND")
@@ -122,8 +88,8 @@ def _fetch_path_from_backend(
         }
       }
     """
-    experiment_payload = _graphql_request(
-        backend_url, experiment_query, {"id": experiment_id}, token,  operationName="ExperimentForRun", 
+    experiment_payload = graphqlRequest(
+        backend_url, experiment_query, {"id": experiment_id}, token
     )
     experiment = experiment_payload.get("experiment")
     if not experiment:
@@ -152,7 +118,7 @@ def _fetch_signed_download_url(
         }
       }
     """
-    payload = _graphql_request(backend_url, query, {"fileId": file_id}, token, operationName="SignedDownloadUrl")
+    payload = graphqlRequest(backend_url, query, {"fileId": file_id}, token)
     url = (payload.get("signedDownloadUrl") or {}).get("url")
     if not url:
         raise ValueError("FILE_URL_NOT_FOUND")
@@ -447,7 +413,7 @@ def _run_classifier(
     settings: Dict[str, str],
     graphStructureSettings: Dict[str, str],
     log: Optional[Callable[[str], None]] = None,
-) -> Dict[str, Any]:
+):
     test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
     random_state = _to_int(settings.get("random_state"), 42)
     folds = graphStructureSettings.get('folds')
@@ -474,10 +440,10 @@ def _run_classifier(
 
             all_true: List[Any] = []
             all_pred: List[Any] = []
-            accuracy_scores: List[float] = []
-            f1_scores: List[float] = []
-            roc_auc_scores: List[Optional[float]] = []
-            confusion_total: Optional[np.ndarray] = None
+            accuracyScores: List[float] = []
+            f1Scores: List[float] = []
+            rocAucScores: List[Optional[float]] = []
+            confusionMatrixes: List[List[float]] = []
 
             for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
                 emit(f"Cross-validations: step {fold_index}/{folds}")
@@ -491,37 +457,16 @@ def _run_classifier(
                 y_pred = model.predict(X_val)
 
                 emit("Classification: computing metrics accuracy, F1, ROC-AUC")
-                accuracy_scores.append(float(accuracy_score(y_val, y_pred)))
-                f1_scores.append(float(f1_score(y_val, y_pred, average="weighted")))
-                roc_auc_scores.append(_compute_roc_auc(model, X_val, y_val))
+                accuracyScores.append(float(accuracy_score(y_val, y_pred)))
+                f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
+                rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
 
                 all_true.extend(list(y_val))
                 all_pred.extend(list(y_pred))
-
                 matrix = confusion_matrix(y_val, y_pred, labels=labels)
-                confusion_total = (
-                    matrix
-                    if confusion_total is None
-                    else confusion_total + matrix
-                )
-
-            report = classification_report(
-                all_true, all_pred, labels=labels, output_dict=True, zero_division=0
-            )
-            roc_values = [score for score in roc_auc_scores if score is not None]
-            if roc_values:
-                report["roc_auc"] = float(np.mean(roc_values))# type: ignore
-
-            report["accuracy_scores"] = accuracy_scores# type: ignore
-            report["f1_scores"] = f1_scores# type: ignore
-            report["roc_auc_scores"] = roc_auc_scores# type: ignore
-            report["confusion_matrix"] = (# type: ignore
-                confusion_total.tolist() if confusion_total is not None else []
-            )
-            report["class_labels"] = [str(label) for label in labels]# type: ignore
-            report["class_count"] = int(len(labels))# type: ignore
-            report["cv_folds"] = folds# type: ignore
-            return report# type: ignore
+                confusionMatrixes.append(matrix.tolist())
+            classLabels =  [str(label) for label in labels]
+            return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels
 
     try:
         X_train, X_val, y_train, y_val = train_test_split(
@@ -580,7 +525,7 @@ def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optio
 
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
-    backend_url = payload.get("backend_url") or os.getenv("COMPUTE_BACKEND_URL", "")
+    backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
     history: List[Dict[str, Any]] = []
@@ -611,8 +556,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     target_column = _resolve_target_column(df, payload, path)
     X, y = _prepare_features(df, target_column)
 
-    report: Optional[Dict[str, Any]] = None
-    total = len(path)
+    report: Optional[Dict[str, Any]] = {}
+
     for index, node in enumerate(path, start=1):
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
@@ -629,7 +574,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif stage == "DIMENSIONALITY_REDUCTION":
             X = _apply_pca(X, settings)
         elif stage == "CLASSIFICATION":
-            report = _run_classifier(
+            accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels = _run_classifier(
                 X,
                 y,
                 technology or "svm",
@@ -637,24 +582,22 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 graphStructureSettings,
                 log=lambda message: _emit(message),
             )
+            report["accuracyScores"] = accuracyScores
+            report["f1Scores"] = f1Scores
+            report["rocAucScores"] = rocAucScores
+            report["confusionMatrixes"] = confusionMatrixes
+            report["classLabels"] = classLabels
+
             _emit(f"Step end: {label}")
             break
         _emit(f"Step end: {label}") # type: ignore
 
-    if report is None:
-        raise ValueError("STEP_NOT_FOUND")
 
     duration = max(time.time() - started_at, 0.0)
-    sample_count = max(int(len(df)), 1)
-    report["ntps"] = duration / sample_count
-    report["sample_count"] = sample_count
-    report["duration_seconds"] = duration
-    report["path_length"] = total
-    report["nodes"] = [node.get("technology") or node.get("stage") for node in path]
-    report["completed_at"] = _timestamp()
-    report["history"] = history
+    sampleCount = max(int(len(df)), 1)
+    report["sampleCount"] = sampleCount
+    report["duration"] = duration
 
-    _emit("Computing end")
     _emit("Computing end")
     return report
 
@@ -663,21 +606,25 @@ def main() -> None:
     payload: Dict[str, Any] = {}
     try:
         payload = _load_payload()
+
+        token = payload.get("backend_token")
+        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+        pipelineId = payload.get("pipelineId")
+      
+        if backend_url is None or pipelineId is None:
+          raise ValueError("MISSING_PARAMS")
+        
         result = run_compute(payload)
-        _store_result(
-            payload,
-            {"status": "completed", "result": result, "completed_at": _timestamp()},
+       
+        completePipeline(
+            backend_url=backend_url,
+            payload=result,
+            pipelineId=pipelineId,
+            token=token
         )
         print((json.dumps(result, indent=2)))
     except Exception as exc:  # noqa: BLE001
-        try:
-            _store_result(
-                payload if isinstance(payload, dict) else {},
-                {"status": "failed", "error": str(exc), "failed_at": _timestamp()},
-            )
-        except Exception:
-            pass
-        _emit(exc)
+        _emit((exc))
         sys.exit(1)
 
 

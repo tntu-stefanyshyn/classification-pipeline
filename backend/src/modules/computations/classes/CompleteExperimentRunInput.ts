@@ -1,13 +1,11 @@
 import { Field, ID, InputType } from 'type-graphql';
+import { ComputationResultPayloadInput } from './ComputationResultPayload';
 
 @InputType()
-export class CompleteExperimentRunInput {
+export class CompletePipelineInput {
   @Field(() => ID)
-  runId!: string;
+  pipelineId!: string;
 
-  @Field({ nullable: true })
-  statusMessage?: string;
-
-  @Field({ nullable: true })
-  resultJson?: string;
+  @Field(() => ComputationResultPayloadInput)
+  payload!: ComputationResultPayloadInput;
 }

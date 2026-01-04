@@ -192,11 +192,13 @@ type GraphStructure {
 }
 
 type GraphStructureSettings {
+  folds: Int!
   metrics: GraphMetricWeights!
   queues: [ComputationQueue!]!
 }
 
 input GraphStructureSettingsInput {
+  folds: Int!
   metrics: GraphMetricWeightsInput!
   queues: [ComputationQueue!]!
 }
@@ -210,12 +212,12 @@ type Mutation {
   changeExperimentStatus(input: ChangeExperimentStatusInput!): Boolean!
   changePipelineStatus(input: ChangePipelineStatusInput!): Boolean!
   claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
-  completeExperimentRun(input: CompleteExperimentRunInput!): Pipeline!
+  completeExperimentRun(input: CompleteExperimentRunInput!): Boolean!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
-  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): [Pipeline!]!
-  failExperimentRun(input: FailExperimentRunInput!): Pipeline!
+  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
+  failExperimentRun(input: FailExperimentRunInput!): Boolean!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   pauseExperimentRuns(experimentId: ID!): [Pipeline!]!

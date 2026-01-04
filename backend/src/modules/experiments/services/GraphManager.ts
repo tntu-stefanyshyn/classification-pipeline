@@ -298,6 +298,7 @@ export class GraphManager {
     return {
       metrics: { accuracy, f1, rocAuc, ntps },
       queues: uniqueQueues,
+      folds: settings.folds,
     };
   }
 

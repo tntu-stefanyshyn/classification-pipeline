@@ -10,6 +10,7 @@ import type {
   GraphSettingsModalProps,
   MetricKey,
 } from './GraphSettingsModal.types';
+import { InputControl } from '../../inputs/InputControl';
 
 const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
   open,
@@ -101,11 +102,21 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
               </div>
             </div>
           </div>
+
           <div className="graph-settings-section">
-            <div className="form-divider">Тип обчислень</div>
-            <Alert variant="info">
-              Можна обрати один або обидва типи обчислень. За замовчуванням обрана хмара.
-            </Alert>
+            <div className="form-divider">Обчислення</div>
+            <div className="graph-settings-queues">
+              <InputControl
+                type="number"
+                label="Кількість кроків перехресної валідації"
+                min={1}
+                onChange={(e) =>
+                  setSettingsDraft((prev) => prev && { ...prev, folds: +e.target.value })
+                }
+                value={settingsDraft.folds.toString()}
+              />
+            </div>
+
             <div className="graph-settings-queues">
               {queueOptions.map((queue) => {
                 const inputId = `queue-${queue}`;

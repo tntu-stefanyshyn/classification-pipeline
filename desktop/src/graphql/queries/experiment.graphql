@@ -19,6 +19,7 @@ query Experiment($_id: ID!) {
           ntps
         }
         queues
+        folds
       }
       nodes {
         _id

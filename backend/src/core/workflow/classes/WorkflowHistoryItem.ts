@@ -10,6 +10,10 @@ export class WorkflowHistoryItem {
   @prop({ required: false, enum: workflowStatusEnum, type: String })
   nextStatus?: WorkflowStatus;
 
+  @Field(() => String, { nullable: true })
+  @prop({ required: false, type: String })
+  message?: string;
+
   @Field(() => Date)
   @prop({ type: () => Date })
   createdAt!: Date;

@@ -1,5 +1,3 @@
 mutation FailExperimentRun($input: FailExperimentRunInput!) {
-  failExperimentRun(input: $input) {
-    _id
-  }
+  failExperimentRun(input: $input)
 }

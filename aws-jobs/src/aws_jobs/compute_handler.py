@@ -2,13 +2,13 @@ import json
 import os
 import sys
 import tempfile
-import urllib.request
 import time
+from python_graphql_client import GraphqlClient # type: ignore
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import boto3
-import numpy as np
+import boto3 # type: ignore
+import numpy as np # type: ignore
 import pandas as pd
 from sklearn.decomposition import FastICA, PCA
 from sklearn.linear_model import LogisticRegression
@@ -24,31 +24,9 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-
-def _emit(event: Dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(event, ensure_ascii=True) + "\n")
+def _emit(message: str) -> None:
+    sys.stdout.write(json.dumps({"message": message, "timestamp": datetime.utcnow().isoformat() + "Z"}, ensure_ascii=True) + "\n")
     sys.stdout.flush()
-
-
-def _emit_progress(progress: int, message: str) -> None:
-    _emit({"type": "progress", "progress": progress, "message": message})
-
-
-def _append_history(history: List[Dict[str, Any]], message: str) -> None:
-    message = message.strip()
-    if not message:
-        return
-    history.append({"message": message, "timestamp": _timestamp()})
-
-
-def _emit_log(message: str, history: Optional[List[Dict[str, Any]]] = None) -> None:
-    message = message.strip()
-    if not message:
-        return
-    _emit({"type": "log", "message": message})
-    if history is not None:
-        _append_history(history, message)
-
 
 def _timestamp() -> str:
     return datetime.utcnow().isoformat() + "Z"
@@ -59,7 +37,7 @@ def _load_payload() -> Dict[str, Any]:
     if not raw.strip():
         raw = os.getenv("COMPUTE_PAYLOAD_JSON", "")
     if not raw.strip():
-        raise ValueError("Не передано дані для обчислення")
+        raise ValueError("PAYLOAD_NOT_FOUND", raw)
     return json.loads(raw)
 
 
@@ -81,29 +59,29 @@ def _store_result(payload: Dict[str, Any], data: Dict[str, Any]) -> None:
 
 
 def _graphql_request(
-    url: str, query: str, variables: Optional[Dict[str, Any]] = None, token: Optional[str] = None
+    url: str, query: str, variables: Optional[Dict[str, Any]] = None, token: Optional[str] = None, operationName: Optional[str] = None
 ) -> Dict[str, Any]:
-    payload = {"query": query, "variables": variables or {}}
+    client = GraphqlClient(endpoint=url)
     headers = {"content-type": "application/json"}
     if token:
         headers["authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(
-        url, data=json.dumps(payload).encode("utf-8"), headers=headers
-    )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        raw = response.read().decode("utf-8")
-    data = json.loads(raw or "{}")
-    if data.get("errors"):
-        message = data["errors"][0].get("message") or "GraphQL request failed"
+
+    body = query
+    # Some callers pass operationName separately; include it in variables if needed
+    response = client.execute(query=body, variables=variables or {}, headers=headers)
+    if not isinstance(response, dict):
+        raise ValueError("GraphQL client returned unexpected response")
+    if response.get("errors"):
+        message = response["errors"][0].get("message") or "GraphQL request failed"
         raise ValueError(message)
-    if "data" not in data:
+    if "data" not in response:
         raise ValueError("GraphQL response is empty")
-    return data["data"]
+    return response["data"]
 
 
 def _fetch_path_from_backend(
-    backend_url: str, run_id: str, token: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    backend_url: str, pipelineId: str, token: Optional[str] = None
+):
     run_query = """
       query ExperimentRun($runId: ID!) {
         experimentRun(runId: $runId) {
@@ -112,15 +90,15 @@ def _fetch_path_from_backend(
         }
       }
     """
-    run_payload = _graphql_request(backend_url, run_query, {"runId": run_id}, token)
+    run_payload = _graphql_request(backend_url, run_query, {"runId": pipelineId}, token,  operationName="ExperimentRun")
     run = run_payload.get("experimentRun")
     if not run:
-        raise ValueError("Run not found")
+        raise ValueError("PIPELINE_NOT_FOUND")
 
     experiment_id = run.get("experimentId")
     path_node_ids = run.get("pathNodeIds") or []
     if not experiment_id:
-        raise ValueError("Experiment id is missing for run")
+        raise ValueError("EXPERIMENT_NOT_FOUND")
 
     experiment_query = """
       query ExperimentForRun($id: ID!) {
@@ -128,6 +106,9 @@ def _fetch_path_from_backend(
           _id
           fileId
           graph {
+            settings {
+              folds
+            }
             nodes {
               _id
               stage
@@ -142,7 +123,7 @@ def _fetch_path_from_backend(
       }
     """
     experiment_payload = _graphql_request(
-        backend_url, experiment_query, {"id": experiment_id}, token
+        backend_url, experiment_query, {"id": experiment_id}, token,  operationName="ExperimentForRun", 
     )
     experiment = experiment_payload.get("experiment")
     if not experiment:
@@ -158,7 +139,7 @@ def _fetch_path_from_backend(
         path_nodes.append(node)
 
     file_id = experiment.get("fileId")
-    return path_nodes, file_id
+    return path_nodes, file_id, experiment.get("graph").get('settings')
 
 
 def _fetch_signed_download_url(
@@ -171,10 +152,10 @@ def _fetch_signed_download_url(
         }
       }
     """
-    payload = _graphql_request(backend_url, query, {"fileId": file_id}, token)
+    payload = _graphql_request(backend_url, query, {"fileId": file_id}, token, operationName="SignedDownloadUrl")
     url = (payload.get("signedDownloadUrl") or {}).get("url")
     if not url:
-        raise ValueError("Не вдалося отримати посилання на файл")
+        raise ValueError("FILE_URL_NOT_FOUND")
     return url
 
 
@@ -200,10 +181,10 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
             temp_path = _download_s3_to_temp(bucket, key)
             file_path = temp_path
         elif backend_url and payload.get("file_id"):
-            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id"))
+            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id")) # type: ignore
 
     if not file_url and not file_path:
-        raise ValueError("Не вдалося отримати шлях до EEG файлу")
+        raise ValueError("FILE_URL_NOT_FOUND")
 
     try:
         df = pd.read_csv(file_url or file_path)
@@ -215,7 +196,7 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
                 pass
 
     if df.empty:
-        raise ValueError("EEG файл порожній")
+        raise ValueError("EEG_FILE_EMPTY")
     return df
 
 
@@ -281,7 +262,7 @@ def _resolve_target_column(
         if fallback in df.columns:
             return fallback
 
-    return df.columns[-1]
+    return df.columns[-1] # type: ignore
 
 
 def _prepare_features(df: pd.DataFrame, target_column: str) -> Tuple[pd.DataFrame, pd.Series]:
@@ -296,7 +277,7 @@ def _prepare_features(df: pd.DataFrame, target_column: str) -> Tuple[pd.DataFram
     X = X.fillna(means).fillna(0)
 
     if X.empty:
-        raise ValueError("EEG файл не містить ознак для класифікації")
+        raise ValueError("TARGET_COLUMN_MISSING ")
 
     return X, y
 
@@ -352,9 +333,9 @@ def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
 
     transformer = FastICA(
         n_components=n_components,
-        algorithm=algorithm,
+        algorithm=algorithm, # type: ignore
         whiten=whiten_value,
-        fun=fun,
+        fun=fun,# type: ignore
         max_iter=max_iter,
         tol=tol,
         random_state=random_state,
@@ -395,7 +376,7 @@ def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
 
     transformer = PCA(
         n_components=n_components,
-        svd_solver=svd_solver,
+        svd_solver=svd_solver,# type: ignore
         whiten=whiten,
         iterated_power=iterated_power,
         random_state=random_state,
@@ -428,7 +409,7 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
 
         return SVC(
             C=c_value,
-            kernel=kernel,
+            kernel=kernel,# type: ignore
             degree=degree,
             gamma=gamma_value,
             coef0=coef0,
@@ -464,23 +445,19 @@ def _run_classifier(
     y: pd.Series,
     technology: str,
     settings: Dict[str, str],
+    graphStructureSettings: Dict[str, str],
     log: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
     random_state = _to_int(settings.get("random_state"), 42)
-    folds = _to_int(
-        settings.get("cv_folds")
-        or settings.get("cross_validation_folds")
-        or settings.get("k_folds")
-        or settings.get("folds")
-    )
+    folds = graphStructureSettings.get('folds')
 
     def emit(message: str) -> None:
         if log:
             log(message)
 
     labels = np.unique(y)
-
+    folds = _to_int(graphStructureSettings.get('folds')) 
     if folds and folds > 1:
         folds = max(2, folds)
         if len(y) < folds:
@@ -503,7 +480,7 @@ def _run_classifier(
             confusion_total: Optional[np.ndarray] = None
 
             for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
-                emit(f"Крос-валідація: прохід {fold_index}/{folds}")
+                emit(f"Cross-validations: step {fold_index}/{folds}")
                 X_train = X.iloc[train_idx]
                 y_train = y.iloc[train_idx]
                 X_val = X.iloc[val_idx]
@@ -513,7 +490,7 @@ def _run_classifier(
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_val)
 
-                emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
+                emit("Classification: computing metrics accuracy, F1, ROC-AUC")
                 accuracy_scores.append(float(accuracy_score(y_val, y_pred)))
                 f1_scores.append(float(f1_score(y_val, y_pred, average="weighted")))
                 roc_auc_scores.append(_compute_roc_auc(model, X_val, y_val))
@@ -533,18 +510,18 @@ def _run_classifier(
             )
             roc_values = [score for score in roc_auc_scores if score is not None]
             if roc_values:
-                report["roc_auc"] = float(np.mean(roc_values))
+                report["roc_auc"] = float(np.mean(roc_values))# type: ignore
 
-            report["accuracy_scores"] = accuracy_scores
-            report["f1_scores"] = f1_scores
-            report["roc_auc_scores"] = roc_auc_scores
-            report["confusion_matrix"] = (
+            report["accuracy_scores"] = accuracy_scores# type: ignore
+            report["f1_scores"] = f1_scores# type: ignore
+            report["roc_auc_scores"] = roc_auc_scores# type: ignore
+            report["confusion_matrix"] = (# type: ignore
                 confusion_total.tolist() if confusion_total is not None else []
             )
-            report["class_labels"] = [str(label) for label in labels]
-            report["class_count"] = int(len(labels))
-            report["cv_folds"] = folds
-            return report
+            report["class_labels"] = [str(label) for label in labels]# type: ignore
+            report["class_count"] = int(len(labels))# type: ignore
+            report["cv_folds"] = folds# type: ignore
+            return report# type: ignore
 
     try:
         X_train, X_val, y_train, y_val = train_test_split(
@@ -559,20 +536,20 @@ def _run_classifier(
     model.fit(X_train, y_train)
     y_pred = model.predict(X_val)
 
-    emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
+    emit("Classification: computing metrics accuracy, F1, ROC-AUC")
     report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
     roc_auc = _compute_roc_auc(model, X_val, y_val)
     if roc_auc is not None:
-        report["roc_auc"] = roc_auc
+        report["roc_auc"] = roc_auc# type: ignore
 
-    report["accuracy_scores"] = [float(accuracy_score(y_val, y_pred))]
-    report["f1_scores"] = [float(f1_score(y_val, y_pred, average="weighted"))]
-    report["roc_auc_scores"] = [roc_auc] if roc_auc is not None else []
-    report["confusion_matrix"] = confusion_matrix(y_val, y_pred, labels=labels).tolist()
-    report["class_labels"] = [str(label) for label in labels]
-    report["class_count"] = int(len(labels))
-    report["cv_folds"] = 1
-    return report
+    report["accuracy_scores"] = [float(accuracy_score(y_val, y_pred))]# type: ignore
+    report["f1_scores"] = [float(f1_score(y_val, y_pred, average="weighted"))]# type: ignore
+    report["roc_auc_scores"] = [roc_auc] if roc_auc is not None else []# type: ignore
+    report["confusion_matrix"] = confusion_matrix(y_val, y_pred, labels=labels).tolist()# type: ignore
+    report["class_labels"] = [str(label) for label in labels]# type: ignore
+    report["class_count"] = int(len(labels))# type: ignore
+    report["cv_folds"] = 1# type: ignore
+    return report# type: ignore
 
 
 def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
@@ -608,19 +585,18 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     started_at = time.time()
     history: List[Dict[str, Any]] = []
 
-    path = payload.get("path") or []
-    if backend_url and payload.get("run_id"):
-        path, file_id = _fetch_path_from_backend(backend_url, payload.get("run_id"), token)
+    path = []
+    path = []
+    if backend_url and payload.get("pipelineId"):
+        path, file_id, graphStructureSettings = _fetch_path_from_backend(backend_url, payload.get("pipelineId"), token)# type: ignore
         payload["path"] = path
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
-    _emit_log("Запуск обчислення", history)
-    _emit_progress(0, "Запуск обчислення")
-
+    _emit("Start computing")
+    print('path => ',path)
     if not path:
-        _emit_log("Немає кроків для обчислення", history)
-        _emit_progress(100, "Немає кроків для обчислення")
+        _emit("There are no steps for computing")
         return {
             "path_length": 0,
             "nodes": [],
@@ -628,11 +604,9 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             "history": history,
         }
 
-    _emit_log("Зчитування EEG файлу", history)
-    _emit_progress(5, "Зчитування EEG файлу")
+    _emit("Read EEG file")
     df = _load_dataframe(payload, backend_url or None)
-    _emit_log("EEG файл зчитано", history)
-    _emit_progress(10, "EEG файл зчитано")
+    _emit("EEG file read")
 
     target_column = _resolve_target_column(df, payload, path)
     X, y = _prepare_features(df, target_column)
@@ -643,10 +617,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
-        label = technology or stage or f"крок {index}"
-        progress = 10 + int((index / total) * 80)
-        _emit_progress(progress, f"Крок {index}/{total}: {label}")
-        _emit_log(f"Початок етапу: {label}", history)
+        label = technology or stage or f"step {index}"
+        _emit(f"Step start: {label}, {stage}")
 
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
@@ -662,14 +634,15 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 y,
                 technology or "svm",
                 settings,
-                log=lambda message: _emit_log(message, history),
+                graphStructureSettings,
+                log=lambda message: _emit(message),
             )
-            _emit_log(f"Завершено етап: {label}", history)
+            _emit(f"Step end: {label}")
             break
-        _emit_log(f"Завершено етап: {label}", history)
+        _emit(f"Step end: {label}") # type: ignore
 
     if report is None:
-        raise ValueError("Не знайдено етап класифікації")
+        raise ValueError("STEP_NOT_FOUND")
 
     duration = max(time.time() - started_at, 0.0)
     sample_count = max(int(len(df)), 1)
@@ -681,8 +654,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     report["completed_at"] = _timestamp()
     report["history"] = history
 
-    _emit_log("Обчислення завершено", history)
-    _emit_progress(100, "Обчислення завершено")
+    _emit("Computing end")
+    _emit("Computing end")
     return report
 
 
@@ -695,7 +668,7 @@ def main() -> None:
             payload,
             {"status": "completed", "result": result, "completed_at": _timestamp()},
         )
-        _emit({"type": "result", "result": result})
+        print((json.dumps(result, indent=2)))
     except Exception as exc:  # noqa: BLE001
         try:
             _store_result(
@@ -704,7 +677,7 @@ def main() -> None:
             )
         except Exception:
             pass
-        _emit({"type": "error", "message": str(exc)})
+        _emit(exc)
         sys.exit(1)
 
 

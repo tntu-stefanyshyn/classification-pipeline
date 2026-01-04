@@ -11,7 +11,6 @@ export type StatusGraphNodeData = {
   _id: string;
   label: string;
   stage?: ClassificationStage | null;
-  status: NodeRunStatus;
   isRoot?: boolean;
   onInfo: (nodeId: string) => void;
 };
@@ -19,7 +18,7 @@ export type StatusGraphNodeData = {
 const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
   if (data.isRoot) {
     return (
-      <div className={`org-node root status-node status-${data.status}`}>
+      <div className={`org-node root status-node`}>
         <Handle type="source" position={Position.Right} className="graph-node-handle" />
         <div className="org-node-body">
           <span className="org-node-title">{data.label}</span>
@@ -33,7 +32,7 @@ const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
   const meta = getStageLabel(data.stage);
 
   return (
-    <div className={`org-node status-node status-${data.status}`}>
+    <div className={`org-node status-node`}>
       <Handle type="target" position={Position.Left} className="graph-node-handle" />
       <Handle type="source" position={Position.Right} className="graph-node-handle" />
       <div className="org-node-body">

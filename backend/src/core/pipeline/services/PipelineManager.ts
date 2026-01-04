@@ -8,6 +8,7 @@ import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
 import { Transitions } from '../../workflow/services/WorkflowManager.types.';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
+import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
 
 export class PipelineManager {
   private readonly graphManager = new GraphManager();
@@ -24,13 +25,15 @@ export class PipelineManager {
     const results = await Promise.all(
       queues.map((queue) =>
         PipelineModel.create(
-          paths.map((path) => ({
-            experimentId,
-            graphStructureId: graphStructure._id,
-            queue,
-            status: PipelineStatus.idle,
-            pathNodeIds: path,
-          }))
+          paths.map((path) => {
+            const pipeline: Partial<Pipeline> = {
+              graphStructureId: graphStructure._id,
+              queue,
+              pathNodeIds: stringIdsToObjectIds(path),
+              experimentId: stringIdToObjectId(experimentId),
+            };
+            return pipeline;
+          })
         )
       )
     );
@@ -58,7 +61,6 @@ export class PipelineManager {
           { _id: instanceId },
           {
             $set: {
-              status: PipelineStatus.queued,
               progress: 0,
               statusMessage: 'В черзі',
               priority: 0,
@@ -76,7 +78,6 @@ export class PipelineManager {
           { _id: instanceId },
           {
             $set: {
-              status: PipelineStatus.running,
               progress: 0,
               statusMessage: 'Запущено',
             },
@@ -91,7 +92,7 @@ export class PipelineManager {
         await PipelineModel.updateOne(
           { _id: instanceId },
           {
-            $set: { status: PipelineStatus.paused, statusMessage: 'Пауза' },
+            $set: { statusMessage: 'Пауза' },
             $unset: { machineInfo: '', cloudJobId: '' },
           }
         ).exec();
@@ -104,7 +105,7 @@ export class PipelineManager {
         await PipelineModel.updateOne(
           { _id: instanceId },
           {
-            $set: { status: PipelineStatus.running, statusMessage: 'Запущено' },
+            $set: { statusMessage: 'Запущено' },
           }
         ).exec();
       },
@@ -115,7 +116,7 @@ export class PipelineManager {
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
           { _id: instanceId },
-          { $set: { status: PipelineStatus.completed, progress: 100, statusMessage: 'Завершено' } }
+          { $set: { progress: 100, statusMessage: 'Завершено' } }
         ).exec();
       },
     },
@@ -125,7 +126,7 @@ export class PipelineManager {
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
           { _id: instanceId },
-          { $set: { status: PipelineStatus.failed, statusMessage: 'Помилка' } }
+          { $set: { progress: 100, statusMessage: 'Помилка' } }
         ).exec();
       },
     },
@@ -135,7 +136,7 @@ export class PipelineManager {
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
           { _id: instanceId },
-          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
       },
     },
@@ -145,7 +146,7 @@ export class PipelineManager {
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
           { _id: instanceId },
-          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
       },
     },
@@ -155,7 +156,7 @@ export class PipelineManager {
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
           { _id: instanceId },
-          { $set: { status: PipelineStatus.idle }, $unset: { machineInfo: '', cloudJobId: '' } }
+          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
       },
     },
@@ -166,7 +167,7 @@ export class PipelineManager {
         await PipelineModel.updateOne(
           { _id: instanceId },
           {
-            $set: { status: PipelineStatus.queued, progress: 0, statusMessage: 'В черзі' },
+            $set: { progress: 0, statusMessage: 'В черзі' },
             $unset: { machineInfo: '', cloudJobId: '' },
           }
         ).exec();
@@ -174,12 +175,17 @@ export class PipelineManager {
     },
   ];
 
-  async changeStatus({ pipelineId, status }: ChangePipelineStatusInput) {
+  async changeStatus({
+    pipelineId,
+    status,
+    message,
+  }: ChangePipelineStatusInput & { message?: string }) {
     await this.workflowManager.changeStatus({
       instanceId: pipelineId,
       status,
       transitions: this.transitions,
       type: WorkflowType.PIPELINE,
+      message,
     });
 
     return true;

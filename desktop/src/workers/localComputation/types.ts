@@ -13,7 +13,7 @@ export type GraphNode = {
 };
 
 export type HandlerPayload = {
-  run_id: string;
+  pipelineId: string;
   experiment_id: string;
   queue: ComputationQueue;
   backend_url?: string;

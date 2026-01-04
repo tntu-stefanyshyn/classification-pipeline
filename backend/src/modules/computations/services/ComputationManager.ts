@@ -24,17 +24,27 @@ import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
-import { Pipeline, PipelineBaseService, PipelineModel } from '../../../core/pipeline';
+import {
+  Pipeline,
+  PipelineBaseService,
+  PipelineModel,
+  pipelinesCollectionName,
+} from '../../../core/pipeline';
 import { PipelineStatus } from '../../../core/pipeline/enums';
 import { PipelineHistoryItem } from '../../../core/pipeline/classes/PipelineHistoryItem';
 import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
 import { WorkflowType } from '../../../core/workflow/enums';
+import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
+import { stringIdToObjectId } from '../../../utils';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
+import { ObjectIdOrString } from '../../../types/context';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
   private readonly optimizationRunner = new OptimizationRunner();
   private readonly workflowManager = new WorkflowManager();
+  private readonly pipelineManager = new PipelineManager();
 
   async listResultsByExperiment(experimentId: string): Promise<ComputationResult[]> {
     const trimmedId = experimentId.trim();
@@ -85,7 +95,7 @@ export class ComputationManager {
         }
 
         return {
-          run_id: String(result.runId),
+          pipelineId: String(result.runId),
           path_node_ids: pathNodeIds,
           payload,
           payload_json: payloadJson,
@@ -112,14 +122,14 @@ export class ComputationManager {
     }
 
     return {
-      runId: optimization.best.run_id,
+      runId: optimization.best.pipelineId,
       pathNodeIds: optimization.best.path_node_ids,
       score: optimization.best.score,
     };
   }
 
-  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<Pipeline[]> {
-    const { experimentId, queue, pipelineId, rerun, runAll } = input;
+  async enqueueRuns(input: EnqueueExperimentRunsInput) {
+    const { experimentId, pipelineId, runAll } = input;
     if (runAll && pipelineId) {
       throw new Error('Provide either runAll or pathNodeIds, not both.');
     }
@@ -172,50 +182,19 @@ export class ComputationManager {
       throw new Error('Усі шляхи мають містити етап класифікації.');
     }
 
-    let pathsToEnqueue: string[][] = [];
+    let pipelineIds: Types.ObjectId[] = [];
     if (runAll) {
-      pathsToEnqueue = paths;
+      const pipelines = await PipelineBaseService.listByExperiment(experimentId);
+      pipelineIds = pipelines.map((e) => e._id);
     } else if (pipelineId) {
-      const pipeline = await PipelineBaseService.getById(pipelineId);
-      const normalizedPath = pipeline.pathNodeIds.map((id) => {
-        if (!Types.ObjectId.isValid(id)) {
-          throw new Error(`Invalid graph node id: ${id}`);
-        }
-        return id.toString();
-      });
-      const pathKeys = new Set(paths.map((path) => path.join('.')));
-      const normalizedKey = normalizedPath.join('.');
-      if (!pathKeys.has(normalizedKey)) {
-        throw new Error('Selected path is not present in the graph.');
-      }
-      pathsToEnqueue = [normalizedPath];
+      pipelineIds = [stringIdToObjectId(pipelineId)];
     }
 
-    const pipelines = await PipelineBaseService.listByExperiment(experimentId);
-    const existingPathKeys = new Set(
-      pipelines.map((run) => run.pathNodeIds.map((id) => String(id)).join('.'))
+    await Promise.all(
+      pipelineIds.map((pipelineId) =>
+        this.pipelineManager.changeStatus({ pipelineId, status: PipelineStatus.queued })
+      )
     );
-    const dedupedPaths = pathsToEnqueue.filter((path) => !existingPathKeys.has(path.join('.')));
-    if (!rerun && dedupedPaths.length === 0) {
-      throw new Error(runAll ? 'Усі шляхи вже мають обчислення.' : 'Цей шлях уже має обчислення.');
-    }
-
-    const docs = dedupedPaths.map((path) => ({
-      experimentId,
-      queue: input.queue,
-      status: PipelineStatus.queued,
-      progress: 0,
-      statusMessage: 'В черзі',
-      priority: 0,
-      pathNodeIds: path.map((id) => new Types.ObjectId(id)),
-    }));
-
-    const created = await PipelineModel.insertMany(docs, { ordered: true });
-    await ExperimentModel.updateOne(
-      { _id: experimentId },
-      { $set: { status: ExperimentStatus.computing } }
-    ).exec();
-    return created.map((doc) => doc.toObject({ getters: true })) as Pipeline[];
   }
 
   async stopRun(pipelineId: string): Promise<Pipeline> {
@@ -237,41 +216,41 @@ export class ComputationManager {
   async claimNextRun(
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
-  ): Promise<Pipeline | null> {
+  ): Promise<Pipeline | undefined> {
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
-    const updateSet: Record<string, unknown> = {
+    const [pipeline] = await WorkflowModel.aggregate<Pipeline | undefined>([
+      { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.queued } },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $match: { 'pipeline.queue': queue } },
+      { $sort: { priority: -1, createdAt: 1 } },
+    ]);
+
+    if (!pipeline) return;
+
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
       status: PipelineStatus.running,
-      progress: 0,
-      statusMessage: 'Запущено',
-      priority: 0,
-    };
+    });
+
     if (normalizedMachineInfo) {
-      updateSet.machineInfo = normalizedMachineInfo;
+      await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
     }
 
-    const run = await PipelineModel.findOneAndUpdate(
-      { queue, status: PipelineStatus.queued },
-      { $set: updateSet },
-      { sort: { priority: -1, createdAt: 1 }, new: true }
-    ).lean();
-
-    if (run && normalizedMachineInfo) {
-      await this.registerMachineInfo(run.experimentId, normalizedMachineInfo);
-    }
-
-    return run;
+    return pipeline;
   }
 
-  async completeRun(input: CompleteExperimentRunInput): Promise<Pipeline> {
-    const trimmedId = input.runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
+  async completeRun(input: CompleteExperimentRunInput) {
+    const pipelineId = input.runId.trim();
 
-    const run = await PipelineModel.findById(trimmedId).lean();
-    if (!run) throw new Error('Computation run not found');
-    // if (run.status === PipelineStatus.paused) {
-    //   return run;
-    // }
+    const pipeline = await PipelineBaseService.getById(pipelineId);
 
     const rawResult = input.resultJson?.trim();
     let parsedPayload: Record<string, unknown> | null = null;
@@ -283,12 +262,11 @@ export class ComputationManager {
       }
     }
     const structuredPayload = parsedPayload ? this.buildResultPayload(parsedPayload) : null;
-    const historyFromPayload = parsedPayload ? this.parseHistoryEntries(parsedPayload.history) : [];
 
     await ComputationResultModel.create({
-      runId: run._id,
-      experimentId: run.experimentId,
-      pathNodeIds: run.pathNodeIds,
+      runId: pipeline._id,
+      experimentId: pipeline.experimentId,
+      pathNodeIds: pipeline.pathNodeIds,
       payloadJson: rawResult
         ? rawResult
         : parsedPayload
@@ -297,70 +275,32 @@ export class ComputationManager {
       ...(structuredPayload ? { payload: structuredPayload } : {}),
     });
 
-    const statusMessage = input.statusMessage?.trim() || 'Завершено';
-    const completionEntry = this.buildHistoryEntry(statusMessage);
-    const historyUpdates = this.mergeHistoryEntries(run.history, [
-      ...historyFromPayload,
-      completionEntry,
-    ]);
-    const updateOps: Record<string, unknown> = {
-      $set: {
-        status: PipelineStatus.completed,
-        progress: 100,
-        statusMessage,
-      },
-    };
-    if (historyUpdates.length > 0) {
-      updateOps.$push = { history: { $each: historyUpdates } };
-    }
-    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
-      new: true,
-    }).lean();
+    const message = input.statusMessage?.trim() || 'Завершено';
 
-    if (!updated) throw new Error('Computation run not found');
-    await this.syncExperimentStatus(String(run.experimentId));
-    return updated;
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.completed,
+      message,
+    });
   }
 
-  async failRun(input: FailExperimentRunInput): Promise<Pipeline> {
-    const trimmedId = input.runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
+  async failRun(input: FailExperimentRunInput) {
+    const pipelineId = input.runId.trim();
 
-    const existing = await PipelineModel.findById(trimmedId).lean();
-    if (!existing) throw new Error('Computation run not found');
-    // if (existing.status === PipelineStatus.paused) {
-    //   return existing;
-    // }
+    const pipeline = await PipelineBaseService.getById(pipelineId);
 
-    const statusMessage = input.statusMessage?.trim() || 'Помилка';
-    const failureEntry = this.buildHistoryEntry(statusMessage);
-    const historyUpdates = this.mergeHistoryEntries(existing.history, [failureEntry]);
-    const updateOps: Record<string, unknown> = {
-      $set: {
-        status: PipelineStatus.failed,
-        statusMessage,
-      },
-    };
-    if (historyUpdates.length > 0) {
-      updateOps.$push = { history: { $each: historyUpdates } };
-    }
-    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
-      new: true,
-    }).lean();
-    if (!updated) throw new Error('Computation run not found');
-    await this.syncExperimentStatus(String(existing.experimentId));
-    return updated;
+    const message = input.statusMessage?.trim() || 'Помилка';
+
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.failed,
+      message,
+    });
   }
 
-  async pauseExperimentRuns(experimentId: string): Promise<Pipeline[]> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    const experimentObjectId = new Types.ObjectId(trimmedId);
+  async pauseExperimentRuns(experimentId: ObjectIdOrString): Promise<Pipeline[]> {
     const runs = await PipelineModel.find({
-      experimentId: experimentObjectId,
+      experimentId,
       status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
     }).lean();
 

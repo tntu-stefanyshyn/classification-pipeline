@@ -13,7 +13,7 @@ export type OptimizationInput = {
     ntps: number;
   };
   conveyors: Array<{
-    run_id: string;
+    pipelineId: string;
     path_node_ids: string[];
     payload?: Record<string, unknown> | null;
     payload_json?: string | null;
@@ -22,12 +22,12 @@ export type OptimizationInput = {
 
 export type OptimizationResult = {
   best: {
-    run_id: string;
+    pipelineId: string;
     path_node_ids: string[];
     score: number;
   };
   scores?: Array<{
-    run_id: string;
+    pipelineId: string;
     path_node_ids: string[];
     score: number;
     normalized?: {
@@ -83,8 +83,7 @@ export class OptimizationRunner {
               if (event.type === 'error' && event.message) {
                 errorMessage = event.message;
               }
-            } catch {
-            }
+            } catch {}
           }
           idx = stdoutBuffer.indexOf('\n');
         }

@@ -156,11 +156,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
           <button className="btn ghost" type="button" onClick={() => refetch()} disabled={loading}>
             Оновити
           </button>
-          {experiment ? (
-            <Link className="btn ghost" to={`/app/experiments/${experiment._id}/constructor`}>
-              Конструктор
-            </Link>
-          ) : null}
           {experiment?.status === ExperimentStatus.completed ? (
             <a
               className="btn ghost"
@@ -208,6 +203,17 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 <h3>Налаштування графової структури</h3>
                 <p className="muted">Параметри ваг метрик та обрані способи виконання обчислень.</p>
               </div>
+            </header>
+            <div style={{ display: 'flex', justifyContent: 'end', gap: '0.75rem' }}>
+              <ChangeExperimentStatusButton
+                label="Перейти до обчислень"
+                status={ExperimentStatus.computing}
+              />
+              {experiment ? (
+                <Link className="btn ghost" to={`/app/experiments/${experiment._id}/constructor`}>
+                  Конструктор
+                </Link>
+              ) : null}
               <button
                 className="btn ghost small"
                 type="button"
@@ -216,7 +222,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               >
                 Змінити налаштування
               </button>
-            </header>
+            </div>
             {!graphSettingsReady && (
               <Alert variant="warning">
                 Налаштування графа ще не заповнені. Вкажіть ваги метрик та типи обчислень.
@@ -231,6 +237,10 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 <span className="muted small">Способи виконання</span>
                 <span className="graph-settings-value">{settingsQueueLabel}</span>
               </div>
+            </div>
+            <div className="graph-summary-item">
+              <span className="muted small">Кількість кроків перехресної валідації</span>
+              <span className="graph-settings-value">{graphSettings?.folds}</span>
             </div>
             <div>
               <div className="form-divider">Ваги метрик (%)</div>
@@ -280,7 +290,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               </Alert>
             )}
           </section>
-          <ChangeExperimentStatusButton />
           <ComputationCard />
         </div>
       )}
@@ -378,7 +387,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                       filename: file.name,
                       storageKey,
                       sizeMb,
-                      status: 'uploaded',
                     },
                   },
                 });

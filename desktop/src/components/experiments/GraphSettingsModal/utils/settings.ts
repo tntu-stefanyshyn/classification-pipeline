@@ -17,7 +17,8 @@ export const buildSettingsDraft = (
     rocAuc: formatWeightPercent(settings?.metrics?.rocAuc),
     ntps: formatWeightPercent(settings?.metrics?.ntps),
   },
-  queues: settings?.queues?.length ? settings.queues : [ComputationQueue.cloud],
+  queues: settings?.queues?.length ? settings.queues : [ComputationQueue.local],
+  folds: settings?.folds ?? 0,
 });
 
 export const normalizeMetricInput = (value: string, fallback: string): string => {
@@ -82,6 +83,7 @@ export const validateGraphSettings = (
         ? {
             metrics: normalizedMetrics,
             queues: settingsDraft.queues,
+            folds: settingsDraft.folds,
           }
         : null,
   };

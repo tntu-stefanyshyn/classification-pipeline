@@ -43,7 +43,7 @@ export const runPythonHandler = (
     let result: Record<string, unknown> | null = null;
     let aborted = false;
     let abortTimer: NodeJS.Timeout | null = null;
-    const image = 'aws-jobs-image';
+    const image = 'python-pipeline';
 
     const proc = spawn(
       'docker',

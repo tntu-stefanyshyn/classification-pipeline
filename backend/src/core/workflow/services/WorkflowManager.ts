@@ -3,16 +3,27 @@ import { WorkflowModel } from '../model/WorkflowModel';
 import { ObjectIdOrString } from '../../../types/context';
 import { WorkflowStatus, WorkflowType } from '../enums';
 import { Workflow } from '../classes/Workflow';
+import { SortOrder } from 'mongoose';
 
 export class WorkflowManager {
-  getWorkflow = async ({
+  getWorkflow = async <T>({
     type,
     instanceId,
+    sortBy = { createdAt: -1 },
+    status,
   }: {
-    instanceId: ObjectIdOrString;
+    instanceId?: ObjectIdOrString;
+    status?: T;
     type: WorkflowType;
+    sortBy?: Record<string, SortOrder>;
   }) => {
-    const workflow = await WorkflowModel.findOne({ instanceId, type }).lean();
+    const workflow = await WorkflowModel.findOne({
+      ...(instanceId ? { instanceId } : {}),
+      ...(status ? { status } : {}),
+      type,
+    })
+      .sort(sortBy)
+      .lean();
     if (!workflow) throw new Error('Робочий процес не знайдено');
     return workflow;
   };
@@ -36,11 +47,13 @@ export class WorkflowManager {
     instanceId,
     status,
     type,
+    message,
   }: {
     transitions: Transitions<T>;
     instanceId: ObjectIdOrString;
     type: WorkflowType;
     status: T;
+    message?: string;
   }) => {
     const workflow = await this.getWorkflow({ instanceId, type });
     const transition = transitions.find(
@@ -53,7 +66,12 @@ export class WorkflowManager {
       {
         $set: { status },
         $push: {
-          history: { previousStatus: workflow.status, nextStatus: status, createdAt: new Date() },
+          history: {
+            previousStatus: workflow.status,
+            nextStatus: status,
+            message,
+            createdAt: new Date(),
+          },
         },
       }
     );

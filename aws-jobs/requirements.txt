@@ -6,6 +6,7 @@ joblib>=1.4,<2
 pydantic>=2.9,<3
 python-dotenv>=1.0,<2
 pyyaml>=6.0,<7
+python-graphql-client
 
 # Dev extras (optional): uncomment/install locally if needed
 # pytest>=8.3,<9

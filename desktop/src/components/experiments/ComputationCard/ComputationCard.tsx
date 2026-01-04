@@ -31,6 +31,7 @@ import {
 import ResultModal from './components/ResultModal/ResultModal';
 import { ExperimentRunsQuery } from '../../../graphql/queries/generated/experimentRuns';
 import uk from '../../../i18n/uk';
+import { ChangePipelineStatusButton } from './components';
 
 const ComputationCard: FC = () => {
   const params = useParams();
@@ -195,9 +196,7 @@ const ComputationCard: FC = () => {
       });
       const created = result.data?.enqueueExperimentRuns ?? [];
       const queueLabel = defaultQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
-      setActionStatus(
-        `${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу (${created.length}).`
-      );
+      setActionStatus(`${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу.`);
       await Promise.all([refetchRuns(), refetch()]);
     } catch (_err) {
       // Error state is handled by enqueueError.
@@ -225,6 +224,9 @@ const ComputationCard: FC = () => {
           <span className="muted small">
             {row.original.pathNodes.map((e) => e.label).join('->')}
           </span>
+          <div className="table-stack">
+            <span className="muted small">{row.original._id}</span>
+          </div>
         </div>
       ),
     },
@@ -293,38 +295,17 @@ const ComputationCard: FC = () => {
 
         return (
           <div className="table-actions">
-            <button
-              className="btn ghost small icon"
-              type="button"
-              onClick={() => void handleStartPath(_id)}
-              disabled={!canRun}
-              aria-label="Запустити шлях"
-              title="Запуск"
-            >
+            <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M8 6l10 6-10 6V6z" fill="currentColor" />
               </svg>
-            </button>
-            <button
-              className="btn ghost small icon"
-              type="button"
-              onClick={() => (activeRun ? void handleStopPath(_id) : undefined)}
-              disabled={!canStop}
-              aria-label="Зупинити запуск"
-              title="Зупинка"
-            >
+            </ChangePipelineStatusButton>
+            <ChangePipelineStatusButton status={PipelineStatus.paused} pipelineId={_id}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="7" y="7" width="10" height="10" fill="currentColor" />
               </svg>
-            </button>
-            <button
-              className="btn ghost small icon"
-              type="button"
-              onClick={() => void handleStartPath(_id, true)}
-              disabled={!canRecompute}
-              aria-label="Перезапустити шлях"
-              title="Перезапустити"
-            >
+            </ChangePipelineStatusButton>
+            <ChangePipelineStatusButton status={PipelineStatus.idle} pipelineId={_id}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M6.5 8.5a6 6 0 1 1 1.7 7.6"
@@ -341,7 +322,7 @@ const ComputationCard: FC = () => {
                   strokeWidth="1.6"
                 />
               </svg>
-            </button>
+            </ChangePipelineStatusButton>
           </div>
         );
       },

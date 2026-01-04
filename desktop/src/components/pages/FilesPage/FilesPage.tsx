@@ -1,5 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type FC } from 'react';
-import type { ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type FC, ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AuthLayout } from '../../layout/AuthLayout';
 import { FileInput } from '../../inputs/FileInput';
@@ -82,7 +81,6 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
             filename: file.name,
             storageKey,
             sizeMb,
-            status: 'uploaded',
           },
         },
       });

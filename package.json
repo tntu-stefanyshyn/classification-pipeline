@@ -25,6 +25,7 @@
     "lint:desktop": "npm run lint --workspace desktop",
     "codegen": "npm run codegen --workspace desktop",
     "start:backend": "npm run start --workspace backend",
+    "aws:run": "docker build -t aws-jobs -f aws-jobs/Dockerfile aws-jobs; docker run --rm -e COMPUTE_PAYLOAD_JSON='{\"pipelineId\":\"695a5cefefd2bcf5e12f9645\"}' -e COMPUTE_BACKEND_URL='http://host.docker.internal:4000/graphql' --add-host=host.docker.internal:host-gateway -e COMPUTE_BACKEND_TOKEN='YOUR_BACKEND_TOKEN_HERE' aws-jobs",
     "build:backend": "npm run build --workspace backend"
   }
 }

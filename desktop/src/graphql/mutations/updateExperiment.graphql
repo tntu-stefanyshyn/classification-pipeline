@@ -19,6 +19,7 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
           ntps
         }
         queues
+        folds
       }
       nodes {
         _id

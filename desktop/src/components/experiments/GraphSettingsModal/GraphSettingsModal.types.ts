@@ -9,6 +9,7 @@ export type MetricKey = 'accuracy' | 'f1' | 'rocAuc' | 'ntps';
 export type GraphSettingsDraft = {
   metrics: Record<MetricKey, string>;
   queues: ComputationQueue[];
+  folds: number;
 };
 
 export type GraphSettingsValidation = {

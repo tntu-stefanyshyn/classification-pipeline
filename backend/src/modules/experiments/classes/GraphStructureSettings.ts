@@ -1,5 +1,5 @@
 import { prop } from '@typegoose/typegoose';
-import { Field, InputType, ObjectType } from 'type-graphql';
+import { Field, InputType, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from '../../computations/classes/ComputationQueue';
 import { GraphMetricWeights } from './GraphMetricWeights';
 
@@ -13,4 +13,8 @@ export class GraphStructureSettings {
   @Field(() => [ComputationQueue])
   @prop({ type: () => [String], enum: ComputationQueue, default: [] })
   queues!: ComputationQueue[];
+
+  @Field(() => Int)
+  @prop({ type: () => Number, required: true })
+  folds!: number;
 }

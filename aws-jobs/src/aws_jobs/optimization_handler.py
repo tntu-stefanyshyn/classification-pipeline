@@ -124,14 +124,14 @@ def _extract_metric(payload: Dict[str, Any], name: str) -> Any:
 
 
 def _parse_entry(entry: Dict[str, Any]) -> Tuple[str, List[str], Dict[str, Any]]:
-    run_id = str(entry.get("run_id") or entry.get("runId") or "").strip()
-    if not run_id:
-        raise ValueError("Conveyor run_id is missing")
+    pipelineId = str(entry.get("pipelineId") or entry.get("runId") or "").strip()
+    if not pipelineId:
+        raise ValueError("Conveyor pipelineId is missing")
 
     path_ids = entry.get("path_node_ids") or entry.get("pathNodeIds") or []
     path_node_ids = [str(item) for item in path_ids if str(item).strip()]
     if not path_node_ids:
-        raise ValueError(f"Conveyor path_node_ids are missing for run {run_id}")
+        raise ValueError(f"Conveyor path_node_ids are missing for run {pipelineId}")
 
     payload = entry.get("payload")
     if isinstance(payload, str) and payload.strip():
@@ -143,7 +143,7 @@ def _parse_entry(entry: Dict[str, Any]) -> Tuple[str, List[str], Dict[str, Any]]
     if not isinstance(payload, dict):
         payload = {}
 
-    return run_id, path_node_ids, payload
+    return pipelineId, path_node_ids, payload
 
 
 def _min_max_normalize(values: List[float]) -> List[float]:
@@ -171,8 +171,8 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
     for entry in conveyors:
         if not isinstance(entry, dict):
             continue
-        run_id, path_node_ids, data = _parse_entry(entry)
-        raw_rows.append({"run_id": run_id, "path_node_ids": path_node_ids, "payload": data})
+        pipelineId, path_node_ids, data = _parse_entry(entry)
+        raw_rows.append({"pipelineId": pipelineId, "path_node_ids": path_node_ids, "payload": data})
 
     if not raw_rows:
         raise ValueError("No valid conveyors to optimize")
@@ -193,13 +193,13 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
             metrics[key] = _vector_length(raw_value)
 
         if accuracy_weight > 0 and metrics["accuracy"] is None:
-            raise ValueError(f"Missing accuracy metric for run {row['run_id']}")
+            raise ValueError(f"Missing accuracy metric for run {row['pipelineId']}")
         if f1_weight > 0 and metrics["f1"] is None:
-            raise ValueError(f"Missing f1 metric for run {row['run_id']}")
+            raise ValueError(f"Missing f1 metric for run {row['pipelineId']}")
         if roc_weight > 0 and metrics["rocAuc"] is None:
-            raise ValueError(f"Missing rocAuc metric for run {row['run_id']}")
+            raise ValueError(f"Missing rocAuc metric for run {row['pipelineId']}")
         if ntps_weight > 0 and metrics["ntps"] is None:
-            raise ValueError(f"Missing ntps metric for run {row['run_id']}")
+            raise ValueError(f"Missing ntps metric for run {row['pipelineId']}")
 
         metrics_by_key["accuracy"].append(metrics["accuracy"] or 0.0)
         metrics_by_key["f1"].append(metrics["f1"] or 0.0)
@@ -208,7 +208,7 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         parsed_rows.append(
             {
-                "run_id": row["run_id"],
+                "pipelineId": row["pipelineId"],
                 "path_node_ids": row["path_node_ids"],
                 "metrics": metrics,
             }
@@ -238,7 +238,7 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         entry = {
-            "run_id": row["run_id"],
+            "pipelineId": row["pipelineId"],
             "path_node_ids": row["path_node_ids"],
             "score": score,
             "normalized": {

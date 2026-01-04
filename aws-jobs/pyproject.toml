@@ -16,7 +16,8 @@ dependencies = [
   "joblib>=1.4,<2",
   "pydantic>=2.9,<3",
   "python-dotenv>=1.0,<2",
-  "pyyaml>=6.0,<7"
+  "pyyaml>=6.0,<7",
+  "python_graphql_client"
 ]
 
 [project.optional-dependencies]
@@ -30,3 +31,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88

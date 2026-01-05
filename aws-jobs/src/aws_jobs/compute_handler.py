@@ -624,7 +624,7 @@ def main() -> None:
         )
         print((json.dumps(result, indent=2)))
     except Exception as exc:  # noqa: BLE001
-        _emit((exc))
+        _emit(str(exc))
         sys.exit(1)
 
 

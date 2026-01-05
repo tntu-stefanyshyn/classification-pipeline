@@ -234,7 +234,7 @@ const ComputationCard: FC = () => {
       header: 'Статус',
       id: 'status',
       cell: ({ row }) => {
-        const status = pathStatusMap.get(row.original.status) ?? PipelineStatus.idle;
+        const status = row.original.status;
         return status === PipelineStatus.idle ? (
           <span className="muted small">{uk.computationStatus[PipelineStatus.idle]}</span>
         ) : (
@@ -305,7 +305,7 @@ const ComputationCard: FC = () => {
                 <rect x="7" y="7" width="10" height="10" fill="currentColor" />
               </svg>
             </ChangePipelineStatusButton>
-            <ChangePipelineStatusButton status={PipelineStatus.idle} pipelineId={_id}>
+            <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M6.5 8.5a6 6 0 1 1 1.7 7.6"

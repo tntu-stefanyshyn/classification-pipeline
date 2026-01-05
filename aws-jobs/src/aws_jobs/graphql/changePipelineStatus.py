@@ -8,10 +8,11 @@ def completePipeline(
   token: Optional[str] = None,
 ):
   mutation = """
-  mutation CompletePipeline($input: CompletePipelineInput!) {
-    completePipeline(input: $input)
+  mutation ChangePipelineStatus($input: ChangePipelineStatusInput!) {
+    changePipelineStatus(input: $input)
   }
   """
+  // TODO
   return graphqlRequest(
     backend_url,
     mutation,

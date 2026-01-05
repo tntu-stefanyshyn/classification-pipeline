@@ -59,7 +59,8 @@ export class WorkflowManager {
     const transition = transitions.find(
       (transition) => transition.from === workflow.status && transition.to === status
     );
-    if (!transition) throw new Error('Неможливо виконати перехід');
+    console.log(workflow.status, status);
+    if (!transition) throw new Error('TRANSITION_NOT_FOUND');
 
     await WorkflowModel.updateOne(
       { _id: workflow._id },

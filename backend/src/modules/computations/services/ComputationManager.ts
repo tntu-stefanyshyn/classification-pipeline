@@ -224,7 +224,8 @@ export class ComputationManager {
         },
       },
       { $unwind: '$pipeline' },
-      { $match: { 'pipeline.queue': queue } },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { queue } },
       { $sort: { priority: -1, createdAt: 1 } },
     ]);
 
@@ -260,7 +261,7 @@ export class ComputationManager {
     const pipeline = await PipelineBaseService.getById(pipelineId);
 
     const message = input.statusMessage?.trim() || 'Помилка';
-
+    console.log('fail', input.statusMessage);
     await this.pipelineManager.changeStatus({
       pipelineId: pipeline._id,
       status: PipelineStatus.failed,

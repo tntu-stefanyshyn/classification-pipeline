@@ -5,7 +5,7 @@ query ExperimentResults($experimentId: ID!) {
     createdAt
     payload {
       accuracyScores
-      classLabels
+      channelNames
       confusionMatrix
       duration
       f1Scores

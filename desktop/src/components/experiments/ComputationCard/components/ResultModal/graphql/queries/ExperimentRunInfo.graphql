@@ -1,5 +1,5 @@
-query ExperimentRunInfo($experimentRunId: ID!) {
-  experimentRun(runId: $experimentRunId) {
+query PipelineInfo($pipelineId: ID!) {
+  pipeline(pipelineId: $pipelineId) {
     _id
     status
     updatedAt

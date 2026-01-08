@@ -29,7 +29,7 @@ export class ComputationResultPayload {
 
   @Field(() => [String])
   @prop({ type: () => [String], required: true })
-  classLabels!: string[];
+  channelNames!: string[];
 }
 
 @InputType()
@@ -53,5 +53,5 @@ export class ComputationResultPayloadInput {
   confusionMatrixes!: number[][][];
 
   @Field(() => [String])
-  classLabels!: string[];
+  channelNames!: string[];
 }

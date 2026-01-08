@@ -1,5 +1,5 @@
-query ExperimentRuns($experimentId: ID!, $queue: ComputationQueue) {
-  experimentRuns(experimentId: $experimentId, queue: $queue) {
+query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
+  pipelines(experimentId: $experimentId, queue: $queue) {
     _id
     experimentId
     queue

@@ -15,7 +15,6 @@ import { GraphStructureModel } from '../../experiments/models/GraphStructureMode
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
-import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';

@@ -472,8 +472,8 @@ def _run_classifier(
         progress = (progress_for_one_step) * (fold_index)
         _emit(backend_url, pipelineId, message=f"End cross-validations: step {fold_index}/{folds}", progress=progress)
 
-    classLabels =  [str(label) for label in labels]
-    return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels
+    channelNames =  [str(label) for label in labels]
+    return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, channelNames
 
 
 def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
@@ -554,7 +554,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif stage == "DIMENSIONALITY_REDUCTION":
             X = _apply_pca(X, settings)
         elif stage == "CLASSIFICATION":
-            accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels = _run_classifier(
+            accuracyScores, f1Scores, rocAucScores, confusionMatrixes, channelNames = _run_classifier(
                 X,
                 y,
                 technology or "svm",
@@ -568,7 +568,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             report["f1Scores"] = f1Scores
             report["rocAucScores"] = rocAucScores
             report["confusionMatrixes"] = confusionMatrixes
-            report["classLabels"] = classLabels
+            report["channelNames"] = channelNames
             break
         progress = (progress_for_one_step) * (index)
         _emit(backend_url, pipelineId, message=f"Step end: {label}, {stage}", progress=progress)

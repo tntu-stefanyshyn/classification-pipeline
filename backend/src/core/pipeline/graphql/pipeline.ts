@@ -47,7 +47,7 @@ export class PipelineResolver {
 
   // #region Query
   @Query(() => [Pipeline])
-  experimentRuns(
+  pipelines(
     @Arg('experimentId', () => ID) experimentId: ObjectIdOrString,
     @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {
@@ -55,7 +55,7 @@ export class PipelineResolver {
   }
 
   @Query(() => Pipeline, { nullable: true })
-  experimentRun(@Arg('runId', () => ID) pipelineId: ObjectIdOrString): Promise<Pipeline | null> {
+  pipeline(@Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString): Promise<Pipeline | null> {
     return PipelineBaseService.getById(pipelineId);
   }
   // #endregion Query

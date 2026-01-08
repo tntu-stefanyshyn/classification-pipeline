@@ -24,12 +24,12 @@ import { buildGraphPaths } from '../../pages/ExperimentDetailsPage/utils/buildGr
 import {
   useEnqueueExperimentRunsMutation,
   useExperimentQuery,
-  useExperimentRunsQuery,
+  usePipelinesQuery,
   useOptimizeExperimentRunsLazyQuery,
   useStopExperimentRunMutation,
 } from '../../pages/ExperimentDetailsPage/graphql';
 import ResultModal from './components/ResultModal/ResultModal';
-import { ExperimentRunsQuery } from '../../../graphql/queries/generated/experimentRuns';
+import { PipelinesQuery } from '../../../graphql/queries/generated/pipelines';
 import uk from '../../../i18n/uk';
 import { ChangePipelineStatusButton } from './components';
 
@@ -47,7 +47,7 @@ const ComputationCard: FC = () => {
     loading: runsLoading,
     error: runsError,
     refetch: refetchRuns,
-  } = useExperimentRunsQuery({
+  } = usePipelinesQuery({
     pollInterval: 5000,
     variables: { experimentId: id },
     skip: !id,
@@ -70,7 +70,7 @@ const ComputationCard: FC = () => {
     pathNodeIds: string[];
     score: number;
   } | null>(null);
-  const runs = runsData?.experimentRuns ?? [];
+  const runs = runsData?.pipelines ?? [];
   const pathLabels = useMemo(
     () => new Map(graphPaths.map((path) => [path.id, path.label])),
     [graphPaths]
@@ -327,7 +327,7 @@ const ComputationCard: FC = () => {
         );
       },
     },
-  ] satisfies ColumnDef<ExperimentRunsQuery['experimentRuns'][number]>[];
+  ] satisfies ColumnDef<PipelinesQuery['pipelines'][number]>[];
 
   const localQueueLabel = 'Локальна черга';
   const cloudQueueLabel = 'Хмарна черга';
@@ -428,7 +428,7 @@ const ComputationCard: FC = () => {
             {runsLoading && <p className="muted small">Оновлення статусів запусків...</p>}
           </div>
           <DataTable
-            data={runsData?.experimentRuns ?? []}
+            data={runsData?.pipelines ?? []}
             columns={pathTableColumns}
             emptyMessage="Немає доступних шляхів у графі."
             labels={tableLabels}

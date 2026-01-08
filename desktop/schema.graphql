@@ -52,7 +52,7 @@ type ComputationResult {
 
 type ComputationResultPayload {
   accuracyScores: [Float!]!
-  classLabels: [String!]!
+  channelNames: [String!]!
   confusionMatrix: [[Int!]!]!
   duration: Float!
   f1Scores: [Float!]!
@@ -62,7 +62,7 @@ type ComputationResultPayload {
 
 input ComputationResultPayloadInput {
   accuracyScores: [Float!]!
-  classLabels: [String!]!
+  channelNames: [String!]!
   confusionMatrixes: [[[Int!]!]!]!
   duration: Float!
   f1Scores: [Float!]!
@@ -277,12 +277,12 @@ enum PipelineStatus {
 type Query {
   experiment(_id: ID!): Experiment
   experimentResults(experimentId: ID!): [ComputationResult!]!
-  experimentRun(runId: ID!): Pipeline
-  experimentRuns(experimentId: ID!, queue: ComputationQueue): [Pipeline!]!
   experiments: [Experiment!]!
   health: String!
   me: User!
   optimizeExperimentRuns(experimentId: ID!): OptimizationResult!
+  pipeline(pipelineId: ID!): Pipeline
+  pipelines(experimentId: ID!, queue: ComputationQueue): [Pipeline!]!
   serverInfo: ServerInfo!
   signedDownloadUrl(fileId: ID!): SignedUploadUrl!
   signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
@@ -354,7 +354,7 @@ input UpdateExperimentInput {
 input UpdatePipelineProgressInput {
   message: String
   pipelineId: ID!
-  progress: Int
+  progress: Float
 }
 
 type UploadedFile {

@@ -255,20 +255,6 @@ export class ComputationManager {
     });
   }
 
-  async failRun(input: FailExperimentRunInput) {
-    const pipelineId = input.runId.trim();
-
-    const pipeline = await PipelineBaseService.getById(pipelineId);
-
-    const message = input.statusMessage?.trim() || 'Помилка';
-    console.log('fail', input.statusMessage);
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.failed,
-      message,
-    });
-  }
-
   async pauseExperimentRuns(experimentId: ObjectIdOrString): Promise<Pipeline[]> {
     const runs = await PipelineModel.find({
       experimentId,

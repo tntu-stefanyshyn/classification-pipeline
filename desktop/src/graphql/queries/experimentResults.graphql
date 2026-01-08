@@ -1,10 +1,16 @@
 query ExperimentResults($experimentId: ID!) {
   experimentResults(experimentId: $experimentId) {
     _id
-    runId
-    experimentId
-    pathNodeIds
-    payloadJson
+    pipelineId
     createdAt
+    payload {
+      accuracyScores
+      classLabels
+      confusionMatrix
+      duration
+      f1Scores
+      rocAucScores
+      sampleCount
+    }
   }
 }

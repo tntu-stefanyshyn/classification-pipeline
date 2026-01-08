@@ -1,3 +1,0 @@
-mutation FailExperimentRun($input: FailExperimentRunInput!) {
-  failExperimentRun(input: $input)
-}

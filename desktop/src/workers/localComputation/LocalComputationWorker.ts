@@ -3,17 +3,14 @@ import { app } from 'electron';
 import {
   PipelineMachineInfoInput,
   ComputationQueue,
-  UpdatePipelineInput,
+  PipelineStatus,
 } from '../../graphql/types.generated';
-import { config } from '../../config/config';
 import { createGraphqlClient, GraphqlClient, isFetchAvailable } from './graphqlClient';
 import {
+  changePipelineStatus,
   claimExperimentRun,
-  completeExperimentRun,
-  failExperimentRun,
   fetchExperimentForRun,
   fetchExperimentRun,
-  updateExperimentRun,
 } from './graphqlOperations';
 import { buildHandlerPayload } from './payloadBuilder';
 import { runPythonHandler } from './pythonRunner';
@@ -71,7 +68,11 @@ export class LocalComputationWorker {
         await this.processRun(run);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Local computation failed';
-        await this.failRun(run._id, message);
+        await changePipelineStatus(this.requireClient(), {
+          pipelineId: run._id,
+          status: PipelineStatus.failed,
+          message,
+        });
       }
     }
 
@@ -87,29 +88,33 @@ export class LocalComputationWorker {
     const abortController = new AbortController();
     const stopWatcher = this.startPauseWatcher(run._id, abortController);
     const payload = buildHandlerPayload(run, experiment);
-    payload.backend_url = config.renderer.graphqlEndpoint;
+
     try {
-      const result = await runPythonHandler(
+      await runPythonHandler(
         payload,
         { signal: abortController.signal },
         {
           onProgress: async (progress, message) => {
             if (abortController.signal.aborted) return;
-            await this.updateRun(run._id, { progress, statusMessage: message });
+            console.log({ statusMessage: message });
           },
           onLog: async (message) => {
             if (abortController.signal.aborted) return;
-            await this.updateRun(run._id, { statusMessage: message });
+            console.log({ statusMessage: message });
           },
           onError: async (message) => {
             if (abortController.signal.aborted) return;
-            await this.updateRun(run._id, { statusMessage: message });
+            console.log({ statusMessage: message });
+            await changePipelineStatus(this.requireClient(), {
+              pipelineId: run._id,
+              status: PipelineStatus.failed,
+              message,
+            });
           },
         }
       );
 
       if (abortController.signal.aborted) return;
-      await this.completeRun(run._id, result);
     } catch (error) {
       if (abortController.signal.aborted) return;
       throw error;
@@ -144,41 +149,6 @@ export class LocalComputationWorker {
     return () => {
       stopped = true;
     };
-  }
-
-  private async updateRun(
-    pipelineId: string,
-    update: { progress?: number; statusMessage?: string }
-  ) {
-    const input: UpdatePipelineInput = { pipelineId };
-
-    if (typeof update.progress === 'number' && Number.isFinite(update.progress)) {
-      input.progress = Math.max(0, Math.min(100, Math.round(update.progress)));
-    }
-    if (typeof update.statusMessage === 'string') {
-      const message = update.statusMessage.trim();
-      if (message) {
-        input.statusMessage = message;
-      }
-    }
-
-    if (input.progress === undefined && !input.statusMessage) return;
-    await updateExperimentRun(this.requireClient(), input);
-  }
-
-  private async completeRun(runId: string, result: Record<string, unknown> | null) {
-    const input: { runId: string; resultJson?: string } = { runId };
-    if (result) {
-      input.resultJson = JSON.stringify(result);
-    }
-    await completeExperimentRun(this.requireClient(), input);
-  }
-
-  private async failRun(runId: string, message: string) {
-    await failExperimentRun(this.requireClient(), {
-      runId,
-      statusMessage: message,
-    });
   }
 
   private requireClient() {

@@ -3,7 +3,7 @@ import { Pipeline, PipelineBaseService } from '../../../core/pipeline';
 import { GraphNode } from '../../../modules/experiments/classes/GraphNode';
 import { GraphStructureModel } from '../../../modules/experiments/models/GraphStructureModel';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
-import { UpdatePipelineInput } from '../classes/UpdatePipelineInput';
+import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
 import { ObjectIdOrString } from '../../../types/context';
 import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
@@ -62,10 +62,10 @@ export class PipelineResolver {
 
   // #region Mutation
   @Mutation(() => Pipeline)
-  updateExperimentRun(
-    @Arg('input', () => UpdatePipelineInput) input: UpdatePipelineInput
+  updatePipelineProgress(
+    @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput
   ): Promise<Pipeline> {
-    return PipelineBaseService.update(input);
+    return PipelineBaseService.updatePipelineProgress(input);
   }
 
   @Mutation(() => Boolean)

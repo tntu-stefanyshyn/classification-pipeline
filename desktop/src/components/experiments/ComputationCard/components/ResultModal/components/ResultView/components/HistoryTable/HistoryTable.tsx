@@ -6,7 +6,7 @@ import { historyColumns } from './utils/columns';
 const HistoryTable: FC<HistoryTableProps> = ({ history }) => {
   return (
     <DataTable
-      data={history}
+      data={history.toReversed()}
       columns={historyColumns}
       emptyMessage="Історія поки що порожня."
       pageSize={6}

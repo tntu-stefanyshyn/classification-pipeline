@@ -1,7 +1,7 @@
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { Pipeline } from '../classes/Pipeline';
 import { PipelineModel } from '../models/PipelineModel';
-import { UpdatePipelineInput } from '../classes/UpdatePipelineInput';
+import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
 import { PipelineStatus } from '../enums';
 import { PipelineHistoryItem } from '../classes/PipelineHistoryItem';
 import { ObjectIdOrString } from '../../../types/context';
@@ -22,25 +22,25 @@ class PipelineBaseServiceClass {
     return pipeline;
   }
 
-  async update({ pipelineId, progress, statusMessage }: UpdatePipelineInput): Promise<Pipeline> {
-    const pipeline = await this.getById(pipelineId);
-    // if (pipeline.status === PipelineStatus.paused) {
-    //   return pipeline;
-    // }
-
+  async updatePipelineProgress({
+    pipelineId,
+    progress,
+    message,
+    status,
+  }: UpdatePipelineProgressInput & { status?: PipelineStatus }): Promise<Pipeline> {
     await PipelineModel.updateOne(
       { _id: pipelineId },
       {
         $set: {
           ...(typeof progress === 'number' ? { progress } : {}),
-          ...(statusMessage ? { statusMessage } : {}),
         },
-        ...(statusMessage
+        ...(message || status
           ? {
               $push: {
                 history: {
                   createdAt: new Date(),
-                  message: statusMessage,
+                  message,
+                  status,
                 } satisfies PipelineHistoryItem,
               },
             }

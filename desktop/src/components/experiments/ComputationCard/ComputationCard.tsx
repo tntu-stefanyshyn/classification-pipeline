@@ -273,7 +273,7 @@ const ComputationCard: FC = () => {
       header: 'Остання активність',
       id: 'results',
       cell: ({ row }) => {
-        const [latestResult] = row.original.history ?? [];
+        const [latestResult] = row.original.history.toReversed() ?? [];
         return <span>{latestResult?.message}</span>;
       },
     },
@@ -281,7 +281,7 @@ const ComputationCard: FC = () => {
       header: 'Дії',
       id: 'actions',
       cell: ({ row }) => {
-        const { status, pathNodeIds, _id } = row.original;
+        const { status, _id } = row.original;
         const activeRun =
           status === PipelineStatus.running ||
           status === PipelineStatus.queued ||

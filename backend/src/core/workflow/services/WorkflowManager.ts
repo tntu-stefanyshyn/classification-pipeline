@@ -59,7 +59,7 @@ export class WorkflowManager {
     const transition = transitions.find(
       (transition) => transition.from === workflow.status && transition.to === status
     );
-    console.log(workflow.status, status);
+    console.log('change status => ', { prev: workflow.status, status, message });
     if (!transition) throw new Error('TRANSITION_NOT_FOUND');
 
     await WorkflowModel.updateOne(

@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3 # type: ignore
 import numpy as np # type: ignore
@@ -12,23 +12,34 @@ import pandas as pd
 from sklearn.decomposition import FastICA, PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    roc_auc_score,
+  accuracy_score,
+  confusion_matrix,
+  f1_score,
+  roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from graphql.completePipeline import completePipeline 
 from graphql.graphqlRequest import graphqlRequest 
+from graphql.updatePipelineProgress import updatePipelineProgress 
 
 
-def _emit(message: str) -> None:
-    sys.stdout.write(json.dumps({"message": message, "timestamp": datetime.utcnow().isoformat() + "Z"}, ensure_ascii=True) + "\n")
-    sys.stdout.flush()
+def _emit(
+  backend_url: str,
+  pipelineId: str,
+  message: Optional[str] = None,
+  progress: Optional[float] = None,
+  token: Optional[str] = None,
+) -> None:
+  updatePipelineProgress(
+    backend_url=backend_url,
+    pipelineId=pipelineId,
+    token=token,
+    message=message,
+    progress=progress
+  )
 
 def _timestamp() -> str:
     return datetime.utcnow().isoformat() + "Z"
@@ -412,89 +423,57 @@ def _run_classifier(
     technology: str,
     settings: Dict[str, str],
     graphStructureSettings: Dict[str, str],
-    log: Optional[Callable[[str], None]] = None,
+    progress_for_one_step: float,
+    backend_url: str,
+    pipelineId: str,
 ):
     test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
     random_state = _to_int(settings.get("random_state"), 42)
-    folds = graphStructureSettings.get('folds')
-
-    def emit(message: str) -> None:
-        if log:
-            log(message)
+    folds =_to_int(graphStructureSettings.get('folds'))
 
     labels = np.unique(y)
     folds = _to_int(graphStructureSettings.get('folds')) 
-    if folds and folds > 1:
-        folds = max(2, folds)
-        if len(y) < folds:
-            folds = len(y)
-        if folds >= 2:
-            try:
-                splitter = StratifiedKFold(
-                    n_splits=folds, shuffle=True, random_state=random_state
-                )
-                splits = splitter.split(X, y)
-            except Exception:
-                splitter = KFold(n_splits=folds, shuffle=True, random_state=random_state)
-                splits = splitter.split(X)
-
-            all_true: List[Any] = []
-            all_pred: List[Any] = []
-            accuracyScores: List[float] = []
-            f1Scores: List[float] = []
-            rocAucScores: List[Optional[float]] = []
-            confusionMatrixes: List[List[float]] = []
-
-            for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
-                emit(f"Cross-validations: step {fold_index}/{folds}")
-                X_train = X.iloc[train_idx]
-                y_train = y.iloc[train_idx]
-                X_val = X.iloc[val_idx]
-                y_val = y.iloc[val_idx]
-
-                model = _build_classifier(technology, settings)
-                model.fit(X_train, y_train)
-                y_pred = model.predict(X_val)
-
-                emit("Classification: computing metrics accuracy, F1, ROC-AUC")
-                accuracyScores.append(float(accuracy_score(y_val, y_pred)))
-                f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
-                rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
-
-                all_true.extend(list(y_val))
-                all_pred.extend(list(y_pred))
-                matrix = confusion_matrix(y_val, y_pred, labels=labels)
-                confusionMatrixes.append(matrix.tolist())
-            classLabels =  [str(label) for label in labels]
-            return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels
-
     try:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=y
+        splitter = StratifiedKFold(
+            n_splits=folds, shuffle=True, random_state=random_state
         )
-    except ValueError:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=None
-        )
+        splits = splitter.split(X, y)
+    except Exception:
+        splitter = KFold(n_splits=folds, shuffle=True, random_state=random_state)
+        splits = splitter.split(X)
 
-    model = _build_classifier(technology, settings)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_val)
+    all_true: List[Any] = []
+    all_pred: List[Any] = []
+    accuracyScores: List[float] = []
+    f1Scores: List[float] = []
+    rocAucScores: List[Optional[float]] = []
+    confusionMatrixes: List[List[float]] = []
 
-    emit("Classification: computing metrics accuracy, F1, ROC-AUC")
-    report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
-    roc_auc = _compute_roc_auc(model, X_val, y_val)
-    if roc_auc is not None:
-        report["roc_auc"] = roc_auc# type: ignore
+    for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
+        progress = (progress_for_one_step * 0.5) * (fold_index)
+        _emit(backend_url, pipelineId, message=f"Start cross-validations: step {fold_index}/{folds}", progress=progress)
+        X_train = X.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+        X_val = X.iloc[val_idx]
+        y_val = y.iloc[val_idx]
 
-    report["accuracy_scores"] = [float(accuracy_score(y_val, y_pred))]# type: ignore
-    report["f1_scores"] = [float(f1_score(y_val, y_pred, average="weighted"))]# type: ignore
-    report["roc_auc_scores"] = [roc_auc] if roc_auc is not None else []# type: ignore
-    report["confusion_matrix"] = confusion_matrix(y_val, y_pred, labels=labels).tolist()# type: ignore
-    report["class_labels"] = [str(label) for label in labels]# type: ignore
-    report["class_count"] = int(len(labels))# type: ignore
-    report["cv_folds"] = 1# type: ignore
-    return report# type: ignore
+        model = _build_classifier(technology, settings)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_val)
+
+        accuracyScores.append(float(accuracy_score(y_val, y_pred)))
+        f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
+        rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
+
+        all_true.extend(list(y_val))
+        all_pred.extend(list(y_pred))
+        matrix = confusion_matrix(y_val, y_pred, labels=labels)
+        confusionMatrixes.append(matrix.tolist())
+        progress = (progress_for_one_step) * (fold_index)
+        _emit(backend_url, pipelineId, message=f"End cross-validations: step {fold_index}/{folds}", progress=progress)
+
+    classLabels =  [str(label) for label in labels]
+    return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, classLabels
 
 
 def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
@@ -526,44 +505,45 @@ def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optio
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+    pipelineId =  payload.get("pipelineId")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
-    history: List[Dict[str, Any]] = []
 
+    if backend_url is None or pipelineId is None:
+        raise ValueError("MISSING_PARAMS")
+    
     path = []
-    path = []
-    if backend_url and payload.get("pipelineId"):
+    if backend_url and pipelineId:
         path, file_id, graphStructureSettings = _fetch_path_from_backend(backend_url, payload.get("pipelineId"), token)# type: ignore
         payload["path"] = path
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
-    _emit("Start computing")
-    print('path => ',path)
-    if not path:
-        _emit("There are no steps for computing")
-        return {
-            "path_length": 0,
-            "nodes": [],
-            "completed_at": _timestamp(),
-            "history": history,
-        }
+    _emit(backend_url, pipelineId, message="Start computing", progress=1)
 
-    _emit("Read EEG file")
+   
+
+    _emit(backend_url, pipelineId, message="Read EEG file", progress=3)
     df = _load_dataframe(payload, backend_url or None)
-    _emit("EEG file read")
+    _emit(backend_url, pipelineId, message="EEG file read", progress=5)
 
     target_column = _resolve_target_column(df, payload, path)
     X, y = _prepare_features(df, target_column)
 
     report: Optional[Dict[str, Any]] = {}
+   
+    total = len(path)
+    progress_for_one_step = 90/ total
 
     for index, node in enumerate(path, start=1):
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
         label = technology or stage or f"step {index}"
-        _emit(f"Step start: {label}, {stage}")
+
+        progress = (progress_for_one_step * 0.5) * (index)
+
+        _emit(backend_url, pipelineId, message=f"Step start: {label}, {stage}", progress=progress)
 
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
@@ -580,17 +560,18 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 technology or "svm",
                 settings,
                 graphStructureSettings,
-                log=lambda message: _emit(message),
+                progress_for_one_step,
+                backend_url,
+                pipelineId
             )
             report["accuracyScores"] = accuracyScores
             report["f1Scores"] = f1Scores
             report["rocAucScores"] = rocAucScores
             report["confusionMatrixes"] = confusionMatrixes
             report["classLabels"] = classLabels
-
-            _emit(f"Step end: {label}")
             break
-        _emit(f"Step end: {label}") # type: ignore
+        progress = (progress_for_one_step) * (index)
+        _emit(backend_url, pipelineId, message=f"Step end: {label}, {stage}", progress=progress)
 
 
     duration = max(time.time() - started_at, 0.0)
@@ -598,35 +579,32 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     report["sampleCount"] = sampleCount
     report["duration"] = duration
 
-    _emit("Computing end")
+    _emit(backend_url, pipelineId, message="Computing end", progress=100)
     return report
 
 
 def main() -> None:
     payload: Dict[str, Any] = {}
-    try:
-        payload = _load_payload()
-
-        token = payload.get("backend_token")
-        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
-        pipelineId = payload.get("pipelineId")
-      
-        if backend_url is None or pipelineId is None:
-          raise ValueError("MISSING_PARAMS")
-        
-        result = run_compute(payload)
-       
-        completePipeline(
-            backend_url=backend_url,
-            payload=result,
-            pipelineId=pipelineId,
-            token=token
-        )
-        print((json.dumps(result, indent=2)))
-    except Exception as exc:  # noqa: BLE001
-        _emit(str(exc))
-        sys.exit(1)
-
+    payload = _load_payload()
+    
+    token = payload.get("backend_token")
+    backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+    pipelineId = payload.get("pipelineId")
+    
+    print(token,backend_url,pipelineId)
+    
+    if backend_url is None or pipelineId is None:
+        raise ValueError("MISSING_PARAMS")
+    
+    result = run_compute(payload)
+    
+    completePipeline(
+        backend_url=backend_url,
+        payload=result,
+        pipelineId=pipelineId,
+        token=token
+    )
+    print((json.dumps(result, indent=2)))
 
 if __name__ == "__main__":
     main()

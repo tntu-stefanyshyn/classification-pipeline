@@ -69,12 +69,4 @@ export class ComputationResolver {
     await this.manager.completePipeline(input);
     return true;
   }
-
-  @Mutation(() => Boolean)
-  async failExperimentRun(
-    @Arg('input', () => FailExperimentRunInput) input: FailExperimentRunInput
-  ): Promise<boolean> {
-    await this.manager.failRun(input);
-    return true;
-  }
 }

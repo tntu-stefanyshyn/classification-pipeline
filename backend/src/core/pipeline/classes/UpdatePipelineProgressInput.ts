@@ -1,14 +1,14 @@
-import { Field, ID, InputType, Int } from 'type-graphql';
+import { Field, Float, ID, InputType } from 'type-graphql';
 import { ObjectIdOrString } from '../../../types/context';
 
 @InputType()
-export class UpdatePipelineInput {
+export class UpdatePipelineProgressInput {
   @Field(() => ID)
   pipelineId!: ObjectIdOrString;
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Float, { nullable: true })
   progress?: number;
 
   @Field({ nullable: true })
-  statusMessage?: string;
+  message?: string;
 }

@@ -21,6 +21,7 @@ export const buildHandlerPayload = (
   }
 
   return {
+    backend_url: 'http://host.docker.internal:4000/graphql',
     pipelineId: run._id,
     experiment_id: run.experimentId,
     queue: run.queue,

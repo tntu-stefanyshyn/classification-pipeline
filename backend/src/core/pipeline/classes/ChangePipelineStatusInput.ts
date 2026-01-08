@@ -9,4 +9,7 @@ export class ChangePipelineStatusInput {
 
   @Field(() => PipelineStatus)
   status!: PipelineStatus;
+
+  @Field(() => String, { nullable: true })
+  message?: string;
 }

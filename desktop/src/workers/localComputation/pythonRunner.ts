@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
-import type { HandlerEvent, HandlerPayload } from './types';
+import type { HandlerPayload } from './types';
 
 export type PythonHandlerOptions = {
   pythonBin?: string;
@@ -45,11 +44,7 @@ const attachStreamLogger = (
   });
 };
 
-const buildDockerImage = (
-  image: string,
-  callbacks: PythonHandlerCallbacks,
-  signal?: AbortSignal
-): Promise<void> => {
+const buildDockerImage = (image: string, signal?: AbortSignal): Promise<void> => {
   const contextDir = path.join(__dirname, '../../../aws-jobs');
   const dockerfilePath = path.join(contextDir, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
@@ -89,9 +84,6 @@ const buildDockerImage = (
 
     signal?.addEventListener('abort', handleAbort);
 
-    attachStreamLogger(buildProc.stdout, callbacks, DOCKER_BUILD_PREFIX);
-    attachStreamLogger(buildProc.stderr, callbacks, DOCKER_BUILD_PREFIX);
-
     buildProc.on('error', (error) => {
       if (settled) return;
       settled = true;
@@ -121,10 +113,9 @@ export const runPythonHandler = async (
   callbacks: PythonHandlerCallbacks
 ): Promise<Record<string, unknown> | null> => {
   const image = 'python-pipeline' + payload.pipelineId;
-  const backendUrl = payload.backend_url ?? '';
 
   try {
-    await buildDockerImage(image, callbacks, options.signal);
+    await buildDockerImage(image, options.signal);
   } catch (error) {
     if (isAbortError(error) || options.signal?.aborted) {
       return null;
@@ -137,14 +128,15 @@ export const runPythonHandler = async (
   }
 
   return new Promise((resolve, reject) => {
-    let result: Record<string, unknown> | null = null;
+    const result: Record<string, unknown> | null = null;
     let aborted = false;
     let abortTimer: NodeJS.Timeout | null = null;
     const runArgs: string[] = ['run', '--rm', '-i'];
+    const computePayloadJson = JSON.stringify({ pipelineId: payload.pipelineId });
 
-    if (backendUrl) {
-      runArgs.push('--env', `COMPUTE_BACKEND_URL=${backendUrl}`);
-    }
+    runArgs.push('--env', `COMPUTE_PAYLOAD_JSON=${computePayloadJson}`);
+
+    runArgs.push('--env', `COMPUTE_BACKEND_URL=${payload.backend_url}`);
 
     runArgs.push('--add-host', 'host.docker.internal:host-gateway', image);
 
@@ -152,49 +144,8 @@ export const runPythonHandler = async (
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const handleEvent = async (event: HandlerEvent) => {
-      try {
-        if (event.type === 'progress') {
-          await callbacks.onProgress?.(event.progress, event.message);
-          return;
-        }
-
-        if (event.type === 'log' && event.message) {
-          await callbacks.onLog?.(event.message.trim());
-          return;
-        }
-
-        if (event.type === 'result') {
-          result = event.result ?? {};
-          return;
-        }
-
-        if (event.type === 'error' && event.message) {
-          await callbacks.onError?.(event.message.trim());
-        }
-      } catch (error) {
-        console.warn('Local worker failed to report progress', error);
-      }
-    };
-
-    let stdoutBuffer = '';
-    proc.stdout.on('data', (chunk) => {
-      stdoutBuffer += chunk.toString();
-      let idx = stdoutBuffer.indexOf('\n');
-      while (idx !== -1) {
-        const line = stdoutBuffer.slice(0, idx).trim();
-        stdoutBuffer = stdoutBuffer.slice(idx + 1);
-        if (line) {
-          try {
-            const event = JSON.parse(line) as HandlerEvent;
-            void handleEvent(event);
-          } catch {
-            void callbacks.onLog?.(line.slice(0, 180));
-          }
-        }
-        idx = stdoutBuffer.indexOf('\n');
-      }
-    });
+    attachStreamLogger(proc.stdout, callbacks, DOCKER_BUILD_PREFIX);
+    attachStreamLogger(proc.stderr, callbacks, DOCKER_BUILD_PREFIX);
 
     let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {

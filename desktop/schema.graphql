@@ -14,16 +14,9 @@ input ChangeExperimentStatusInput {
 }
 
 input ChangePipelineStatusInput {
+  message: String
   pipelineId: ID!
   status: PipelineStatus!
-}
-
-type ClassificationMetric {
-  f1Score: Float!
-  label: String!
-  precision: Float!
-  recall: Float!
-  support: Float!
 }
 
 enum ClassificationStage {
@@ -34,10 +27,9 @@ enum ClassificationStage {
   PREPROCESSING
 }
 
-input CompleteExperimentRunInput {
-  resultJson: String
-  runId: ID!
-  statusMessage: String
+input CompletePipelineInput {
+  payload: ComputationResultPayloadInput!
+  pipelineId: ID!
 }
 
 enum ComputationMode {
@@ -54,29 +46,28 @@ enum ComputationQueue {
 type ComputationResult {
   _id: ID!
   createdAt: DateTimeISO!
-  experimentId: ID!
-  pathNodeIds: [ID!]!
-  payload: ComputationResultPayload
-  payloadJson: String
-  runId: ID!
+  payload: ComputationResultPayload!
+  pipelineId: ID!
 }
 
 type ComputationResultPayload {
-  accuracy: Float
-  accuracyScores: [Float!]
-  classCount: Int
-  classLabels: [String!]
-  classes: [ClassificationMetric!]
-  completedAt: String
-  confusionMatrix: [[Int!]!]
-  durationSeconds: Float
-  f1Scores: [Float!]
-  macroAvg: ClassificationMetric
-  nodes: [String!]
-  pathLength: Float
-  rocAucScores: [Float!]
-  sampleCount: Int
-  weightedAvg: ClassificationMetric
+  accuracyScores: [Float!]!
+  classLabels: [String!]!
+  confusionMatrix: [[Int!]!]!
+  duration: Float!
+  f1Scores: [Float!]!
+  rocAucScores: [Float!]!
+  sampleCount: Int!
+}
+
+input ComputationResultPayloadInput {
+  accuracyScores: [Float!]!
+  classLabels: [String!]!
+  confusionMatrixes: [[[Int!]!]!]!
+  duration: Float!
+  f1Scores: [Float!]!
+  rocAucScores: [Float!]!
+  sampleCount: Int!
 }
 
 input CreateExperimentInput {
@@ -121,11 +112,6 @@ enum ExperimentStatus {
   computing
   configuring
   creating
-}
-
-input FailExperimentRunInput {
-  runId: ID!
-  statusMessage: String
 }
 
 input GenerateExperimentGraphInput {
@@ -212,12 +198,11 @@ type Mutation {
   changeExperimentStatus(input: ChangeExperimentStatusInput!): Boolean!
   changePipelineStatus(input: ChangePipelineStatusInput!): Boolean!
   claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
-  completeExperimentRun(input: CompleteExperimentRunInput!): Boolean!
+  completePipeline(input: CompletePipelineInput!): Boolean!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!): UploadedFile!
   enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
-  failExperimentRun(input: FailExperimentRunInput!): Boolean!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   pauseExperimentRuns(experimentId: ID!): [Pipeline!]!
@@ -225,7 +210,7 @@ type Mutation {
   resumeExperimentRuns(experimentId: ID!): [Pipeline!]!
   stopExperimentRun(input: StopExperimentRunInput!): Pipeline!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
-  updateExperimentRun(input: UpdatePipelineInput!): Pipeline!
+  updatePipelineProgress(input: UpdatePipelineProgressInput!): Pipeline!
 }
 
 type OptimizationResult {
@@ -252,6 +237,7 @@ type Pipeline {
 type PipelineHistoryItem {
   createdAt: DateTimeISO!
   message: String!
+  status: String!
 }
 
 type PipelineMachineInfo {
@@ -365,10 +351,10 @@ input UpdateExperimentInput {
   name: String
 }
 
-input UpdatePipelineInput {
+input UpdatePipelineProgressInput {
+  message: String
   pipelineId: ID!
   progress: Int
-  statusMessage: String
 }
 
 type UploadedFile {

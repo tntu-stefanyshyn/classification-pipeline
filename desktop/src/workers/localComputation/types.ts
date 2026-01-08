@@ -16,7 +16,7 @@ export type HandlerPayload = {
   pipelineId: string;
   experiment_id: string;
   queue: ComputationQueue;
-  backend_url?: string;
+  backend_url: string;
   file_id?: string | null;
   file_s3_bucket?: string;
   file_s3_key?: string;

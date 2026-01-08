@@ -1,5 +1,0 @@
-mutation UpdateExperimentRun($input: UpdatePipelineInput!) {
-  updateExperimentRun(input: $input) {
-    _id
-  }
-}

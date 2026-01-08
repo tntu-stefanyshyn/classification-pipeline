@@ -170,16 +170,21 @@ export class PipelineManager {
             $set: { progress: 0, statusMessage: 'В черзі' },
             $unset: { machineInfo: '', cloudJobId: '' },
           }
-        ).exec();
+        );
       },
+    },
+    // TODO: delete it
+    {
+      from: PipelineStatus.running,
+      to: PipelineStatus.queued,
+    },
+    {
+      from: PipelineStatus.completed,
+      to: PipelineStatus.queued,
     },
   ];
 
-  async changeStatus({
-    pipelineId,
-    status,
-    message,
-  }: ChangePipelineStatusInput & { message?: string }) {
+  async changeStatus({ pipelineId, status, message }: ChangePipelineStatusInput) {
     await this.workflowManager.changeStatus({
       instanceId: pipelineId,
       status,

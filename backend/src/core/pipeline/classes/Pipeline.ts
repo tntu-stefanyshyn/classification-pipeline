@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { PipelineMachineInfo } from './PipelineMachineInfo';
+import { ComputationResultPayload } from '../../../modules/computations/classes/ComputationResultPayload';
 import { PipelineHistoryItem } from './PipelineHistoryItem';
 
 @ObjectType()
@@ -41,6 +42,10 @@ export class Pipeline extends TimeStamps {
 
   @prop({ _id: false, type: () => PipelineMachineInfo })
   machineInfo?: PipelineMachineInfo;
+
+  @Field(() => ComputationResultPayload, { nullable: true })
+  @prop({ _id: false, type: () => ComputationResultPayload })
+  computingResult?: ComputationResultPayload;
 
   @prop({ min: 0, default: 0 })
   priority?: number;

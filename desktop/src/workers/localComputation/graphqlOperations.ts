@@ -14,10 +14,10 @@ import {
   type ExperimentForRunQueryVariables,
 } from '../../graphql/queries/generated/experimentForRun';
 import {
-  ExperimentRunDocument,
-  type ExperimentRunQuery,
-  type ExperimentRunQueryVariables,
-} from '../../graphql/queries/generated/experimentRun';
+  PipelineDocument,
+  type PipelineQuery,
+  type PipelineQueryVariables,
+} from '../../graphql/queries/generated/pipeline';
 import { GraphqlClient } from './graphqlClient';
 import {
   ChangePipelineStatusDocument,
@@ -45,12 +45,11 @@ export const fetchExperimentForRun = async (client: GraphqlClient, id: string) =
   return data.experiment ?? null;
 };
 
-export const fetchExperimentRun = async (client: GraphqlClient, runId: string) => {
-  const data = await client.request<ExperimentRunQuery, ExperimentRunQueryVariables>(
-    ExperimentRunDocument,
-    { runId }
-  );
-  return data.experimentRun ?? null;
+export const fetchExperimentRun = async (client: GraphqlClient, pipelineId: string) => {
+  const data = await client.request<PipelineQuery, PipelineQueryVariables>(PipelineDocument, {
+    pipelineId,
+  });
+  return data.pipeline ?? null;
 };
 
 export const changePipelineStatus = async (

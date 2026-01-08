@@ -4,22 +4,13 @@ import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
-import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationManager } from '../services/ComputationManager';
 import { Pipeline } from '../../../core/pipeline';
 import { PipelineMachineInfoInput } from '../../../core/pipeline/classes/PipelineMachineInfo';
-import { ComputationResult } from '../classes/ComputationResult';
 
 @Resolver()
 export class ComputationResolver {
   private readonly manager = new ComputationManager();
-
-  @Query(() => [ComputationResult])
-  experimentResults(
-    @Arg('experimentId', () => ID) experimentId: string
-  ): Promise<ComputationResult[]> {
-    return this.manager.listResultsByExperiment(experimentId);
-  }
 
   @Query(() => OptimizationResult)
   optimizeExperimentRuns(

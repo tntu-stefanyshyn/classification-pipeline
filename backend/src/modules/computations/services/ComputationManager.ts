@@ -6,9 +6,7 @@ import {
   PipelineMachineInfo,
   PipelineMachineInfoInput,
 } from '../../../core/pipeline/classes/PipelineMachineInfo';
-import { ComputationResultModel } from '../models/ComputationResultModel';
 import { OptimizationResult } from '../classes/OptimizationResult';
-import { ComputationResult } from '../classes/ComputationResult';
 import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
@@ -40,14 +38,6 @@ export class ComputationManager {
   private readonly workflowManager = new WorkflowManager();
   private readonly pipelineManager = new PipelineManager();
 
-  async listResultsByExperiment(experimentId: string): Promise<ComputationResult[]> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    return ComputationResultModel.find({ experimentId: trimmedId }).sort({ createdAt: -1 }).lean();
-  }
-
   async optimizeExperimentRuns(experimentId: string): Promise<OptimizationResult> {
     const trimmedId = experimentId.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
@@ -59,7 +49,10 @@ export class ComputationManager {
       throw new Error('Graph metrics are not configured.');
     }
 
-    const rawResults = await ComputationResultModel.find({ experimentId: trimmedId })
+    const rawResults = await PipelineModel.find({
+      experimentId: trimmedId,
+      computingResult: { $exists: true, $ne: null },
+    })
       .sort({ createdAt: -1 })
       .lean();
     if (rawResults.length === 0) {
@@ -74,25 +67,14 @@ export class ComputationManager {
         if (!pathKey || seenPaths.has(pathKey)) return null;
         seenPaths.add(pathKey);
 
-        let payload: Record<string, unknown> | null = null;
-        let payloadJson: string | null = null;
-        if (result.payloadJson) {
-          payloadJson = result.payloadJson;
-          try {
-            payload = JSON.parse(result.payloadJson) as Record<string, unknown>;
-            payloadJson = null;
-          } catch {
-            payload = null;
-          }
-        } else if (result.payload) {
-          payload = result.payload as Record<string, unknown>;
-        }
+        const payload = result.computingResult as Record<string, unknown> | undefined;
+        if (!payload) return null;
 
         return {
-          pipelineId: String(result.runId),
+          pipelineId: String(result._id),
           path_node_ids: pathNodeIds,
           payload,
-          payload_json: payloadJson,
+          payload_json: null,
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
@@ -245,7 +227,7 @@ export class ComputationManager {
   async completePipeline({ payload, pipelineId }: CompletePipelineInput) {
     const pipeline = await PipelineBaseService.getById(pipelineId);
 
-    await ComputationResultModel.create({ payload, pipelineId });
+    await PipelineModel.updateOne({ _id: pipeline._id }, { $set: { computingResult: payload } });
 
     await this.pipelineManager.changeStatus({
       pipelineId: pipeline._id,

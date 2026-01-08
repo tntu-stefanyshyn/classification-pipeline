@@ -2,7 +2,6 @@ export {
   refetchExperimentQuery,
   useExperimentQuery,
 } from '../../../../graphql/queries/generated/experiment';
-export { useExperimentResultsQuery } from '../../../../graphql/queries/generated/experimentResults';
 export { usePipelinesQuery } from '../../../../graphql/queries/generated/pipelines';
 export { useOptimizeExperimentRunsLazyQuery } from '../../../../graphql/queries/generated/optimizeExperimentRuns';
 export { useUpdateExperimentMutation } from '../../../../graphql/mutations/generated/updateExperiment';

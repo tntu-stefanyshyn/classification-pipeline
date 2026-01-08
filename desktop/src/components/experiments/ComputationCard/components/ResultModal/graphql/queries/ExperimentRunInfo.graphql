@@ -6,6 +6,14 @@ query PipelineInfo($pipelineId: ID!) {
     queue
     statusMessage
     progress
+    computingResult {
+      accuracyScores
+      duration
+      f1Scores
+      rocAucScores
+      sampleCount
+      channelNames
+    }
     pathNodes {
       _id
       label

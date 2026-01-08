@@ -1,14 +1,13 @@
-import { FC } from 'react';
+import { FC, useMemo } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import { ResultViewProps } from './ResultView.types';
 import { HistoryTable } from './components';
 import uk from '../../../../../../../i18n/uk';
+import { DataTable } from '../../../../../../ui/DataTable';
 
-const buildMetricSeries = (values: number[] = []) => {
-  const sanitized = values.filter((value) => Number.isFinite(value));
-  if (sanitized.length === 0) {
-    return 'Немає даних';
-  }
-  return sanitized.map(String).join(', ');
+type MetricRow = {
+  metric: string;
+  values: string[];
 };
 
 const formatDuration = (value?: number) =>
@@ -19,15 +18,41 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   const title = pathNodes?.map((pathNode) => pathNode.label).join('->');
   const [latestLog] = history?.toReversed() ?? [];
   const [firstLog] = history ?? [];
-  const payload = {} as any;
-  const accuracySeries = buildMetricSeries(payload?.accuracyScores);
-  const f1Series = buildMetricSeries(payload?.f1Scores);
-  const rocAucSeries = buildMetricSeries(payload?.rocAucScores);
+  const payload = pipeline.computingResult;
   const channelNames = payload?.channelNames ?? [];
   const channelCount = payload?.channelNames.length;
   const eegRows = payload?.sampleCount;
   const durationLabel = formatDuration(payload?.duration);
   const hasResults = Boolean(payload);
+  const metricRows = useMemo<MetricRow[]>(
+    () => [
+      { metric: 'Accuracy (CV)', values: payload?.accuracyScores?.map(String) ?? [] },
+      { metric: 'F1 (CV)', values: payload?.f1Scores?.map(String) ?? [] },
+      { metric: 'ROC AUC (CV)', values: payload?.rocAucScores?.map(String) ?? [] },
+    ],
+    [payload?.accuracyScores, payload?.f1Scores, payload?.rocAucScores]
+  );
+  const maxFoldCount = useMemo(
+    () => Math.max(0, ...metricRows.map((row) => row.values.length)),
+    [metricRows]
+  );
+  const metricColumns = useMemo<ColumnDef<MetricRow>[]>(() => {
+    const base: ColumnDef<MetricRow>[] = [
+      {
+        header: 'Метрика',
+        accessorKey: 'metric',
+        cell: ({ row }) => <span className="item-title">{row.original.metric}</span>,
+      },
+    ];
+    const foldColumns = Array.from({ length: maxFoldCount }, (_, index) => ({
+      id: `fold-${index + 1}`,
+      header: `Крок ${index + 1}`,
+      cell: ({ row }: { row: { original: MetricRow } }) => (
+        <span className="result-snippet">{row.original.values[index] ?? '—'}</span>
+      ),
+    }));
+    return [...base, ...foldColumns];
+  }, [maxFoldCount]);
 
   return (
     <div className="node-modal">
@@ -80,20 +105,11 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
             </div>
             {hasResults ? (
               <>
-                <div className="result-metrics">
-                  <div className="result-metric">
-                    <span className="muted small">Accuracy (CV)</span>
-                    <span className="result-metric-value">{accuracySeries}</span>
-                  </div>
-                  <div className="result-metric">
-                    <span className="muted small">F1 (CV)</span>
-                    <span className="result-metric-value">{f1Series}</span>
-                  </div>
-                  <div className="result-metric">
-                    <span className="muted small">ROC AUC (CV)</span>
-                    <span className="result-metric-value">{rocAucSeries}</span>
-                  </div>
-                </div>
+                <DataTable
+                  data={metricRows}
+                  columns={metricColumns}
+                  emptyMessage="Немає метрик для відображення."
+                />
                 <div className="result-meta-grid">
                   <div className="result-meta-item">
                     <span className="muted small">Час виконання</span>

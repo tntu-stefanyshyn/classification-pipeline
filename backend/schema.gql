@@ -43,13 +43,6 @@ enum ComputationQueue {
   local
 }
 
-type ComputationResult {
-  _id: ID!
-  createdAt: DateTimeISO!
-  payload: ComputationResultPayload!
-  pipelineId: ID!
-}
-
 type ComputationResultPayload {
   accuracyScores: [Float!]!
   channelNames: [String!]!
@@ -221,6 +214,7 @@ type OptimizationResult {
 
 type Pipeline {
   _id: ID!
+  computingResult: ComputationResultPayload
   createdAt: DateTimeISO!
   experimentId: ID!
   graphStructureId: ID!
@@ -276,7 +270,6 @@ enum PipelineStatus {
 
 type Query {
   experiment(_id: ID!): Experiment
-  experimentResults(experimentId: ID!): [ComputationResult!]!
   experiments: [Experiment!]!
   health: String!
   me: User!

@@ -60,15 +60,15 @@ def _fetch_path_from_backend(
     backend_url: str, pipelineId: str, token: Optional[str] = None
 ):
     run_query = """
-      query ExperimentRun($runId: ID!) {
-        experimentRun(runId: $runId) {
+      query Pipeline($pipelineId: ID!) {
+        pipeline(pipelineId: $pipelineId) {
           experimentId
           pathNodeIds
         }
       }
     """
-    run_payload = graphqlRequest(backend_url, run_query, {"runId": pipelineId}, token)
-    run = run_payload.get("experimentRun")
+    run_payload = graphqlRequest(backend_url, run_query, {"pipelineId": pipelineId}, token)
+    run = run_payload.get("pipeline")
     if not run:
         raise ValueError("PIPELINE_NOT_FOUND")
 

@@ -17,9 +17,10 @@
   ],
   "main": "dist/index.js",
   "scripts": {
-    "prestart": "sudo kill -9 `sudo lsof -t -i:4000` || true",
+    "prestart": "npm run build:optimization-container && (sudo kill -9 `sudo lsof -t -i:4000` || true)",
     "start": "ts-node-dev src/index.ts",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "build:optimization-container": "bash ./scripts/build-optimization-container.sh"
   },
   "dependencies": {
     "@aws-sdk/client-batch": "^3.705.0",

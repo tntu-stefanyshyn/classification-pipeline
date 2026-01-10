@@ -13,10 +13,11 @@ export class ComputationResolver {
   private readonly manager = new ComputationManager();
 
   @Query(() => OptimizationResult)
-  optimizeExperimentRuns(
+  async optimizeExperimentRuns(
     @Arg('experimentId', () => ID) experimentId: string
-  ): Promise<OptimizationResult> {
-    return this.manager.optimizeExperimentRuns(experimentId);
+  ): Promise<boolean> {
+    await this.manager.optimize(experimentId);
+    return true;
   }
 
   @Mutation(() => Boolean)

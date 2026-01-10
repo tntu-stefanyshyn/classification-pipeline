@@ -97,7 +97,16 @@ type Experiment {
   fileId: ID
   graph: GraphStructure
   name: String!
+  optimization: ExperimentOptimization
   status: ExperimentStatus
+}
+
+type ExperimentOptimization {
+  bestPipelineId: ID
+  bestScore: Float
+  history: [OptimizationHistoryItem!]
+  progress: Int
+  status: OptimizationStatus
 }
 
 enum ExperimentStatus {
@@ -105,6 +114,7 @@ enum ExperimentStatus {
   computing
   configuring
   creating
+  optimization
 }
 
 input GenerateExperimentGraphInput {
@@ -203,13 +213,28 @@ type Mutation {
   resumeExperimentRuns(experimentId: ID!): [Pipeline!]!
   stopExperimentRun(input: StopExperimentRunInput!): Pipeline!
   updateExperiment(input: UpdateExperimentInput!): Experiment!
+  updateExperimentOptimizationResult(input: UpdateExperimentOptimizationResultInput!): Boolean!
+  updateExperimentProgress(input: UpdateExperimentProgressInput!): Boolean!
+  updatePipelineOptimization(input: UpdatePipelineOptimizationInput!): Boolean!
   updatePipelineProgress(input: UpdatePipelineProgressInput!): Pipeline!
+}
+
+type OptimizationHistoryItem {
+  createdAt: DateTimeISO!
+  message: String
+  status: OptimizationStatus
 }
 
 type OptimizationResult {
   pathNodeIds: [ID!]!
   runId: ID!
   score: Float!
+}
+
+enum OptimizationStatus {
+  completed
+  failed
+  optimizing
 }
 
 type Pipeline {
@@ -219,6 +244,7 @@ type Pipeline {
   experimentId: ID!
   graphStructureId: ID!
   history: [PipelineHistoryItem!]!
+  optimizationScores: [Float!]
   pathNodeIds: [ID!]!
   pathNodes: [GraphNode!]!
   progress: Int
@@ -231,7 +257,7 @@ type Pipeline {
 type PipelineHistoryItem {
   createdAt: DateTimeISO!
   message: String!
-  status: String!
+  status: PipelineStatus!
 }
 
 type PipelineMachineInfo {
@@ -342,6 +368,24 @@ input UpdateExperimentInput {
   graphNodes: [GraphNodeInput!]
   graphSettings: GraphStructureSettingsInput
   name: String
+}
+
+input UpdateExperimentOptimizationResultInput {
+  bestPipelineId: ID!
+  experimentId: ID!
+  score: Float!
+}
+
+input UpdateExperimentProgressInput {
+  experimentId: ID!
+  message: String
+  progress: Float
+  status: OptimizationStatus
+}
+
+input UpdatePipelineOptimizationInput {
+  pipelineId: ID!
+  score: Float!
 }
 
 input UpdatePipelineProgressInput {

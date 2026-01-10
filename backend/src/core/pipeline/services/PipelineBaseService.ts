@@ -2,6 +2,7 @@ import { ComputationQueue } from '../../../modules/computations/classes/Computat
 import { Pipeline } from '../classes/Pipeline';
 import { PipelineModel } from '../models/PipelineModel';
 import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
+import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimizationInput';
 import { PipelineStatus } from '../enums';
 import { PipelineHistoryItem } from '../classes/PipelineHistoryItem';
 import { ObjectIdOrString } from '../../../types/context';
@@ -45,6 +46,20 @@ class PipelineBaseServiceClass {
               },
             }
           : {}),
+      }
+    ).lean();
+
+    return this.getById(pipelineId);
+  }
+
+  async updatePipelineOptimization({
+    pipelineId,
+    score,
+  }: UpdatePipelineOptimizationInput): Promise<Pipeline> {
+    await PipelineModel.updateOne(
+      { _id: pipelineId },
+      {
+        $push: { optimizationScores: score },
       }
     ).lean();
 

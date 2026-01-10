@@ -1,9 +1,15 @@
 const nodeEnv = process.env.NODE_ENV ?? 'development';
+const defaultGraphqlUrl =
+  process.env.BACKEND_GRAPHQL_URL ?? 'http://host.docker.internal:4000/graphql';
 
 export const config = {
   nodeEnv,
   isDev: nodeEnv === 'development',
   port: 4000,
+  backend: {
+    graphqlUrl: defaultGraphqlUrl,
+    serviceToken: process.env.BACKEND_SERVICE_TOKEN ?? '',
+  },
   mongoUri: process.env.MONGODB_URI,
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
   schemaFile: nodeEnv === 'development' ? 'schema.gql' : undefined,
@@ -30,8 +36,7 @@ export const config = {
     cloudPollMs: Number(process.env.CLOUD_WORKER_POLL_MS ?? 5000),
     pythonBin: process.env.PYTHON_BIN ?? 'python3',
     handlerModule: process.env.COMPUTE_HANDLER_MODULE ?? 'aws_jobs.compute_handler',
-    optimizationModule:
-      process.env.OPTIMIZATION_HANDLER_MODULE ?? 'aws_jobs.optimization_handler',
+    optimizationModule: process.env.OPTIMIZATION_HANDLER_MODULE ?? 'aws_jobs.optimization_handler',
   },
 };
 

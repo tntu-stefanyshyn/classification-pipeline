@@ -6,7 +6,6 @@ import {
   PipelineMachineInfo,
   PipelineMachineInfoInput,
 } from '../../../core/pipeline/classes/PipelineMachineInfo';
-import { OptimizationResult } from '../classes/OptimizationResult';
 import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
@@ -27,9 +26,10 @@ import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager
 import { WorkflowType } from '../../../core/workflow/enums';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
 import { stringIdToObjectId } from '../../../utils';
-import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
+import { WorkflowModel, workflowsCollectionName } from '../../../core/workflow/model/WorkflowModel';
 import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
+import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -37,71 +37,47 @@ export class ComputationManager {
   private readonly optimizationRunner = new OptimizationRunner();
   private readonly workflowManager = new WorkflowManager();
   private readonly pipelineManager = new PipelineManager();
+  private readonly experimentManager = new ExperimentManager();
 
-  async optimizeExperimentRuns(experimentId: string): Promise<OptimizationResult> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    const graph = await GraphStructureModel.findOne({ experimentId: trimmedId }).lean();
+  async optimize(experimentId: ObjectIdOrString): Promise<void> {
+    const graph = await GraphStructureModel.findOne({ experimentId }).lean();
     const metrics = graph?.settings?.metrics;
     if (!metrics) {
       throw new Error('Graph metrics are not configured.');
     }
-
-    const rawResults = await PipelineModel.find({
-      experimentId: trimmedId,
-      computingResult: { $exists: true, $ne: null },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (rawResults.length === 0) {
-      throw new Error('Computation results are missing for optimization.');
+    const graphNodes = graph?.nodes ?? [];
+    const graphPaths = buildGraphPaths(graphNodes);
+    if (graphPaths.length === 0) {
+      throw new Error('Graph has no paths for optimization.');
     }
 
-    const seenPaths = new Set<string>();
-    const conveyors = rawResults
-      .map((result: any) => {
-        const pathNodeIds = (result.pathNodeIds ?? []).map((id: any) => String(id));
-        const pathKey = pathNodeIds.join('.');
-        if (!pathKey || seenPaths.has(pathKey)) return null;
-        seenPaths.add(pathKey);
-
-        const payload = result.computingResult as Record<string, unknown> | undefined;
-        if (!payload) return null;
-
-        return {
-          pipelineId: String(result._id),
-          path_node_ids: pathNodeIds,
-          payload,
-          payload_json: null,
-        };
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-
-    if (conveyors.length === 0) {
-      throw new Error('No completed paths available for optimization.');
-    }
-
-    const optimization = await this.optimizationRunner.run({
-      weights: {
-        accuracy: metrics.accuracy,
-        f1: metrics.f1,
-        rocAuc: metrics.rocAuc,
-        ntps: metrics.ntps,
+    const [uncomputedPipeline] = await PipelineModel.aggregate([
+      { $match: { experimentId: stringIdToObjectId(experimentId) } },
+      {
+        $lookup: {
+          from: workflowsCollectionName,
+          localField: '_id',
+          foreignField: 'instanceId',
+          as: 'workflow',
+        },
       },
-      conveyors,
-    });
+      { $unwind: { path: '$workflow' } },
+      {
+        $match: {
+          'workflow.status': { $ne: PipelineStatus.completed },
+        },
+      },
+    ]);
 
-    if (!optimization.best) {
-      throw new Error('Optimization failed to select a path.');
+    if (uncomputedPipeline) {
+      throw new Error('There are uncomuted pipelines.');
     }
 
-    return {
-      runId: optimization.best.pipelineId,
-      pathNodeIds: optimization.best.path_node_ids,
-      score: optimization.best.score,
-    };
+    await this.optimizationRunner.run({
+      experimentId,
+      backendUrl: config.backend.graphqlUrl,
+      backendToken: config.backend.serviceToken,
+    });
   }
 
   async enqueueRuns(input: EnqueueExperimentRunsInput) {

@@ -1,23 +1,15 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { config } from '../../../config/config';
+import { ExperimentModel } from '../../experiments/models/ExperimentModel';
+import { PipelineModel } from '../../../core/pipeline';
+import { ObjectIdOrString } from '../../../types/context';
 
-const DEFAULT_OPTIMIZATION_MODULE = 'aws_jobs.optimization_handler';
+const DEFAULT_OPTIMIZATION_IMAGE = 'aws-jobs-optimization';
 
 export type OptimizationInput = {
-  weights: {
-    accuracy: number;
-    f1: number;
-    rocAuc: number;
-    ntps: number;
-  };
-  conveyors: Array<{
-    pipelineId: string;
-    path_node_ids: string[];
-    payload?: Record<string, unknown> | null;
-    payload_json?: string | null;
-  }>;
+  experimentId: ObjectIdOrString;
+  backendUrl?: string;
+  backendToken?: string;
 };
 
 export type OptimizationResult = {
@@ -39,101 +31,97 @@ export type OptimizationResult = {
   }>;
 };
 
+export type OptimizationEvent = {
+  type?: 'progress' | 'result' | 'error';
+  progress?: number;
+  message?: string;
+  pipelineId?: string;
+  score?: number;
+  result?: OptimizationResult;
+};
+
+export type OptimizationRunnerOptions = {
+  onEvent?: (event: OptimizationEvent) => void;
+};
+
 export class OptimizationRunner {
-  async run(payload: OptimizationInput): Promise<OptimizationResult> {
-    const pythonBin = config.computations.pythonBin || 'python3';
-    const handlerModule =
-      config.computations.optimizationModule ||
-      process.env.OPTIMIZATION_HANDLER_MODULE ||
-      DEFAULT_OPTIMIZATION_MODULE;
-    const pythonPath = this.resolvePythonPath();
-    const envPythonPath = process.env.PYTHONPATH ?? '';
-    const pythonEnv = {
-      ...process.env,
-      PYTHONPATH: [pythonPath, envPythonPath].filter(Boolean).join(path.delimiter),
+  async run(payload: OptimizationInput): Promise<void> {
+    const { backendUrl, backendToken } = this.resolveBackendConfig(payload);
+    const dockerImage = process.env.OPTIMIZATION_DOCKER_IMAGE || DEFAULT_OPTIMIZATION_IMAGE;
+    const containerPayload = {
+      experimentId: payload.experimentId,
+      backend_url: backendUrl,
+      backend_token: backendToken,
     };
+    const payloadJson = JSON.stringify(containerPayload);
 
     return new Promise((resolve, reject) => {
-      let result: OptimizationResult | null = null;
-      let errorMessage = '';
-      let stdoutBuffer = '';
-      let stderrBuffer = '';
+      const args = [
+        'run',
+        '--rm',
+        '-i',
+        '--add-host',
+        'host.docker.internal:host-gateway',
+        dockerImage,
+        'python',
+        '-u',
+        'src/aws_jobs/optimization_handler/optimization_handler.py',
+        '--env',
+        `OPTIMIZATION_PAYLOAD_JSON=${payloadJson}`,
+      ];
 
-      const proc = spawn(pythonBin, ['-m', handlerModule], {
-        env: pythonEnv,
+      const proc = spawn('docker', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-
-      proc.stdout.on('data', (chunk) => {
-        stdoutBuffer += chunk.toString();
-        let idx = stdoutBuffer.indexOf('\n');
-        while (idx !== -1) {
-          const line = stdoutBuffer.slice(0, idx).trim();
-          stdoutBuffer = stdoutBuffer.slice(idx + 1);
-          if (line) {
-            try {
-              const event = JSON.parse(line) as {
-                type?: string;
-                result?: OptimizationResult;
-                message?: string;
-              };
-              if (event.type === 'result' && event.result) {
-                result = event.result;
-              }
-              if (event.type === 'error' && event.message) {
-                errorMessage = event.message;
-              }
-            } catch {}
-          }
-          idx = stdoutBuffer.indexOf('\n');
-        }
-      });
-
-      proc.stderr.on('data', (chunk) => {
-        stderrBuffer += chunk.toString();
-      });
-
       proc.on('error', (error) => {
+        console.log(error);
         reject(error);
       });
 
-      proc.on('close', (code) => {
-        if (code === 0 && result) {
-          resolve(result);
-          return;
-        }
-        const message =
-          errorMessage ||
-          stderrBuffer.trim() ||
-          (code === 0 ? 'Optimization result is missing' : `Optimizer exited with code ${code}`);
-        reject(new Error(message));
+      proc.on('close', () => {
+        resolve();
       });
 
-      proc.stdin.write(JSON.stringify(payload));
+      proc.stdin.write(JSON.stringify(containerPayload));
       proc.stdin.end();
     });
   }
 
-  private resolvePythonPath() {
-    const candidates = [
-      process.cwd(),
-      path.resolve(process.cwd(), '..'),
-      path.resolve(process.cwd(), '..', '..'),
-    ];
+  private resolveBackendConfig(payload: OptimizationInput) {
+    const backendUrl =
+      payload.backendUrl?.trim() ||
+      config.backend.graphqlUrl?.trim() ||
+      `http://host.docker.internal:${config.port}/graphql`;
+    const backendToken = payload.backendToken?.trim() || config.backend.serviceToken?.trim() || '';
 
-    for (const candidate of candidates) {
-      const handlerPath = path.join(
-        candidate,
-        'aws-jobs',
-        'src',
-        'aws_jobs',
-        'optimization_handler.py'
-      );
-      if (fs.existsSync(handlerPath)) {
-        return path.join(candidate, 'aws-jobs', 'src');
-      }
+    if (!backendUrl) {
+      throw new Error('Backend URL is missing for optimization');
     }
 
-    return path.join(process.cwd(), 'aws-jobs', 'src');
+    return { backendUrl, backendToken };
+  }
+
+  private async lookupResult(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
+    const experiment = await ExperimentModel.findById(experimentId).lean();
+    const bestPipelineId = experiment?.optimization?.bestPipelineId;
+    const bestScore = experiment?.optimization?.bestScore;
+
+    if (!bestPipelineId || typeof bestScore !== 'number') {
+      throw new Error('Optimization result is missing');
+    }
+
+    const pipeline = await PipelineModel.findById(bestPipelineId).lean();
+    if (!pipeline) {
+      throw new Error('Best pipeline not found for optimization result');
+    }
+    const pathNodeIds = (pipeline.pathNodeIds ?? []).map((id: any) => String(id));
+
+    return {
+      best: {
+        pipelineId: String(bestPipelineId),
+        path_node_ids: pathNodeIds,
+        score: bestScore,
+      },
+    };
   }
 }

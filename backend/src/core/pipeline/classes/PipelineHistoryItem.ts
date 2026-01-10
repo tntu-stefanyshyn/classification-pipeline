@@ -8,8 +8,8 @@ export class PipelineHistoryItem {
   @prop({ required: false, trim: true })
   message?: string;
 
-  @Field()
-  @prop({ required: false })
+  @Field(() => PipelineStatus)
+  @prop({ required: false, enum: PipelineStatus, type: () => String })
   status?: PipelineStatus;
 
   @Field()

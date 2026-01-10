@@ -10,6 +10,8 @@ import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusIn
 import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
 import { WorkflowType } from '../../../core/workflow/enums';
 import { ExperimentStatus } from '../classes/ExperimentStatus';
+import { UpdateExperimentProgressInput } from '../classes/UpdateExperimentProgressInput';
+import { UpdateExperimentOptimizationResultInput } from '../classes/UpdateExperimentOptimizationResultInput';
 
 @Resolver(() => Experiment)
 export class Experiments {
@@ -99,5 +101,23 @@ export class Experiments {
   ): Promise<boolean> {
     return this.experimentManager.changeStatus(input);
   }
+
+  @Mutation(() => Boolean)
+  async updateExperimentProgress(
+    @Arg('input', () => UpdateExperimentProgressInput) input: UpdateExperimentProgressInput
+  ): Promise<boolean> {
+    await this.experimentManager.updateExperimentProgress(input);
+    return true;
+  }
+
+  @Mutation(() => Boolean)
+  async updateExperimentOptimizationResult(
+    @Arg('input', () => UpdateExperimentOptimizationResultInput)
+    input: UpdateExperimentOptimizationResultInput
+  ): Promise<boolean> {
+    await this.experimentManager.updateExperimentOptimizationResult(input);
+    return true;
+  }
+
   // #endregion Mutation
 }

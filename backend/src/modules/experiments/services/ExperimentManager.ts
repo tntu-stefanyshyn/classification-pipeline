@@ -11,6 +11,10 @@ import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager
 import { WorkflowType } from '../../../core/workflow/enums';
 import { Transitions } from '../../../core/workflow/services/WorkflowManager.types.';
 import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusInput';
+import { UpdateExperimentProgressInput } from '../classes/UpdateExperimentProgressInput';
+import { OptimizationHistoryItem } from '../classes/OptimizationHistoryItem';
+import { UpdateExperimentOptimizationResultInput } from '../classes/UpdateExperimentOptimizationResultInput';
+import { ObjectIdOrString } from '../../../types/context';
 
 export class ExperimentManager {
   private readonly graphManager = new GraphManager();
@@ -22,7 +26,7 @@ export class ExperimentManager {
     return experiments;
   }
 
-  async getById(_id: string): Promise<Experiment> {
+  async getById(_id: ObjectIdOrString): Promise<Experiment> {
     const experiment = await ExperimentModel.findById(_id).lean();
     if (!experiment) throw new Error('Експеремент не знайдено');
     return experiment;
@@ -181,5 +185,53 @@ export class ExperimentManager {
     });
 
     return true;
+  }
+
+  async updateExperimentProgress({
+    experimentId,
+    progress,
+    message,
+    status,
+  }: UpdateExperimentProgressInput): Promise<Experiment> {
+    await ExperimentModel.updateOne(
+      { _id: experimentId },
+      {
+        $set: {
+          ...(typeof progress === 'number' ? { 'optimization.progress': progress } : {}),
+          ...(status ? { 'optimization.status': status } : {}),
+        },
+        ...(message || status
+          ? {
+              $push: {
+                'optimization.history': {
+                  createdAt: new Date(),
+                  ...(message ? { message } : {}),
+                  ...(status ? { status } : {}),
+                } satisfies OptimizationHistoryItem,
+              },
+            }
+          : {}),
+      }
+    ).lean();
+
+    return this.getById(experimentId);
+  }
+
+  async updateExperimentOptimizationResult({
+    experimentId,
+    bestPipelineId,
+    score,
+  }: UpdateExperimentOptimizationResultInput): Promise<Experiment> {
+    await ExperimentModel.updateOne(
+      { _id: experimentId },
+      {
+        $set: {
+          'optimization.bestPipelineId': bestPipelineId,
+          'optimization.bestScore': score,
+        },
+      }
+    ).lean();
+
+    return this.getById(experimentId);
   }
 }

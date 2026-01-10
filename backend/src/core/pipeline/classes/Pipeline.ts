@@ -1,7 +1,7 @@
 import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
-import { Field, ID, Int, ObjectType } from 'type-graphql';
+import { Field, Float, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { PipelineMachineInfo } from './PipelineMachineInfo';
 import { ComputationResultPayload } from '../../../modules/computations/classes/ComputationResultPayload';
@@ -46,6 +46,10 @@ export class Pipeline extends TimeStamps {
   @Field(() => ComputationResultPayload, { nullable: true })
   @prop({ _id: false, type: () => ComputationResultPayload })
   computingResult?: ComputationResultPayload;
+
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  optimizationScores?: number[];
 
   @prop({ min: 0, default: 0 })
   priority?: number;

@@ -4,6 +4,7 @@ import { GraphNode } from '../../../modules/experiments/classes/GraphNode';
 import { GraphStructureModel } from '../../../modules/experiments/models/GraphStructureModel';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
+import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimizationInput';
 import { ObjectIdOrString } from '../../../types/context';
 import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
@@ -66,6 +67,14 @@ export class PipelineResolver {
     @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput
   ): Promise<Pipeline> {
     return PipelineBaseService.updatePipelineProgress(input);
+  }
+
+  @Mutation(() => Boolean)
+  async updatePipelineOptimization(
+    @Arg('input', () => UpdatePipelineOptimizationInput) input: UpdatePipelineOptimizationInput
+  ): Promise<boolean> {
+    await PipelineBaseService.updatePipelineOptimization(input);
+    return true;
   }
 
   @Mutation(() => Boolean)

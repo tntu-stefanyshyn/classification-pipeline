@@ -4,6 +4,7 @@ export enum ExperimentStatus {
   creating = 'creating',
   configuring = 'configuring',
   computing = 'computing',
+  optimization = 'optimization',
   completed = 'completed',
 }
 

@@ -3,7 +3,6 @@ import os
 import sys
 import tempfile
 import time
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3 # type: ignore
@@ -40,10 +39,6 @@ def _emit(
     message=message,
     progress=progress
   )
-
-def _timestamp() -> str:
-    return datetime.utcnow().isoformat() + "Z"
-
 
 def _load_payload() -> Dict[str, Any]:
     raw = sys.stdin.read()

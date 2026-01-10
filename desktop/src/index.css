@@ -1369,6 +1369,55 @@ h1 {
   font-size: 0.9rem;
 }
 
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.bar-chart-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.bar-chart-rank {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.bar-chart-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.bar-chart-fill {
+  height: 12px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  transition: width 0.2s ease-in-out;
+}
+
+.bar-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bar-chart-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bar-chart-score {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .result-message {
   padding: 0.65rem 0.8rem;
   border-radius: 12px;

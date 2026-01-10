@@ -6,6 +6,17 @@ query Experiment($_id: ID!) {
     fileId
     status
     createdAt
+    optimization {
+      progress
+      status
+      bestPipelineId
+      bestScore
+      history {
+        message
+        status
+        createdAt
+      }
+    }
     graph {
       _id
       computationMode

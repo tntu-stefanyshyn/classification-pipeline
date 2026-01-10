@@ -6,6 +6,7 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
     status
     progress
     statusMessage
+    optimizationScores
     history {
       message
       createdAt

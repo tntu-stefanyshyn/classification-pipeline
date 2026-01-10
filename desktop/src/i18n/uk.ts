@@ -18,6 +18,7 @@ const uk = {
     creating: 'Створення',
     configuring: 'Налаштування',
     computing: 'Обчислення',
+    optimization: 'Оптимізація',
     completed: 'Завершено',
   } satisfies Record<ExperimentStatus, string>,
 };

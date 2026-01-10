@@ -2,7 +2,6 @@ import { useParams } from 'react-router-dom';
 import { useMemo, useState, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import ReactFlow from 'reactflow';
-import { Alert } from '../../ui/Alert';
 import { DataTable, tableLabels } from '../../ui/DataTable';
 import {
   GraphNode,
@@ -59,7 +58,6 @@ const ComputationCard: FC = () => {
 
   const experiment = data?.experiment;
   const graph = experiment?.graph;
-  const optimization = experiment?.optimization;
   const graphSettings = graph?.settings ?? null;
   const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -83,8 +81,6 @@ const ComputationCard: FC = () => {
   }, [runs]);
   const resolvePathLabel = (nodeIds: string[]) =>
     pathLabels.get(nodeIds.join('.')) ?? nodeIds.join(' -> ');
-  const formatOptimizationScore = (score: number) =>
-    Number.isFinite(score) ? score.toFixed(4) : String(score);
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
@@ -147,50 +143,6 @@ const ComputationCard: FC = () => {
     });
     return map;
   }, [graphPaths, runsByPath]);
-  const allPathsCompleted = useMemo(() => {
-    if (graphPaths.length === 0) return false;
-    return graphPaths.every((path) => {
-      const runsForPath = runsByPath.get(path.id) ?? [];
-      const latestRun = runsForPath[0];
-      return latestRun?.status === PipelineStatus.completed;
-    });
-  }, [graphPaths, runsByPath]);
-  const canOptimize = Boolean(experiment && graphSettingsReady && allPathsCompleted);
-  const optimizeBlocker = useMemo(() => {
-    if (!graphSettingsReady) {
-      return 'Заповніть налаштування графа, щоб запускати оптимізацію.';
-    }
-    if (!allPathsCompleted) {
-      return 'Оптимізація доступна після завершення всіх шляхів.';
-    }
-    return null;
-  }, [allPathsCompleted, graphSettingsReady]);
-  const optimizationHistory = optimization?.history ?? [];
-  const [latestOptimization] = optimizationHistory.toReversed();
-  const bestPipeline = optimization?.bestPipelineId
-    ? runs.find((run) => run._id === optimization.bestPipelineId)
-    : null;
-  const bestPipelineLabel = bestPipeline?.pathNodeIds
-    ? resolvePathLabel(bestPipeline.pathNodeIds)
-    : (optimization?.bestPipelineId ?? null);
-  const bestScore = optimization?.bestScore ?? bestPipeline?.optimizationScores?.at(-1) ?? null;
-
-  const handleOptimizeRuns = async () => {
-    if (!experiment || !canOptimize) {
-      setActionStatus(optimizeBlocker ?? 'Оптимізація поки недоступна.');
-      return;
-    }
-    setActionStatus(null);
-    try {
-      await optimizeRuns({
-        variables: { experimentId: experiment._id },
-      });
-      await Promise.all([refetchRuns(), refetch()]);
-    } catch (_err) {
-      // Error state is handled by optimizeError.
-    }
-  };
-
   const handleStartPath = async (pipelineId: string, isRecompute = false) => {
     if (!experiment || !canStartComputations) {
       setActionStatus(runBlocker ?? 'Спочатку налаштуйте обчислення.');
@@ -421,83 +373,15 @@ const ComputationCard: FC = () => {
           <h3>Шляхи класифікації</h3>
           <p className="muted">Таблиця запусків та графовий стан обчислень.</p>
         </div>
-        <button
-          className="btn ghost small"
-          type="button"
-          onClick={() => void handleOptimizeRuns()}
-          disabled={!canOptimize || optimizing}
-          title={optimizeBlocker ?? 'Запустити оптимізацію'}
-        >
-          {optimizing ? 'Оптимізація...' : 'Оптимізувати'}
-        </button>
       </header>
       {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
       {graph && (
         <>
-          <div className="result-details">
-            <div className="result-section">
-              <div className="result-section-head">
-                <div>
-                  <h4 className="result-section-title">Оптимізація</h4>
-                  <p className="muted small">Прогрес та історія оптимізації експерименту.</p>
-                </div>
-                <span className="result-count">{optimizationHistory.length}</span>
-              </div>
-              {typeof optimization?.progress === 'number' ? (
-                <div className="result-progress">
-                  <div className="result-progress-track">
-                    <div
-                      className="result-progress-fill"
-                      style={{ width: `${optimization.progress}%` }}
-                    />
-                  </div>
-                  <span className="result-progress-value">{optimization.progress}%</span>
-                </div>
-              ) : (
-                <p className="muted small">Оптимізація ще не запускалась.</p>
-              )}
-              {latestOptimization ? (
-                <div className="result-message">
-                  <span className="muted small">Останнє повідомлення</span>
-                  <span>{latestOptimization.message}</span>
-                </div>
-              ) : null}
-              {bestPipelineLabel ? (
-                <div className="result-meta-grid">
-                  <div className="result-meta-item">
-                    <span className="muted small">Найефективніший шлях</span>
-                    <span>{bestPipelineLabel}</span>
-                  </div>
-                  <div className="result-meta-item">
-                    <span className="muted small">Оцінка оптимізації</span>
-                    <span>{bestScore !== null ? formatOptimizationScore(bestScore) : '—'}</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="muted small">Найкращий шлях ще не визначено.</p>
-              )}
-              {optimizationHistory.length > 0 ? (
-                <ul className="history-list">
-                  {optimizationHistory.toReversed().map((item, index) => (
-                    <li key={`${item.createdAt}-${index}`} className="history-item">
-                      <span className="history-time">
-                        {new Date(item.createdAt).toLocaleString()}
-                      </span>
-                      <span className="history-message">{item.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted small">Історія оптимізації поки порожня.</p>
-              )}
-            </div>
-          </div>
           <div className="path-meta">
             <p className="muted small">
               Тип обчислень для запуску: <strong>{defaultQueueLabel}</strong>
             </p>
             {runBlocker && <p className="error small">{runBlocker}</p>}
-            {!runBlocker && optimizeBlocker && <p className="muted small">{optimizeBlocker}</p>}
             {runsLoading && <p className="muted small">Оновлення статусів запусків...</p>}
           </div>
           <DataTable
@@ -513,9 +397,6 @@ const ComputationCard: FC = () => {
           {enqueueError && <p className="error">Помилка запуску: {enqueueError.message}</p>}
           {stopError && <p className="error">Помилка зупинки: {stopError.message}</p>}
           {runsError && <p className="error">Помилка запусків: {runsError.message}</p>}
-          {optimizeError && (
-            <Alert variant="error">Помилка оптимізації: {optimizeError.message}</Alert>
-          )}
           {actionStatus && <p className="muted small">{actionStatus}</p>}
 
           {shouldShowGraphPreview && (

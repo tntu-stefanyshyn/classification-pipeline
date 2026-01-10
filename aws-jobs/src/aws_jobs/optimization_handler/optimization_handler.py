@@ -113,50 +113,16 @@ def _flatten_numeric(value: Any) -> List[float]:
     numeric = _to_number(value)
     return [numeric] if numeric is not None else []
 
-
-def _vector_length(value: Any) -> Optional[float]:
-    values = _flatten_numeric(value)
-    if not values:
-        return None
-    total = sum(item * item for item in values)
-    return math.sqrt(total)
-
-
-def _extract_metric(payload: Dict[str, Any], name: str) -> Any:
-    if not isinstance(payload, dict):
-        return None
-
-    if name == "accuracy":
-        return payload.get("accuracyScores")
-
-    if name == "rocAuc":
-        return payload.get("rocAucScores")
-
-    if name == "ntps":
-        # Lower is better: duration per sample derived from duration / sampleCount
-        duration = payload.get("duration")
-        sample_count = payload.get("sampleCount")
-        if isinstance(duration, (int, float)) and isinstance(sample_count, (int, float)) and sample_count:
-            return duration / sample_count
-        return payload.get("ntps")
-
-    if name == "f1":
-        return payload.get("f1Scores")
-
-    return None
-
+def vector_length(v: List[float]) -> float:
+    return math.sqrt(sum(x * x for x in v))
 
 def _min_max_normalize(values: List[float]) -> List[float]:
-    if not values:
-        return []
     min_value = min(values)
     max_value = max(values)
-    if math.isclose(min_value, max_value):
-        return [0.0 for _ in values]
     return [(value - min_value) / (max_value - min_value) for value in values]
 
 
-def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
+def optimize(payload: Dict[str, Any]):
     backend_url = str(payload.get("backend_url") or "")
     experimentId = str(payload.get("experimentId") or "")
     token = str(payload.get("backend_token") or "")
@@ -238,29 +204,6 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
     roc_weight = float(weights.get("rocAuc", 0)or 0)
     ntps_weight = float(weights.get("ntps", 0)or 0)
 
-    conveyors = []
-    for pipeline in pipelines or []:
-        if not isinstance(pipeline, dict):
-            continue
-        if pipeline.get("status") != "completed":
-            continue
-        computing_result = pipeline.get("computingResult") or {}
-        if not computing_result:
-            continue
-        path_node_ids = [str(item) for item in pipeline.get("pathNodeIds") or [] if str(item).strip()]
-        if not path_node_ids:
-            continue
-        conveyors.append(
-            {
-                "pipelineId": str(pipeline.get("_id") or "").strip(),
-                "path_node_ids": path_node_ids,
-                "payload": computing_result,
-            }
-        )
-
-    if not conveyors:
-        raise ValueError("No completed paths available for optimization.")
-
     _emit(
         backend_url,
         experimentId,
@@ -269,53 +212,33 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
         token=token,
     )
 
-    metrics_by_key: Dict[str, List[float]] = {
-        "accuracy": [],
-        "f1": [],
-        "rocAuc": [],
-        "ntps": [],
-    }
-    parsed_rows: List[Dict[str, Any]] = []
+    parsedPipelines: List[Dict[str, Any]] = []
 
-    for row in conveyors:
-        payload_data = row["payload"]
-        metrics: Dict[str, Optional[float]] = {}
-        for key in ("accuracy", "f1", "rocAuc", "ntps"):
-            raw_value = _extract_metric(payload_data, key)
-            metrics[key] = _vector_length(raw_value)
-
-        if accuracy_weight > 0 and metrics["accuracy"] is None:
-            raise ValueError(f"Missing accuracy metric for run {row['pipelineId']}")
-        if f1_weight > 0 and metrics["f1"] is None:
-            raise ValueError(f"Missing f1 metric for run {row['pipelineId']}")
-        if roc_weight > 0 and metrics["rocAuc"] is None:
-            raise ValueError(f"Missing rocAuc metric for run {row['pipelineId']}")
-        if ntps_weight > 0 and metrics["ntps"] is None:
-            raise ValueError(f"Missing ntps metric for run {row['pipelineId']}")
-
-        metrics_by_key["accuracy"].append(metrics["accuracy"] or 0.0)
-        metrics_by_key["f1"].append(metrics["f1"] or 0.0)
-        metrics_by_key["rocAuc"].append(metrics["rocAuc"] or 0.0)
-        metrics_by_key["ntps"].append(metrics["ntps"] or 0.0)
-
-        parsed_rows.append(
-            {
-                "pipelineId": row["pipelineId"],
-                "path_node_ids": row["path_node_ids"],
-                "metrics": metrics,
-            }
-        )
-
+    for pipeline in pipelines or []:
+        computingResult = pipeline["computingResult"]
+        metrics = {
+          "accuracy":  vector_length(computingResult["accuracyScores"]),
+          "f1": vector_length(computingResult["f1Scores"]),
+          "rocAuc": vector_length(computingResult["rocAucScores"]),
+          "ntps": computingResult["duration"] / computingResult["sample_count"]
+        }
+        parsedPipelines.append({
+          "pipelineId": pipeline["_id"],
+          "metrics": metrics,
+        })
+    metrics = ["accuracy", "f1", "rocAuc", "ntps"]
     normalized = {
-        key: _min_max_normalize(values) for key, values in metrics_by_key.items()
+      metric: _min_max_normalize(
+        [item[metric] for item in parsedPipelines if metric in item]
+      )
+      for metric in metrics
     }
 
-    scores: List[Dict[str, Any]] = []
     best: Optional[Dict[str, Any]] = None
-    total_rows = len(parsed_rows)
+    total_pipelines = len(parsedPipelines)
     progress_base = 10.0
-    progress_span = 70.0 if total_rows > 0 else 0.0
-    progress_step = progress_span / total_rows if total_rows > 0 else 0.0
+    progress_span = 70.0 if total_pipelines > 0 else 0.0
+    progress_step = progress_span / total_pipelines if total_pipelines > 0 else 0.0
 
     _emit(
         backend_url,
@@ -324,13 +247,13 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
         progress=progress_base,
         token=token,
     )
-    for idx, row in enumerate(parsed_rows):
+    for idx, parsedPipeline in enumerate(parsedPipelines):
         start_progress = progress_base + (progress_step * idx)
         end_progress = progress_base + (progress_step * (idx + 1))
         _emit(
             backend_url,
             experimentId,
-            message=f"Start pipeline optimization: {row['pipelineId']}",
+            message=f"Start pipeline optimization: {parsedPipeline['pipelineId']}",
             progress=start_progress,
             token=token,
         )
@@ -351,29 +274,21 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         entry = {
-            "pipelineId": row["pipelineId"],
-            "path_node_ids": row["path_node_ids"],
-            "score": score,
-            "normalized": {
-                "accuracy": acc_norm,
-                "f1": f1_norm,
-                "rocAuc": roc_norm,
-                "ntps": ntps_norm,
-            },
+            "pipelineId": parsedPipeline["pipelineId"],
+            "score": score
         }
-        scores.append(entry)
         if best is None or score < best["score"]:
             best = entry
         _update_pipeline_optimization(
             backend_url,
-            row["pipelineId"],
+            parsedPipeline["pipelineId"],
             score,
             token=token,
         )
         _emit(
             backend_url,
             experimentId,
-            message=f"End pipeline optimization: {row['pipelineId']}",
+            message=f"End pipeline optimization: {parsedPipeline['pipelineId']}",
             progress=end_progress,
             token=token,
         )
@@ -410,8 +325,6 @@ def optimize(payload: Dict[str, Any]) -> Dict[str, Any]:
         status="completed",
         token=token,
     )
-
-    return {"best": best, "scores": scores}
 
 
 def main() -> None:

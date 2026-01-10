@@ -28,6 +28,7 @@ import type { ExperimentDetailsPageProps } from './ExperimentDetailsPage.types';
 import { buildGraphPaths } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import ComputationCard from '../../experiments/ComputationCard/ComputationCard';
+import OptimizationCard from '../../experiments/OptimizationCard/OptimizationCard';
 import uk from '../../../i18n/uk';
 import ChangeExperimentStatusButton from '../../experiments/ChangeExperimentStatusButton/ChangeExperimentStatusButton';
 
@@ -291,6 +292,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             )}
           </section>
           <ComputationCard />
+          <OptimizationCard />
         </div>
       )}
 

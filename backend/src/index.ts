@@ -12,6 +12,7 @@ import { Health } from './graphql/Health';
 import { ServerInfoApi } from './graphql/ServerInfo';
 import { Experiments } from './modules/experiments/graphql/Experiments';
 import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
+import { PipelineModel } from './core/pipeline/models/PipelineModel';
 import { GraphManager } from './modules/experiments/services/GraphManager';
 import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
 import { Technologies } from './modules/technologies/graphql/Technologies';
@@ -74,11 +75,36 @@ async function bootstrap() {
       }
 
       const graph = await graphManager.getByExperimentId(experimentId);
+      const pipelines = await PipelineModel.find({ experimentId }).lean();
       const report = await buildGraphReportPdf({
         experimentId,
         experimentName: experiment.name,
         createdAt: experiment.createdAt ? new Date(experiment.createdAt) : undefined,
         nodes: graph.nodes ?? [],
+        pipelines: pipelines.map((pipeline) => ({
+          _id: String(pipeline._id),
+          queue: pipeline.queue,
+          pathNodeIds: (pipeline.pathNodeIds ?? []).map((id: any) => String(id)),
+          computingResult: pipeline.computingResult as any,
+          optimizationScores: pipeline.optimizationScores as number[] | undefined,
+          machineInfo: pipeline.machineInfo as any,
+          createdAt: pipeline.createdAt ? new Date(pipeline.createdAt) : undefined,
+          updatedAt: pipeline.updatedAt ? new Date(pipeline.updatedAt) : undefined,
+        })),
+        optimization: experiment.optimization
+          ? {
+              bestPipelineId: experiment.optimization.bestPipelineId?.toString(),
+              bestScore: experiment.optimization.bestScore ?? undefined,
+              progress: experiment.optimization.progress ?? undefined,
+              status: experiment.optimization.status ?? undefined,
+              history:
+                (experiment.optimization.history as any[])?.map((item) => ({
+                  createdAt: item.createdAt ? new Date(item.createdAt) : undefined,
+                  message: item.message,
+                  status: item.status,
+                })) ?? [],
+            }
+          : undefined,
       });
 
       res.setHeader('Content-Type', 'application/pdf');

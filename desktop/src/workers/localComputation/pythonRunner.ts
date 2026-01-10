@@ -1,6 +1,4 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import type { HandlerPayload } from './types';
 
 export type PythonHandlerOptions = {
@@ -16,6 +14,7 @@ export type PythonHandlerCallbacks = {
 };
 
 const DOCKER_BUILD_PREFIX = '[docker build] ';
+const DOCKER_IMAGE = 'aws-jobs-local';
 
 const attachStreamLogger = (
   stream: NodeJS.ReadableStream | null,
@@ -44,85 +43,11 @@ const attachStreamLogger = (
   });
 };
 
-const buildDockerImage = (image: string, signal?: AbortSignal): Promise<void> => {
-  const contextDir = path.join(__dirname, '../../../aws-jobs');
-  const dockerfilePath = path.join(contextDir, 'Dockerfile');
-  if (!fs.existsSync(dockerfilePath)) {
-    throw new Error(`Dockerfile not found at ${dockerfilePath}`);
-  }
-
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      const error = new Error('Local computation aborted');
-      error.name = 'AbortError';
-      reject(error);
-      return;
-    }
-
-    const buildArgs = ['build', '-t', image, '-f', dockerfilePath, contextDir];
-    const buildProc = spawn('docker', buildArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let settled = false;
-
-    const cleanup = () => {
-      signal?.removeEventListener('abort', handleAbort);
-    };
-
-    const handleAbort = () => {
-      if (settled) return;
-      settled = true;
-      if (!buildProc.killed) {
-        buildProc.kill('SIGTERM');
-      }
-      const error = new Error('Local computation aborted');
-      error.name = 'AbortError';
-      cleanup();
-      reject(error);
-    };
-
-    signal?.addEventListener('abort', handleAbort);
-
-    buildProc.on('error', (error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    });
-
-    buildProc.on('close', (code) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`Docker build exited with code ${code}`));
-    });
-  });
-};
-
-const isAbortError = (error: unknown): error is Error =>
-  error instanceof Error && error.name === 'AbortError';
-
 export const runPythonHandler = async (
   payload: HandlerPayload,
   options: PythonHandlerOptions,
   callbacks: PythonHandlerCallbacks
 ): Promise<Record<string, unknown> | null> => {
-  const image = 'python-pipeline' + payload.pipelineId;
-
-  try {
-    await buildDockerImage(image, options.signal);
-  } catch (error) {
-    if (isAbortError(error) || options.signal?.aborted) {
-      return null;
-    }
-    throw error;
-  }
-
   if (options.signal?.aborted) {
     return null;
   }
@@ -138,7 +63,7 @@ export const runPythonHandler = async (
 
     runArgs.push('--env', `COMPUTE_BACKEND_URL=${payload.backend_url}`);
 
-    runArgs.push('--add-host', 'host.docker.internal:host-gateway', image);
+    runArgs.push('--add-host', 'host.docker.internal:host-gateway', DOCKER_IMAGE);
 
     const proc = spawn('docker', runArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],

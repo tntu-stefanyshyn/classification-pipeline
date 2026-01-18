@@ -1,19 +1,14 @@
-stateDiagram-v2
-  [*] --> idle
+---
+config:
+  layout: elk
+---
+stateDiagram
+  direction LR
+  [*] --> Бездіяльність
 
-  idle --> queued : submit
-  queued --> running : start
+  Бездіяльність --> Черга
+  Черга --> Обчислення
+  Обчислення --> Бездіяльність
+  Обчислення --> Завершено
 
-  running --> paused : pause
-  paused --> running : resume
-
-  running --> completed : success
-  running --> failed : error
-  running --> idle : stop
-
-  paused --> idle : stop
-  queued --> idle : stop
-
-  failed --> queued : retry
-
-  completed --> [*]
+  Завершено --> [*]

@@ -10,6 +10,9 @@ export class Experiment extends TimeStamps {
   @Field(() => ID)
   _id!: Types.ObjectId;
 
+  @prop({ type: () => Types.ObjectId, required: true, index: true })
+  createdById!: Types.ObjectId;
+
   @Field()
   @prop({ required: true, trim: true })
   name!: string;

@@ -19,6 +19,8 @@ type TechnologyIndex = {
 };
 
 const DEFAULT_NODE_TYPE = 'technology';
+const DEFAULT_FOLDS = 5;
+const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
 
 export class GraphManager {
   private readonly technologyManager = new TechnologyManager();
@@ -295,10 +297,27 @@ export class GraphManager {
       throw new Error('Потрібно обрати хоча б один тип обчислень.');
     }
 
+    const folds = Number.isFinite(Number(settings.folds))
+      ? Math.trunc(Number(settings.folds))
+      : DEFAULT_FOLDS;
+    if (folds < 1) {
+      throw new Error('Кількість кроків перехресної валідації має бути більшою за 0.');
+    }
+
+    const hyperOptimizationMinutesPerPipeline = Number.isFinite(
+      Number(settings.hyperOptimizationMinutesPerPipeline)
+    )
+      ? Math.trunc(Number(settings.hyperOptimizationMinutesPerPipeline))
+      : DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE;
+    if (hyperOptimizationMinutesPerPipeline < 1) {
+      throw new Error('Час гіпероптимізації для одного конвеєра має бути більшим за 0 хвилин.');
+    }
+
     return {
       metrics: { accuracy, f1, rocAuc, ntps },
       queues: uniqueQueues,
-      folds: settings.folds,
+      folds,
+      hyperOptimizationMinutesPerPipeline,
     };
   }
 

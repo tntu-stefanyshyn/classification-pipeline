@@ -1,12 +1,40 @@
----
-config:
-  layout: elk
----
-stateDiagram
-  direction LR
-  [*] --> Створено
-  Створено --> Налаштування
-  Налаштування --> Обчислення
-  Обчислення --> Оптимізація
-  Оптимізація --> Завершено
-  Завершено --> [*]
+erDiagram
+	direction LR
+	Користувач {
+		string id  ""  
+		string email  ""  
+		string passwordHash  ""  
+		string fullName  ""  
+		string organizationName  ""  
+		datetime createdAt  ""  
+	}
+
+	Сесія {
+		string id  ""  
+		string userId  ""  
+		string userAgent  ""  
+		datetime lastVisitAt  ""  
+	}
+
+	Файл {
+		string id  ""  
+		string userId  ""  
+		string name  ""  
+		int size  ""  
+		datetime createdAt  ""  
+	}
+
+	Експеримент {
+		string id  ""  
+		string userId  ""  
+		string fileId  ""  
+		string name  ""  
+		string description  ""  
+		datetime createdAt  ""  
+		json optimizationResult  ""  
+	}
+
+	Користувач||--o{Сесія:"Має сесії"
+	Користувач||--o{Файл:"Завантажує файли"
+	Користувач||--o{Експеримент:"Створює експерименти"
+	Файл||--o{Експеримент:"Використовується в експериментах"

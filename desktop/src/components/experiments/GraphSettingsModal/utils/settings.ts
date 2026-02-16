@@ -8,6 +8,9 @@ import type {
 import type { GraphStructureSettings } from '../../../../graphql/types.generated';
 import { metricKeys } from '../constants/labels';
 
+const DEFAULT_FOLDS = 5;
+const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
+
 export const buildSettingsDraft = (
   settings?: GraphStructureSettings | null
 ): GraphSettingsDraft => ({
@@ -18,7 +21,16 @@ export const buildSettingsDraft = (
     ntps: formatWeightPercent(settings?.metrics?.ntps),
   },
   queues: settings?.queues?.length ? settings.queues : [ComputationQueue.local],
-  folds: settings?.folds ?? 0,
+  folds:
+    typeof settings?.folds === 'number' && Number.isInteger(settings.folds) && settings.folds > 0
+      ? settings.folds
+      : DEFAULT_FOLDS,
+  hyperOptimizationMinutesPerPipeline:
+    typeof settings?.hyperOptimizationMinutesPerPipeline === 'number' &&
+    Number.isInteger(settings.hyperOptimizationMinutesPerPipeline) &&
+    settings.hyperOptimizationMinutesPerPipeline > 0
+      ? settings.hyperOptimizationMinutesPerPipeline
+      : DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE,
 });
 
 export const normalizeMetricInput = (value: string, fallback: string): string => {
@@ -67,6 +79,17 @@ export const validateGraphSettings = (
     errors.push('Оберіть хоча б один тип обчислень.');
   }
 
+  if (!Number.isInteger(settingsDraft.folds) || settingsDraft.folds < 1) {
+    errors.push('Кількість кроків перехресної валідації має бути цілим числом більше 0.');
+  }
+
+  if (
+    !Number.isInteger(settingsDraft.hyperOptimizationMinutesPerPipeline) ||
+    settingsDraft.hyperOptimizationMinutesPerPipeline < 1
+  ) {
+    errors.push('Час гіпероптимізації для одного конвеєра має бути цілим числом більше 0.');
+  }
+
   const normalizedMetrics: Record<MetricKey, number> = {
     accuracy: parsedMetrics.accuracy / 100,
     f1: parsedMetrics.f1 / 100,
@@ -84,6 +107,7 @@ export const validateGraphSettings = (
             metrics: normalizedMetrics,
             queues: settingsDraft.queues,
             folds: settingsDraft.folds,
+            hyperOptimizationMinutesPerPipeline: settingsDraft.hyperOptimizationMinutesPerPipeline,
           }
         : null,
   };

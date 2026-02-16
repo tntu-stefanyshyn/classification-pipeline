@@ -2,7 +2,7 @@ import type { AppSidebarNavItem } from '../AppSidebar.types';
 
 export const navItems: AppSidebarNavItem[] = [
   {
-    label: 'Дашборд',
+    label: 'Огляд',
     hint: 'Огляд системи',
     to: '/app',
   },

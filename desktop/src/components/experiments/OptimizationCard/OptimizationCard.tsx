@@ -156,6 +156,12 @@ const OptimizationCard: FC = () => {
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
+    if (
+      !Number.isInteger(graphSettings.hyperOptimizationMinutesPerPipeline) ||
+      (graphSettings.hyperOptimizationMinutesPerPipeline ?? 0) < 1
+    ) {
+      return false;
+    }
     const { accuracy, f1, rocAuc, ntps } = graphSettings.metrics;
     const weights = [accuracy, f1, rocAuc, ntps];
     if (weights.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
@@ -304,9 +310,7 @@ const OptimizationCard: FC = () => {
       {optimizeError && (
         <Alert variant="error">Помилка запуску оптимізації: {optimizeError.message}</Alert>
       )}
-      {pipelinesError && (
-        <Alert variant="error">Помилка пайплайнів: {pipelinesError.message}</Alert>
-      )}
+      {pipelinesError && <Alert variant="error">Помилка шляхів: {pipelinesError.message}</Alert>}
 
       <div className="result-section">
         <div className="result-section-head">
@@ -345,7 +349,7 @@ const OptimizationCard: FC = () => {
         <div className="result-section">
           <div className="result-section-head">
             <div>
-              <h4 className="result-section-title">Найкращий пайплайн</h4>
+              <h4 className="result-section-title">Найкращий шлях</h4>
               <p className="muted small">Результат та склад шляху.</p>
             </div>
           </div>
@@ -433,7 +437,7 @@ const OptimizationCard: FC = () => {
                   <div
                     className="bar-chart-fill"
                     style={{ width: renderBarWidth(row.score) }}
-                    aria-label={`Пайплайн ${row.label} зі score ${row.score ?? '—'}`}
+                    aria-label={`Шлях ${row.label} зі значенням ${row.score ?? '—'}`}
                   />
                 </div>
                 <div className="bar-chart-labels">

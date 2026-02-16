@@ -43,9 +43,11 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
   const title = data.label || getStageLabel(data.stage);
   const stageLabel = data.stage ? stageLabels[data.stage] : null;
   const meta = stageLabel ?? getStageLabel(data.stage);
-  const className = `org-node${data.isActive ? ' active' : ''}`;
+  const className = `org-node${data.isActive ? ' active' : ''}${data.isCollapsed ? ' collapsed' : ''}`;
   const addDisabled = data.graphActionsDisabled;
   const canAddChild = data.stage !== ClassificationStage.CLASSIFICATION;
+  const canToggleCollapse = Boolean(data.hasChildren || data.isCollapsed);
+  const collapseLabel = data.isCollapsed ? 'Розгорнути гілку' : 'Згорнути гілку';
 
   return (
     <div className={className}>
@@ -57,10 +59,50 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
         onClick={() => data.onEdit(data._id)}
         aria-label="Редагувати вузол"
       >
-        <span className="org-node-title">{title}</span>
+        <span className="org-node-title" title={title}>
+          {title}
+        </span>
         <span className="org-node-meta">{meta}</span>
+        {data.isCollapsed ? (
+          <span className="org-node-state">
+            згорнуто
+            {data.collapsedChildrenCount ? `: ${data.collapsedChildrenCount}` : ''}
+          </span>
+        ) : null}
       </button>
       <div className="org-node-actions">
+        {canToggleCollapse ? (
+          <button
+            className="btn ghost small icon"
+            type="button"
+            onClick={() => data.onToggleCollapse(data._id)}
+            disabled={addDisabled}
+            aria-label={collapseLabel}
+            title={collapseLabel}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {data.isCollapsed ? (
+                <path
+                  d="M9 6l6 6-6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.6"
+                />
+              ) : (
+                <path
+                  d="M6 9l6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.6"
+                />
+              )}
+            </svg>
+          </button>
+        ) : null}
         {canAddChild ? (
           <button
             className="btn ghost small icon"

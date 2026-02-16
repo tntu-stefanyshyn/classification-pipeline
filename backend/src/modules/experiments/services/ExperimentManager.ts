@@ -21,20 +21,33 @@ export class ExperimentManager {
   private readonly pipelineManager = new PipelineManager();
   private readonly workflowManager = new WorkflowManager();
 
-  async list(): Promise<Experiment[]> {
-    const experiments = await ExperimentModel.find().sort({ createdAt: -1 }).lean();
+  async list(userId: string): Promise<Experiment[]> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user id');
+    }
+    const experiments = await ExperimentModel.find({ createdById: userId })
+      .sort({ createdAt: -1 })
+      .lean();
     return experiments;
   }
 
-  async getById(_id: ObjectIdOrString): Promise<Experiment> {
-    const experiment = await ExperimentModel.findById(_id).lean();
+  async getById(_id: ObjectIdOrString, userId?: string): Promise<Experiment> {
+    const query: Record<string, unknown> = { _id };
+    if (userId) {
+      if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
+      query.createdById = userId;
+    }
+    const experiment = await ExperimentModel.findOne(query).lean();
     if (!experiment) throw new Error('Експеремент не знайдено');
     return experiment;
   }
 
-  async create(input: CreateExperimentInput): Promise<Experiment> {
+  async create(input: CreateExperimentInput, userId: string): Promise<Experiment> {
     const name = input.name.trim();
     if (!name) throw new Error('Name is required');
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user id');
+    }
 
     const description = input.description?.trim();
     const fileId = input.fileId?.trim();
@@ -45,6 +58,7 @@ export class ExperimentManager {
       name,
       description,
       fileId: fileId ? new Types.ObjectId(fileId) : undefined,
+      createdById: new Types.ObjectId(userId),
     });
 
     await this.graphManager.createDefaultGraph(experiment._id);
@@ -56,8 +70,12 @@ export class ExperimentManager {
     return experiment.toObject({ getters: true });
   }
 
-  async update(input: UpdateExperimentInput): Promise<Experiment> {
-    const existingExperiment = await ExperimentModel.findById(input._id).lean();
+  async update(input: UpdateExperimentInput, userId: string): Promise<Experiment> {
+    if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
+    const existingExperiment = await ExperimentModel.findOne({
+      _id: input._id,
+      createdById: userId,
+    }).lean();
     if (!existingExperiment) throw new Error('Experiment not found');
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: input._id,
@@ -119,9 +137,13 @@ export class ExperimentManager {
 
     const updateOps =
       Object.keys(unset).length > 0 ? { $set: update, $unset: unset } : { $set: update };
-    const experiment = await ExperimentModel.findOneAndUpdate({ _id: input._id }, updateOps, {
-      new: true,
-    }).lean();
+    const experiment = await ExperimentModel.findOneAndUpdate(
+      { _id: input._id, createdById: userId },
+      updateOps,
+      {
+        new: true,
+      }
+    ).lean();
 
     if (!experiment) {
       throw new Error('Experiment not found');
@@ -130,11 +152,15 @@ export class ExperimentManager {
     return experiment;
   }
 
-  async generateGraph(input: GenerateExperimentGraphInput): Promise<Experiment> {
+  async generateGraph(input: GenerateExperimentGraphInput, userId: string): Promise<Experiment> {
     const trimmedId = input._id.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
+    if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
 
-    const experiment = await ExperimentModel.findById(trimmedId).lean();
+    const experiment = await ExperimentModel.findOne({
+      _id: trimmedId,
+      createdById: userId,
+    }).lean();
     if (!experiment) {
       throw new Error('Experiment not found');
     }

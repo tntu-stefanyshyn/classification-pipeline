@@ -20,6 +20,7 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
         }
         queues
         folds
+        hyperOptimizationMinutesPerPipeline
       }
       nodes {
         _id

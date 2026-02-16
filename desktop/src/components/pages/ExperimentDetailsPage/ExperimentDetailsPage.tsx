@@ -71,6 +71,12 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
+    if (
+      !Number.isInteger(graphSettings.hyperOptimizationMinutesPerPipeline) ||
+      (graphSettings.hyperOptimizationMinutesPerPipeline ?? 0) < 1
+    ) {
+      return false;
+    }
     const { accuracy, f1, rocAuc, ntps } = graphSettings.metrics;
     const weights = [accuracy, f1, rocAuc, ntps];
     if (weights.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
@@ -184,20 +190,46 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
 
       {experiment && (
         <div className="dashboard">
-          <div className="stat-grid">
-            <article className="card stat-card">
-              <p className="muted">Статус</p>
+          <section className="card data-card">
+            <header className="card-head" style={{ alignItems: 'flex-start' }}>
+              <h3>Деталі експерименту</h3>
               <span className={`status-pill status-${experiment.status}`}>
                 {uk.experimentStatus[experiment.status!] ?? experiment.status}
               </span>
-            </article>
-            <article className="card stat-card">
-              <p className="muted">Створено</p>
-              <div className="stat-value">{formatTimeAgo(String(experiment.createdAt))}</div>
-              <p className="muted small">Дата: {new Date(experiment.createdAt).toLocaleString()}</p>
-            </article>
-          </div>
-
+            </header>
+            <div className="experiment-detail-list">
+              <div className="experiment-detail-row">
+                <span className="experiment-detail-label">Створено</span>
+                <div className="experiment-detail-value-block">
+                  <span className="experiment-detail-value">
+                    {formatTimeAgo(String(experiment.createdAt))}
+                  </span>
+                  <span className="muted small">
+                    Дата: {new Date(experiment.createdAt).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="experiment-detail-row">
+                <span className="experiment-detail-label">Файл ЕЕГ</span>
+                <div className="experiment-detail-value-block">
+                  {filesLoading ? (
+                    <span className="muted small">Завантаження інформації про файл...</span>
+                  ) : filesError ? (
+                    <span className="error small">Помилка файлів: {filesError.message}</span>
+                  ) : datasetFile ? (
+                    <>
+                      <span className="experiment-detail-value">{datasetFile.filename}</span>
+                      <span className="muted small">Розмір: {datasetFile.sizeMb} МБ</span>
+                    </>
+                  ) : (
+                    <span className="muted small">
+                      Файл ще не додано. Додайте CSV з ЕЕГ-записами під час редагування.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
           <section className="card data-card">
             <header className="card-head">
               <div>
@@ -235,13 +267,21 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 <span className="graph-summary-value">{graphPaths.length}</span>
               </div>
               <div className="graph-summary-item">
-                <span className="muted small">Способи виконання</span>
+                <span className="muted small">Середовище обчислення</span>
                 <span className="graph-settings-value">{settingsQueueLabel}</span>
               </div>
             </div>
             <div className="graph-summary-item">
               <span className="muted small">Кількість кроків перехресної валідації</span>
               <span className="graph-settings-value">{graphSettings?.folds}</span>
+            </div>
+            <div className="graph-summary-item">
+              <span className="muted small">Час гіпероптимізації на 1 конвеєр</span>
+              <span className="graph-settings-value">
+                {graphSettings?.hyperOptimizationMinutesPerPipeline
+                  ? `${graphSettings.hyperOptimizationMinutesPerPipeline} хв`
+                  : '—'}
+              </span>
             </div>
             <div>
               <div className="form-divider">Ваги метрик (%)</div>
@@ -263,34 +303,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             </div>
           </section>
 
-          <section className="card data-card">
-            <header className="card-head">
-              <div>
-                <h3>Набір даних</h3>
-                <p className="muted">Інформація про підключений файл експерименту.</p>
-              </div>
-            </header>
-            {filesLoading ? (
-              <p className="muted small">Завантаження інформації про файл...</p>
-            ) : filesError ? (
-              <Alert variant="error">Помилка файлів: {filesError.message}</Alert>
-            ) : datasetFile ? (
-              <div className="graph-summary-grid">
-                <div className="graph-summary-item">
-                  <span className="muted small">Файл</span>
-                  <span className="graph-summary-value">{datasetFile.filename}</span>
-                </div>
-                <div className="graph-summary-item">
-                  <span className="muted small">Розмір</span>
-                  <span className="graph-summary-value">{datasetFile.sizeMb} МБ</span>
-                </div>
-              </div>
-            ) : (
-              <Alert variant="warning">
-                До експерименту ще не додано файл. Оберіть файл у редагуванні експерименту.
-              </Alert>
-            )}
-          </section>
           <ComputationCard />
           <OptimizationCard />
         </div>

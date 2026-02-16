@@ -630,6 +630,40 @@ h1 {
   background: rgba(255, 255, 255, 0.7);
 }
 
+.experiment-detail-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.experiment-detail-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 1rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.experiment-detail-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.experiment-detail-value-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.experiment-detail-value {
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .graph-summary-value {
   font-size: 1.2rem;
   font-weight: 700;
@@ -1066,6 +1100,10 @@ h1 {
   gap: 0.6rem;
 }
 
+.graph-settings-label {
+  margin: 0;
+}
+
 .graph-settings-errors {
   display: flex;
   flex-direction: column;
@@ -1095,6 +1133,7 @@ h1 {
   color: var(--text);
   padding: 0.65rem 0.85rem;
   min-width: 140px;
+  max-width: 260px;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease,
@@ -1114,6 +1153,7 @@ h1 {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  min-width: 0;
 }
 
 .org-node-actions {
@@ -1158,14 +1198,34 @@ h1 {
   box-shadow: 0 12px 26px rgba(37, 99, 235, 0.2);
 }
 
+.org-node.collapsed {
+  border-style: dashed;
+  border-color: rgba(37, 99, 235, 0.6);
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .org-node-title {
   font-weight: 700;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .org-node-meta {
   font-size: 0.85rem;
   color: var(--muted);
   text-transform: lowercase;
+}
+
+.org-node-state {
+  margin-top: 0.15rem;
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: #1d4ed8;
+  text-transform: none;
 }
 
 .status-node {
@@ -1685,6 +1745,11 @@ h1 {
   background: var(--border);
 }
 
+.auto-stage-divider {
+  margin-top: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
 .file-input {
   display: flex;
   flex-direction: column;
@@ -1918,6 +1983,11 @@ body.theme-dark .graph-settings-sum.warn {
 
   .page {
     padding: 2.5rem 1.25rem;
+  }
+
+  .experiment-detail-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
   }
 
   .metric-weights-legend {

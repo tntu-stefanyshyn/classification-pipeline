@@ -45,11 +45,15 @@ export class ComputationManager {
     if (!metrics) {
       throw new Error('Graph metrics are not configured.');
     }
+    const hyperOptimizationMinutesPerPipeline =
+      graph?.settings?.hyperOptimizationMinutesPerPipeline ?? 30;
     const graphNodes = graph?.nodes ?? [];
     const graphPaths = buildGraphPaths(graphNodes);
     if (graphPaths.length === 0) {
       throw new Error('Graph has no paths for optimization.');
     }
+    const optimizationTimeoutSeconds =
+      Math.trunc(hyperOptimizationMinutesPerPipeline * 60 * graphPaths.length) || 0;
 
     const [uncomputedPipeline] = await PipelineModel.aggregate([
       { $match: { experimentId: stringIdToObjectId(experimentId) } },
@@ -77,6 +81,8 @@ export class ComputationManager {
       experimentId,
       backendUrl: config.backend.graphqlUrl,
       backendToken: config.backend.serviceToken,
+      hyperOptimizationMinutesPerPipeline,
+      timeoutSeconds: optimizationTimeoutSeconds,
     });
   }
 

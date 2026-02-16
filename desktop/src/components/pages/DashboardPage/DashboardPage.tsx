@@ -48,7 +48,7 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
   return (
     <AuthLayout
       badge="Авторизований доступ"
-      title="Дашборд досліджень"
+      title="Огляд досліджень"
       subtitle="Контролюйте завантажені файли, запуски експериментів та статус GraphQL."
       onLogout={onLogout}
       actions={

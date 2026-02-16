@@ -62,7 +62,7 @@ def _update_experiment_optimization(
   )
 
 
-def _load_payload() -> Dict[str, str]:
+def _load_payload() -> Dict[str, Any]:
     raw = sys.stdin.read()
     if not raw.strip():
         raw = os.getenv("OPTIMIZATION_PAYLOAD_JSON", "")
@@ -72,12 +72,20 @@ def _load_payload() -> Dict[str, str]:
     backend_url = str(payload.get("backend_url") or "").strip()
     experimentId = str(payload.get("experimentId") or "").strip()
     backend_token = str(payload.get("backend_token") or "").strip()
+    raw_hyper_minutes = payload.get("hyper_optimization_minutes_per_pipeline")
+    try:
+        hyper_minutes = int(raw_hyper_minutes)
+    except (TypeError, ValueError):
+        hyper_minutes = 30
+    if hyper_minutes < 1:
+        hyper_minutes = 30
     if not backend_url or not experimentId:
         raise ValueError("MISSING_PARAMS")
     return {
         "backend_url": backend_url,
         "experimentId": experimentId,
         "backend_token": backend_token,
+        "hyper_optimization_minutes_per_pipeline": hyper_minutes,
     }
 
 
@@ -126,6 +134,7 @@ def optimize(payload: Dict[str, Any]):
     backend_url = str(payload.get("backend_url") or "")
     experimentId = str(payload.get("experimentId") or "")
     token = str(payload.get("backend_token") or "")
+    hyper_minutes = int(payload.get("hyper_optimization_minutes_per_pipeline") or 30)
 
     if not backend_url or not experimentId:
         raise ValueError("MISSING_PARAMS")
@@ -133,7 +142,7 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message="Optimization started",
+        message=f"Optimization started (budget {hyper_minutes} min/pipeline)",
         progress=0,
         status="optimizing",
         token=token,

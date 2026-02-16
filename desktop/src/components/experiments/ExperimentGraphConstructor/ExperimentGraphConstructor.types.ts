@@ -23,11 +23,15 @@ export type GraphFlowNodeData = {
   stage?: ClassificationStage | null;
   isRoot?: boolean;
   isActive: boolean;
+  hasChildren?: boolean;
+  isCollapsed?: boolean;
+  collapsedChildrenCount?: number;
   graphActionsDisabled: boolean;
   graphUpdating: boolean;
   onAdd: (parentId: string | null) => void;
   onEdit: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
+  onToggleCollapse: (nodeId: string) => void;
 };
 
 export type GraphFlowNode = Node<GraphFlowNodeData>;
@@ -54,11 +58,13 @@ export type TechnologyIndex = {
 export type BuildFlowElementsParams = {
   nodes: FlatGraphNode[];
   selectedNodeId: string | null;
+  collapsedNodeIds: Set<string>;
   graphActionsDisabled: boolean;
   graphUpdating: boolean;
   onAdd: (parentId: string | null) => void;
   onEdit: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
+  onToggleCollapse: (nodeId: string) => void;
 };
 
 export type FlowElementsResult = {

@@ -15,7 +15,7 @@ const DataTable = <TData,>({
   columns,
   pageSize = 6,
   pageSizeOptions,
-  emptyMessage = 'No data.',
+  emptyMessage = 'Немає даних.',
   labels,
   className,
   getRowId,

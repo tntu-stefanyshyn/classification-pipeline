@@ -27,12 +27,17 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
       }}
     >
       <Form className="auth-form" noValidate>
-        <InputField name="name" label="Імʼя" placeholder="Ivan Petrenko" autoComplete="name" />
+        <InputField
+          name="name"
+          label="Повне імʼя"
+          placeholder="Ivan Petrenko"
+          autoComplete="name"
+        />
         <InputField
           name="email"
-          label="Email"
+          label="Електронна пошта"
           type="email"
-          placeholder="newuser@example.com"
+          placeholder="novykorystuvach@example.com"
           autoComplete="email"
           id="register-email"
         />
@@ -45,7 +50,7 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
           id="register-password"
         />
         <FormError />
-        <SubmitButton label="Створити акаунт" loadingLabel="Реєстрація..." />
+        <SubmitButton label="Створити обліковий запис" loadingLabel="Реєстрація..." />
       </Form>
     </Formik>
   );

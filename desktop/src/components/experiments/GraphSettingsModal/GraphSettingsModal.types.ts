@@ -10,6 +10,7 @@ export type GraphSettingsDraft = {
   metrics: Record<MetricKey, string>;
   queues: ComputationQueue[];
   folds: number;
+  hyperOptimizationMinutesPerPipeline: number;
 };
 
 export type GraphSettingsValidation = {

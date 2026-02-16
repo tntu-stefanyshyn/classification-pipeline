@@ -33,21 +33,7 @@ const AuthLayout: FC<AuthLayoutProps> = ({
   }, [theme]);
 
   const combinedActions = useMemo(
-    () =>
-      actions || isMobile ? (
-        <div className="actions top-actions">
-          {isMobile ? (
-            <button
-              className="btn ghost sidebar-toggle-mobile"
-              type="button"
-              onClick={() => setSidebarOpen((open) => !open)}
-            >
-              {sidebarOpen ? 'Закрити меню' : 'Меню'}
-            </button>
-          ) : null}
-          {actions}
-        </div>
-      ) : null,
+    () => (actions || isMobile ? <div className="actions top-actions">{actions}</div> : null),
     [actions, isMobile, sidebarOpen]
   );
 

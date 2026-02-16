@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "productName": "desktop",
+  "productName": "Дослідницька панель",
   "version": "1.0.0",
   "private": true,
   "engines": {

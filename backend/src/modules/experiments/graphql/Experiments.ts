@@ -1,4 +1,4 @@
-import { Arg, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
+import { Arg, Ctx, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
 import { Experiment } from '../classes/Experiment';
 import { CreateExperimentInput } from '../classes/CreateExperimentInput';
 import { GenerateExperimentGraphInput } from '../classes/GenerateExperimentGraphInput';
@@ -12,6 +12,8 @@ import { WorkflowType } from '../../../core/workflow/enums';
 import { ExperimentStatus } from '../classes/ExperimentStatus';
 import { UpdateExperimentProgressInput } from '../classes/UpdateExperimentProgressInput';
 import { UpdateExperimentOptimizationResultInput } from '../classes/UpdateExperimentOptimizationResultInput';
+import { AuthFlow } from '../../auth/services/AuthFlow';
+import type { GraphQLContext } from '../../../types/context';
 
 @Resolver(() => Experiment)
 export class Experiments {
@@ -19,6 +21,7 @@ export class Experiments {
   private readonly experimentManager = new ExperimentManager();
   private readonly graphManager = new GraphManager();
   private readonly workflowManager = new WorkflowManager();
+  private readonly auth = new AuthFlow();
 
   // #region FieldResolver
   @FieldResolver(() => GraphStructure, { nullable: true })
@@ -38,29 +41,42 @@ export class Experiments {
 
   // #region Query
   @Query(() => [Experiment])
-  experiments(): Promise<Experiment[]> {
-    return this.manager.list();
+  async experiments(@Ctx() context: GraphQLContext): Promise<Experiment[]> {
+    const user = await this.auth.me(context.req);
+    return this.manager.list(user._id.toString());
   }
 
   @Query(() => Experiment, { nullable: true })
-  experiment(@Arg('_id', () => ID) _id: string): Promise<Experiment | null> {
-    return this.manager.getById(_id);
+  async experiment(
+    @Arg('_id', () => ID) _id: string,
+    @Ctx() context: GraphQLContext
+  ): Promise<Experiment | null> {
+    const user = await this.auth.me(context.req);
+    try {
+      return await this.manager.getById(_id, user._id.toString());
+    } catch {
+      return null;
+    }
   }
   // #endregion Query
 
   // #region Mutation
   @Mutation(() => Experiment)
-  createExperiment(
-    @Arg('input', () => CreateExperimentInput) input: CreateExperimentInput
+  async createExperiment(
+    @Arg('input', () => CreateExperimentInput) input: CreateExperimentInput,
+    @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
-    return this.manager.create(input);
+    const user = await this.auth.me(context.req);
+    return this.manager.create(input, user._id.toString());
   }
 
   @Mutation(() => Experiment)
   async updateExperiment(
-    @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput
+    @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput,
+    @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
-    const experiment = await this.manager.update(input);
+    const user = await this.auth.me(context.req);
+    const experiment = await this.manager.update(input, user._id.toString());
     if (input.graphSettings || input.graphNodes || input.fileId) {
       const workflow = await this.workflowManager.getWorkflow({
         instanceId: input._id,
@@ -78,9 +94,11 @@ export class Experiments {
 
   @Mutation(() => Experiment)
   async generateExperimentGraph(
-    @Arg('input', () => GenerateExperimentGraphInput) input: GenerateExperimentGraphInput
+    @Arg('input', () => GenerateExperimentGraphInput) input: GenerateExperimentGraphInput,
+    @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
-    const experiment = await this.manager.generateGraph(input);
+    const user = await this.auth.me(context.req);
+    const experiment = await this.manager.generateGraph(input, user._id.toString());
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: input._id,
       type: WorkflowType.EXPERIMENT,
@@ -97,9 +115,14 @@ export class Experiments {
 
   @Mutation(() => Boolean)
   changeExperimentStatus(
-    @Arg('input', () => ChangeExperimentStatusInput) input: ChangeExperimentStatusInput
+    @Arg('input', () => ChangeExperimentStatusInput) input: ChangeExperimentStatusInput,
+    @Ctx() context: GraphQLContext
   ): Promise<boolean> {
-    return this.experimentManager.changeStatus(input);
+    return this.auth.me(context.req).then((user) => {
+      return this.manager.getById(input.experimentId, user._id.toString()).then(() => {
+        return this.experimentManager.changeStatus(input);
+      });
+    });
   }
 
   @Mutation(() => Boolean)

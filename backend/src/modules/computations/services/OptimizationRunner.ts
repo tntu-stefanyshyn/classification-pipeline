@@ -10,6 +10,8 @@ export type OptimizationInput = {
   experimentId: ObjectIdOrString;
   backendUrl?: string;
   backendToken?: string;
+  hyperOptimizationMinutesPerPipeline?: number;
+  timeoutSeconds?: number;
 };
 
 export type OptimizationResult = {
@@ -52,6 +54,7 @@ export class OptimizationRunner {
       experimentId: payload.experimentId,
       backend_url: backendUrl,
       backend_token: backendToken,
+      hyper_optimization_minutes_per_pipeline: payload.hyperOptimizationMinutesPerPipeline ?? 30,
     };
     const payloadJson = JSON.stringify(containerPayload);
 
@@ -73,12 +76,22 @@ export class OptimizationRunner {
       const proc = spawn('docker', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      const timeoutSeconds = Math.max(0, Math.trunc(payload.timeoutSeconds ?? 0));
+      const timeoutId =
+        timeoutSeconds > 0
+          ? setTimeout(() => {
+              proc.kill('SIGTERM');
+              reject(new Error(`Optimization timed out after ${timeoutSeconds} seconds.`));
+            }, timeoutSeconds * 1000)
+          : null;
       proc.on('error', (error) => {
+        if (timeoutId) clearTimeout(timeoutId);
         console.log(error);
         reject(error);
       });
 
       proc.on('close', () => {
+        if (timeoutId) clearTimeout(timeoutId);
         resolve();
       });
 

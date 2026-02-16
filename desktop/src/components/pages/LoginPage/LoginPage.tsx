@@ -14,7 +14,7 @@ const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <LoginForm onSuccess={onLoginSuccess} />
 
           <div className="auth-footer">
-            <span className="muted">Немає акаунта?</span>{' '}
+            <span className="muted">Немає облікового запису?</span>{' '}
             <Link to="/register" className="link">
               Зареєструватися
             </Link>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import ReactFlow from 'reactflow';
 import { Modal } from '../../ui/Modal';
+import { Alert } from '../../ui/Alert';
 import { CheckboxField } from '../../inputs/CheckboxField';
 import { InputControl } from '../../inputs/InputControl';
 import { GraphSettingsModal } from '../GraphSettingsModal';
@@ -86,6 +87,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const graph = experiment?.graph;
   const graphSettings = graph?.settings ?? null;
   const [graphNodes, setGraphNodes] = useState<FlatGraphNode[]>([]);
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<NodeModalState>(null);
   const [draftNode, setDraftNode] = useState<NodeDraft | null>(null);
@@ -114,6 +116,23 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     if (graphNodes.some((node) => node._id === selectedNodeId)) return;
     setSelectedNodeId(null);
   }, [graphNodes, selectedNodeId]);
+
+  useEffect(() => {
+    setCollapsedNodeIds((prev) => {
+      if (prev.size === 0) return prev;
+      const existingNodeIds = new Set(graphNodes.map((node) => node._id));
+      const parentNodeIds = new Set(
+        graphNodes
+          .map((node) => node.parentId)
+          .filter((parentId): parentId is string => Boolean(parentId))
+      );
+      const next = new Set<string>();
+      prev.forEach((nodeId) => {
+        if (existingNodeIds.has(nodeId) && parentNodeIds.has(nodeId)) next.add(nodeId);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [graphNodes]);
 
   const getAllowedStages = (parentStage?: ClassificationStage | null) => {
     if (!parentStage) return classificationStages;
@@ -210,6 +229,31 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const openDeleteModal = (nodeId: string) => {
     setSelectedNodeId(nodeId);
     setModalState({ type: 'delete', nodeId });
+  };
+
+  const handleToggleCollapse = (nodeId: string) => {
+    if (graphActionsDisabled) return;
+    const isCollapsing = !collapsedNodeIds.has(nodeId);
+    if (isCollapsing && selectedNodeId && selectedNodeId !== nodeId) {
+      const byId = new Map(graphNodes.map((node) => [node._id, node] as const));
+      let currentParentId = byId.get(selectedNodeId)?.parentId ?? null;
+      while (currentParentId) {
+        if (currentParentId === nodeId) {
+          setSelectedNodeId(nodeId);
+          break;
+        }
+        currentParentId = byId.get(currentParentId)?.parentId ?? null;
+      }
+    }
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
   };
 
   const closeModal = () => {
@@ -432,14 +476,15 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const { flowNodes, flowEdges } = buildFlowElements({
     nodes: graphNodes,
     selectedNodeId,
+    collapsedNodeIds,
     graphActionsDisabled,
     graphUpdating: isGraphBusy,
     onAdd: openAddModal,
     onEdit: openEditModal,
     onDelete: openDeleteModal,
+    onToggleCollapse: handleToggleCollapse,
   });
   const nodeTypes = useMemo(() => ({ graphNode: GraphNode }), []);
-  const hasNodes = graphNodes.length > 0;
   const classificationSelection = autoSelections[ClassificationStage.CLASSIFICATION] ?? [];
   const canGenerateGraph =
     classificationSelection.length > 0 && !graphActionsDisabled && Boolean(experiment);
@@ -499,10 +544,8 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               nodesConnectable={false}
               zoomOnDoubleClick={false}
               className="constructor-flow"
+              proOptions={{ hideAttribution: true }}
             />
-            {!hasNodes && (
-              <p className="muted small">Наразі є лише Початок. Додайте перший вузол.</p>
-            )}
             {technologiesLoading && <p className="muted small">Завантаження технологій...</p>}
             {technologiesError && (
               <p className="error small">Помилка технологій: {technologiesError.message}</p>
@@ -690,22 +733,15 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
 
       <Modal open={autoModalOpen} title="Автозаповнення графа" onClose={closeAutoModal}>
         <div className="node-modal">
-          <p className="muted small">
-            Оберіть технології для потрібних етапів. Усі етапи, окрім класифікації, опціональні,
-            тому для них буде створено гілку без етапу. Порожні етапи буде пропущено. Після
-            автозаповнення поточний граф буде замінено.
-          </p>
+          <Alert variant="info">
+            Оберіть хоча б одну технологію етапу класифікації (інші етапи опціональні).
+          </Alert>
           {classificationStages.map((stage) => {
             const stageTechnologies = technologyIndex.byStage.get(stage) ?? [];
             const selectedIds = autoSelections[stage] ?? [];
             return (
               <div key={stage}>
-                <div className="form-divider">{stageLabels[stage]}</div>
-                <p className="muted small">
-                  {stage === ClassificationStage.CLASSIFICATION
-                    ? 'Фінальний етап — обовʼязково виберіть хоча б одну технологію.'
-                    : 'Етап можна пропустити, якщо не потрібен.'}
-                </p>
+                <div className="form-divider auto-stage-divider">{stageLabels[stage]}</div>
                 {stageTechnologies.length === 0 ? (
                   <p className="muted small">Немає доступних технологій для цього етапу.</p>
                 ) : (
@@ -729,11 +765,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
           {graphGenerateError && (
             <p className="error">Помилка автозаповнення: {graphGenerateError.message}</p>
           )}
-          {!classificationSelection.length && (
-            <p className="error">
-              Оберіть хоча б одну технологію етапу класифікації (інші етапи опціональні).
-            </p>
-          )}
+
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={closeAutoModal}>
               Скасувати

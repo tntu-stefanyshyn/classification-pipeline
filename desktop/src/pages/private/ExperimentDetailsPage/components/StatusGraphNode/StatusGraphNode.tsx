@@ -36,7 +36,9 @@ const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
       <Handle type="target" position={Position.Left} className="graph-node-handle" />
       <Handle type="source" position={Position.Right} className="graph-node-handle" />
       <div className="org-node-body">
-        <span className="org-node-title">{title}</span>
+        <span className="org-node-title" title={title}>
+          {title}
+        </span>
         <span className="org-node-meta">{meta}</span>
       </div>
       <div className="org-node-actions">

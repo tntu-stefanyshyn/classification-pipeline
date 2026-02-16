@@ -182,12 +182,14 @@ type GraphStructure {
 
 type GraphStructureSettings {
   folds: Int!
+  hyperOptimizationMinutesPerPipeline: Int
   metrics: GraphMetricWeights!
   queues: [ComputationQueue!]!
 }
 
 input GraphStructureSettingsInput {
   folds: Int!
+  hyperOptimizationMinutesPerPipeline: Int
   metrics: GraphMetricWeightsInput!
   queues: [ComputationQueue!]!
 }

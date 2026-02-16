@@ -291,7 +291,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                 <InputField
                   name="name"
                   label="Назва експерименту"
-                  placeholder="Наприклад, Protein baseline"
+                  placeholder="Наприклад, Базовий білковий експеримент"
                 />
                 <TextAreaField
                   name="description"

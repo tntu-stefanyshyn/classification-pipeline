@@ -28,9 +28,9 @@ const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
       <Form className="auth-form" noValidate>
         <InputField
           name="email"
-          label="Email"
+          label="Електронна пошта"
           type="email"
-          placeholder="user@example.com"
+          placeholder="korystuvach@example.com"
           autoComplete="email"
         />
         <InputField

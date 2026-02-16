@@ -18,6 +18,8 @@ mutation GenerateExperimentGraph($input: GenerateExperimentGraphInput!) {
           ntps
         }
         queues
+        folds
+        hyperOptimizationMinutesPerPipeline
       }
       nodes {
         _id

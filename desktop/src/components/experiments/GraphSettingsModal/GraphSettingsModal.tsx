@@ -20,7 +20,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
   isBusy = false,
   isLocked = false,
   errorMessage,
-  title = 'Налаштування графа',
+  title = 'Налаштування графової структури',
 }) => {
   const [settingsDraft, setSettingsDraft] = useState<GraphSettingsDraft | null>(null);
 
@@ -83,10 +83,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
         <div className="node-modal">
           <div className="graph-settings-section">
             <div className="form-divider">Метрики</div>
-            <Alert variant="info">
-              Ваги метрик визначають їхню важливість для експерименту. Перетягуйте межі на слайдері,
-              щоб змінити розподіл (0-100), сума має дорівнювати 100%.
-            </Alert>
+            <Alert variant="info">Ваги метрик визначають їхню важливість для експерименту</Alert>
             <MetricWeightsSlider
               metrics={settingsDraft.metrics}
               labels={metricLabels}
@@ -110,13 +107,38 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 type="number"
                 label="Кількість кроків перехресної валідації"
                 min={1}
-                onChange={(e) =>
-                  setSettingsDraft((prev) => prev && { ...prev, folds: +e.target.value })
-                }
+                step={1}
+                onChange={(e) => {
+                  const nextValue = Number.parseInt(e.target.value, 10);
+                  setSettingsDraft(
+                    (prev) => prev && { ...prev, folds: Number.isFinite(nextValue) ? nextValue : 0 }
+                  );
+                }}
                 value={settingsDraft.folds.toString()}
+              />
+              <InputControl
+                type="number"
+                label="Час гіпероптимізації для одного конвеєра (хв)"
+                min={1}
+                step={1}
+                onChange={(e) => {
+                  const nextValue = Number.parseInt(e.target.value, 10);
+                  setSettingsDraft((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          hyperOptimizationMinutesPerPipeline: Number.isFinite(nextValue)
+                            ? nextValue
+                            : 0,
+                        }
+                      : prev
+                  );
+                }}
+                value={settingsDraft.hyperOptimizationMinutesPerPipeline.toString()}
               />
             </div>
 
+            <p className="graph-settings-label muted small">Середовище обчислення</p>
             <div className="graph-settings-queues">
               {queueOptions.map((queue) => {
                 const inputId = `queue-${queue}`;

@@ -26,7 +26,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   const hasResults = Boolean(payload);
   const metricRows = useMemo<MetricRow[]>(
     () => [
-      { metric: 'Accuracy (CV)', values: payload?.accuracyScores?.map(String) ?? [] },
+      { metric: 'Точність (CV)', values: payload?.accuracyScores?.map(String) ?? [] },
       { metric: 'F1 (CV)', values: payload?.f1Scores?.map(String) ?? [] },
       { metric: 'ROC AUC (CV)', values: payload?.rocAucScores?.map(String) ?? [] },
     ],

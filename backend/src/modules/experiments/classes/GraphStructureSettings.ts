@@ -17,4 +17,8 @@ export class GraphStructureSettings {
   @Field(() => Int)
   @prop({ type: () => Number, required: true })
   folds!: number;
+
+  @Field(() => Int, { nullable: true })
+  @prop({ type: () => Number, default: 30 })
+  hyperOptimizationMinutesPerPipeline?: number;
 }

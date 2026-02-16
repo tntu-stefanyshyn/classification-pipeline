@@ -8,13 +8,13 @@ const RegisterPage: FC<RegisterPageProps> = ({ onRegisterSuccess }) => {
     <main className="page unauth">
       <div className="auth-form-panel">
         <div className="card auth-card">
-          <h1>Створіть акаунт</h1>
+          <h1>Створіть обліковий запис</h1>
           <p className="subtitle">Заповніть поля, щоб розпочати роботу.</p>
 
           <RegisterForm onSuccess={onRegisterSuccess} />
 
           <div className="auth-footer">
-            <span className="muted">Вже є акаунт?</span>{' '}
+            <span className="muted">Вже маєте обліковий запис?</span>{' '}
             <Link to="/login" className="link">
               Увійти
             </Link>

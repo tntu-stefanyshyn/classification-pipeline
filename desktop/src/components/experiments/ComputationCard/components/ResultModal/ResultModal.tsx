@@ -13,7 +13,7 @@ const ResultModal: FC<ResultModalProps> = ({ onClose, resultsPathId }) => {
 
   return (
     <Modal open={!!resultsPathId} title="Результати шляху" onClose={onClose}>
-      {data?.pipeline ? <ResultView pipeline={data.pipeline} /> : 'Loading...'}
+      {data?.pipeline ? <ResultView pipeline={data.pipeline} /> : 'Завантаження...'}
     </Modal>
   );
 };

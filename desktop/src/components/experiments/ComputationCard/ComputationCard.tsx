@@ -337,11 +337,13 @@ const ComputationCard: FC = () => {
     return buildFlowElements({
       nodes: flowInputNodes,
       selectedNodeId: null,
+      collapsedNodeIds: new Set(),
       graphActionsDisabled: true,
       graphUpdating: false,
       onAdd: () => undefined,
       onEdit: () => undefined,
       onDelete: () => undefined,
+      onToggleCollapse: () => undefined,
     });
   }, [flowInputNodes]);
   const previewEdges = useMemo(() => {

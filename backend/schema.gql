@@ -105,7 +105,7 @@ type ExperimentOptimization {
   bestPipelineId: ID
   bestScore: Float
   history: [OptimizationHistoryItem!]
-  progress: Int
+  progress: Float
   status: OptimizationStatus
 }
 
@@ -249,7 +249,7 @@ type Pipeline {
   optimizationScores: [Float!]
   pathNodeIds: [ID!]!
   pathNodes: [GraphNode!]!
-  progress: Int
+  progress: Float
   queue: ComputationQueue!
   status: PipelineStatus!
   statusMessage: String

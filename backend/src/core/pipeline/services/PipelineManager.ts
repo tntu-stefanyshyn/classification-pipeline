@@ -9,6 +9,7 @@ import { WorkflowType } from '../../workflow/enums';
 import { Transitions } from '../../workflow/services/WorkflowManager.types.';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
+import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 
 export class PipelineManager {
   private readonly graphManager = new GraphManager();
@@ -48,6 +49,20 @@ export class PipelineManager {
         })
       )
     );
+
+    const cloudPipelines = pipelines.filter(
+      (pipeline) => pipeline.queue === ComputationQueue.cloud
+    );
+    if (cloudPipelines.length > 0) {
+      await Promise.all(
+        cloudPipelines.map((pipeline) =>
+          this.changeStatus({
+            pipelineId: pipeline._id,
+            status: PipelineStatus.queued,
+          })
+        )
+      );
+    }
 
     return pipelines;
   }

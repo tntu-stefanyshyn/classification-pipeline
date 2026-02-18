@@ -28,7 +28,7 @@ export class Pipeline extends TimeStamps {
   @prop({ required: true, type: () => [Types.ObjectId] })
   pathNodeIds!: Types.ObjectId[];
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Float, { nullable: true })
   @prop({ min: 0, max: 100 })
   progress?: number;
 

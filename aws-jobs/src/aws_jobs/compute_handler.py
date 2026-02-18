@@ -159,7 +159,7 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
         raise ValueError("FILE_URL_NOT_FOUND")
 
     try:
-        df = pd.read_csv(file_url or file_path)
+        df = pd.read_csv(file_url or file_path, sep=";")
     finally:
         if temp_path:
             try:
@@ -217,39 +217,35 @@ def _to_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
-def _resolve_target_column(
-    df: pd.DataFrame, payload: Dict[str, Any], path: List[Dict[str, Any]]
-) -> str:
-    candidate = payload.get("target_column")
-    if candidate and candidate in df.columns:
-        return candidate
-
-    for node in path:
-        settings = _settings_to_dict(node.get("settings") or [])
-        candidate = settings.get("target_column") or settings.get("label_column")
-        if candidate and candidate in df.columns:
-            return candidate
-
-    for fallback in ("label", "target", "class"):
-        if fallback in df.columns:
-            return fallback
-
-    return df.columns[-1] # type: ignore
+INVALID_FILE_ERROR = "Невалідний файл"
 
 
-def _prepare_features(df: pd.DataFrame, target_column: str) -> Tuple[pd.DataFrame, pd.Series]:
-    if target_column not in df.columns:
-        raise ValueError("Target column is missing in EEG data")
+def _validate_eeg_dataframe(df: pd.DataFrame) -> None:
+    if df.shape[1] < 3:
+        raise ValueError(INVALID_FILE_ERROR)
 
-    y = df[target_column]
-    X = df.drop(columns=[target_column])
-    X = pd.get_dummies(X)
-    X = X.replace([np.inf, -np.inf], np.nan)
-    means = X.mean(numeric_only=True)
-    X = X.fillna(means).fillna(0)
+    missing_mask = df.isna().to_numpy()
+    if missing_mask.any():
+        raise ValueError(INVALID_FILE_ERROR)
 
+    feature_columns = df.columns[1:]
+    for column_name in feature_columns:
+        column = df[column_name]
+        if not pd.api.types.is_numeric_dtype(column):
+            raise ValueError(INVALID_FILE_ERROR)
+
+    values = df.loc[:, feature_columns].to_numpy(dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError(INVALID_FILE_ERROR)
+
+
+def _prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    _validate_eeg_dataframe(df)
+
+    y = df.iloc[:, 0].astype(str).str.strip()
+    X = df.iloc[:, 1:]
     if X.empty:
-        raise ValueError("TARGET_COLUMN_MISSING ")
+        raise ValueError(INVALID_FILE_ERROR)
 
     return X, y
 
@@ -500,16 +496,18 @@ def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optio
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
-    pipelineId =  payload.get("pipelineId")
+    pipelineId = payload.get("pipelineId")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
 
-    if backend_url is None or pipelineId is None:
+    if not backend_url or not pipelineId:
         raise ValueError("MISSING_PARAMS")
     
     path = []
     if backend_url and pipelineId:
-        path, file_id, graphStructureSettings = _fetch_path_from_backend(backend_url, payload.get("pipelineId"), token)# type: ignore
+        path, file_id, graphStructureSettings = _fetch_path_from_backend(
+            backend_url, pipelineId, token
+        )
         payload["path"] = path
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
@@ -522,8 +520,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     df = _load_dataframe(payload, backend_url or None)
     _emit(backend_url, pipelineId, message="EEG file read", progress=5)
 
-    target_column = _resolve_target_column(df, payload, path)
-    X, y = _prepare_features(df, target_column)
+    X, y = _prepare_features(df)
 
     report: Optional[Dict[str, Any]] = {}
    
@@ -580,26 +577,37 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def main() -> None:
     payload: Dict[str, Any] = {}
-    payload = _load_payload()
-    
-    token = payload.get("backend_token")
-    backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
-    pipelineId = payload.get("pipelineId")
-    
-    print(token,backend_url,pipelineId)
-    
-    if backend_url is None or pipelineId is None:
-        raise ValueError("MISSING_PARAMS")
-    
-    result = run_compute(payload)
-    
-    completePipeline(
-        backend_url=backend_url,
-        payload=result,
-        pipelineId=pipelineId,
-        token=token
-    )
-    print((json.dumps(result, indent=2)))
+    try:
+        payload = _load_payload()
+
+        token = payload.get("backend_token")
+        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+        pipelineId = payload.get("pipelineId")
+
+        if not backend_url or not pipelineId:
+            raise ValueError("MISSING_PARAMS")
+
+        result = run_compute(payload)
+
+        completePipeline(
+            backend_url=backend_url,
+            payload=result,
+            pipelineId=pipelineId,
+            token=token
+        )
+        print((json.dumps(result, indent=2)))
+    except Exception as exc:
+        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+        token = payload.get("backend_token")
+        pipelineId = payload.get("pipelineId")
+        message = f"{type(exc).__name__}: {exc}"
+
+        if backend_url and pipelineId:
+            try:
+                _emit(backend_url, pipelineId, message=message, token=token)
+            except Exception:
+                pass
+        raise
 
 if __name__ == "__main__":
     main()

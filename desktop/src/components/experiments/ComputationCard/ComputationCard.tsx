@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useMemo, useState, type FC } from 'react';
+import { useEffect, useMemo, useState, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import ReactFlow from 'reactflow';
 import { DataTable, tableLabels } from '../../ui/DataTable';
@@ -40,6 +40,27 @@ const ComputationCard: FC = () => {
     skip: !id,
     fetchPolicy: 'cache-and-network',
   });
+  const experiment = data?.experiment;
+  const graph = experiment?.graph;
+  const graphSettings = graph?.settings ?? null;
+  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
+  const allowedQueues = graphSettings?.queues ?? [];
+  const defaultQueue = useMemo(() => {
+    if (allowedQueues.includes(ComputationQueue.local)) {
+      return ComputationQueue.local;
+    }
+    return allowedQueues[0] ?? ComputationQueue.local;
+  }, [allowedQueues]);
+  const [selectedQueue, setSelectedQueue] = useState<ComputationQueue>(defaultQueue);
+
+  useEffect(() => {
+    setSelectedQueue((previousQueue) =>
+      allowedQueues.includes(previousQueue) ? previousQueue : defaultQueue
+    );
+  }, [allowedQueues, defaultQueue]);
+
+  const activeQueue = allowedQueues.includes(selectedQueue) ? selectedQueue : defaultQueue;
+  const queueFilter = allowedQueues.length > 0 ? activeQueue : undefined;
   const {
     data: runsData,
     loading: runsLoading,
@@ -47,7 +68,7 @@ const ComputationCard: FC = () => {
     refetch: refetchRuns,
   } = usePipelinesQuery({
     pollInterval: 5000,
-    variables: { experimentId: id },
+    variables: { experimentId: id, queue: queueFilter },
     skip: !id,
     fetchPolicy: 'cache-and-network',
   });
@@ -56,10 +77,6 @@ const ComputationCard: FC = () => {
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();
 
-  const experiment = data?.experiment;
-  const graph = experiment?.graph;
-  const graphSettings = graph?.settings ?? null;
-  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const runs = runsData?.pipelines ?? [];
   const pathLabels = useMemo(
@@ -93,14 +110,7 @@ const ComputationCard: FC = () => {
     return Math.abs(sum - 1) <= 0.0001;
   }, [graphSettings]);
 
-  const allowedQueues = graphSettings?.queues ?? [];
-  const defaultQueue = useMemo(() => {
-    if (allowedQueues.includes(ComputationQueue.local)) {
-      return ComputationQueue.local;
-    }
-    return allowedQueues[0] ?? ComputationQueue.local;
-  }, [allowedQueues]);
-  const queueAllowed = allowedQueues.includes(defaultQueue);
+  const queueAllowed = allowedQueues.includes(activeQueue);
   const allPathsHaveClassification = useMemo(() => {
     if (!graph?.nodes || graphPaths.length === 0) return false;
     const nodeById = new Map(graph.nodes.map((node) => [node._id, node]));
@@ -153,14 +163,14 @@ const ComputationCard: FC = () => {
         variables: {
           input: {
             experimentId: experiment._id,
-            queue: defaultQueue,
+            queue: activeQueue,
             pipelineId,
             rerun: true,
           },
         },
       });
       const created = result.data?.enqueueExperimentRuns ?? [];
-      const queueLabel = defaultQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
+      const queueLabel = activeQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
       setActionStatus(`${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу.`);
       await Promise.all([refetchRuns(), refetch()]);
     } catch (_err) {
@@ -260,11 +270,13 @@ const ComputationCard: FC = () => {
 
         return (
           <div className="table-actions">
-            <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M8 6l10 6-10 6V6z" fill="currentColor" />
-              </svg>
-            </ChangePipelineStatusButton>
+            {activeQueue !== ComputationQueue.cloud && (
+              <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 6l10 6-10 6V6z" fill="currentColor" />
+                </svg>
+              </ChangePipelineStatusButton>
+            )}
             <ChangePipelineStatusButton status={PipelineStatus.paused} pipelineId={_id}>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="7" y="7" width="10" height="10" fill="currentColor" />
@@ -294,13 +306,7 @@ const ComputationCard: FC = () => {
     },
   ] satisfies ColumnDef<PipelinesQuery['pipelines'][number]>[];
 
-  const localQueueLabel = 'Локальна черга';
-  const cloudQueueLabel = 'Хмарна черга';
-  const defaultQueueLabel = queueAllowed
-    ? defaultQueue === ComputationQueue.cloud
-      ? cloudQueueLabel
-      : localQueueLabel
-    : 'Не налаштовано';
+  const activeQueueLabel = queueAllowed ? uk.computationQueue[activeQueue] : 'Не налаштовано';
 
   const edgeColorMap = useMemo(() => {
     const map = new Map<string, { color: string; priority: number }>();
@@ -368,6 +374,7 @@ const ComputationCard: FC = () => {
     experiment?.status === ExperimentStatus.computing ||
     experiment?.status === ExperimentStatus.completed;
 
+  console.log(allowedQueues);
   return (
     <section className="card data-card">
       <header className="card-head">
@@ -381,8 +388,22 @@ const ComputationCard: FC = () => {
         <>
           <div className="path-meta">
             <p className="muted small">
-              Тип обчислень для запуску: <strong>{defaultQueueLabel}</strong>
+              Тип обчислень для запуску: <strong>{activeQueueLabel}</strong>
             </p>
+            {allowedQueues.length > 1 && (
+              <div className="path-queue-switch" role="group" aria-label="Середовище обчислень">
+                {allowedQueues.map((queueType) => (
+                  <button
+                    key={queueType}
+                    className={`btn small ${activeQueue === queueType ? 'primary' : 'ghost'}`}
+                    type="button"
+                    onClick={() => setSelectedQueue(queueType)}
+                  >
+                    {uk.computationQueue[queueType]}
+                  </button>
+                ))}
+              </div>
+            )}
             {runBlocker && <p className="error small">{runBlocker}</p>}
             {runsLoading && <p className="muted small">Оновлення статусів запусків...</p>}
           </div>
@@ -430,6 +451,7 @@ const ComputationCard: FC = () => {
                     nodesConnectable={false}
                     zoomOnDoubleClick={false}
                     className="graph-preview-flow"
+                    proOptions={{ hideAttribution: true }}
                   />
                 ) : (
                   <p className="muted small">Граф поки порожній.</p>

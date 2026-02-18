@@ -1336,6 +1336,12 @@ h1 {
   margin-bottom: 0.85rem;
 }
 
+.path-queue-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .path-table th:nth-child(3),
 .path-table td:nth-child(3),
 .path-table th:nth-child(4),

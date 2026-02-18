@@ -1,12 +1,12 @@
 import { prop } from '@typegoose/typegoose';
 import { Types } from 'mongoose';
-import { Field, ID, Int, ObjectType } from 'type-graphql';
+import { Field, Float, ID, ObjectType } from 'type-graphql';
 import { OptimizationHistoryItem } from './OptimizationHistoryItem';
 import { OptimizationStatus } from './OptimizationStatus';
 
 @ObjectType()
 export class ExperimentOptimization {
-  @Field(() => Int, { nullable: true })
+  @Field(() => Float, { nullable: true })
   @prop({ min: 0, max: 100 })
   progress?: number;
 

@@ -48,7 +48,7 @@ export class PipelineResolver {
 
   // #region Query
   @Query(() => [Pipeline])
-  pipelines(
+  async pipelines(
     @Arg('experimentId', () => ID) experimentId: ObjectIdOrString,
     @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {

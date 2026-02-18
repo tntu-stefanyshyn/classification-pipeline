@@ -13,7 +13,7 @@ import {
   fetchExperimentRun,
 } from './graphqlOperations';
 import { buildHandlerPayload } from './payloadBuilder';
-import { runPythonHandler } from './pythonRunner';
+import { runPythonHandler, warmupLocalDockerImage } from './pythonRunner';
 
 const DEFAULT_POLL_MS = 3000;
 
@@ -34,6 +34,13 @@ export class LocalComputationWorker {
     }
     this.stopping = false;
     this.client = createGraphqlClient();
+    void warmupLocalDockerImage({
+      onLog: async (message) => {
+        console.log(message);
+      },
+    }).catch((error) => {
+      console.warn('Local worker image warmup failed', error);
+    });
     void this.loop();
   }
 

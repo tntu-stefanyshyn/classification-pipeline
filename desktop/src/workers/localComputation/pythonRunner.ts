@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { HandlerPayload } from './types';
 
 export type PythonHandlerOptions = {
@@ -14,7 +16,14 @@ export type PythonHandlerCallbacks = {
 };
 
 const DOCKER_BUILD_PREFIX = '[docker build] ';
-const DOCKER_IMAGE = 'aws-jobs-local';
+const DOCKER_RUN_PREFIX = '[docker run] ';
+const DOCKER_IMAGE = 'aws-jobs';
+const rebuildFlag = (process.env.LOCAL_WORKER_REBUILD_IMAGE ?? '').trim().toLowerCase();
+const shouldRebuildImage =
+  rebuildFlag === '1' ||
+  rebuildFlag === 'true' ||
+  (rebuildFlag !== '0' && rebuildFlag !== 'false' && process.env.NODE_ENV === 'development');
+let imageReadyPromise: Promise<void> | null = null;
 
 const attachStreamLogger = (
   stream: NodeJS.ReadableStream | null,
@@ -43,11 +52,112 @@ const attachStreamLogger = (
   });
 };
 
+const runDockerCommand = (
+  args: string[],
+  callbacks: PythonHandlerCallbacks,
+  logPrefix: string,
+  cwd?: string
+) =>
+  new Promise<void>((resolve, reject) => {
+    const proc = spawn('docker', args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    attachStreamLogger(proc.stdout, callbacks, logPrefix);
+    attachStreamLogger(proc.stderr, callbacks, logPrefix);
+
+    let stderrBuffer = '';
+    proc.stderr.on('data', (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderrBuffer.trim() || `Docker command failed with code ${code}`));
+    });
+  });
+
+const dockerImageExists = () =>
+  new Promise<boolean>((resolve, reject) => {
+    const proc = spawn('docker', ['image', 'inspect', DOCKER_IMAGE], {
+      stdio: 'ignore',
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => resolve(code === 0));
+  });
+
+const resolveAwsJobsDir = () => {
+  const configuredDir = process.env.AWS_JOBS_DIR?.trim();
+  const candidates = [
+    configuredDir,
+    path.resolve(process.cwd(), '../aws-jobs'),
+    path.resolve(process.cwd(), 'aws-jobs'),
+    path.resolve(__dirname, '../../../../aws-jobs'),
+    path.resolve(__dirname, '../../../../../aws-jobs'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'Dockerfile'))) ?? null;
+};
+
+const ensureDockerImageReady = async (callbacks: PythonHandlerCallbacks) => {
+  if (imageReadyPromise) return imageReadyPromise;
+
+  imageReadyPromise = (async () => {
+    const imageExists = await dockerImageExists();
+
+    const awsJobsDir = resolveAwsJobsDir();
+    if ((!imageExists || shouldRebuildImage) && !awsJobsDir) {
+      throw new Error(
+        `Docker image "${DOCKER_IMAGE}" is missing and aws-jobs directory was not found.`
+      );
+    }
+
+    if (!imageExists) {
+      await callbacks.onLog?.(
+        `${DOCKER_BUILD_PREFIX}Image "${DOCKER_IMAGE}" not found. Building from ${awsJobsDir}...`
+      );
+      await runDockerCommand(
+        ['build', '-t', DOCKER_IMAGE, awsJobsDir as string],
+        callbacks,
+        DOCKER_BUILD_PREFIX
+      );
+      return;
+    }
+
+    if (shouldRebuildImage) {
+      await callbacks.onLog?.(
+        `${DOCKER_BUILD_PREFIX}Rebuilding image "${DOCKER_IMAGE}" from ${awsJobsDir}...`
+      );
+      await runDockerCommand(
+        ['build', '-t', DOCKER_IMAGE, awsJobsDir as string],
+        callbacks,
+        DOCKER_BUILD_PREFIX
+      );
+    }
+  })().catch((error) => {
+    imageReadyPromise = null;
+    throw error;
+  });
+
+  return imageReadyPromise;
+};
+
+export const warmupLocalDockerImage = async (callbacks: PythonHandlerCallbacks = {}) => {
+  await ensureDockerImageReady(callbacks);
+};
+
 export const runPythonHandler = async (
   payload: HandlerPayload,
   options: PythonHandlerOptions,
   callbacks: PythonHandlerCallbacks
 ): Promise<Record<string, unknown> | null> => {
+  await ensureDockerImageReady(callbacks);
+
   if (options.signal?.aborted) {
     return null;
   }
@@ -69,8 +179,8 @@ export const runPythonHandler = async (
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    attachStreamLogger(proc.stdout, callbacks, DOCKER_BUILD_PREFIX);
-    attachStreamLogger(proc.stderr, callbacks, DOCKER_BUILD_PREFIX);
+    attachStreamLogger(proc.stdout, callbacks, DOCKER_RUN_PREFIX);
+    attachStreamLogger(proc.stderr, callbacks, DOCKER_RUN_PREFIX);
 
     let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {

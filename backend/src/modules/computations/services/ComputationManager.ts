@@ -40,6 +40,16 @@ export class ComputationManager {
   private readonly experimentManager = new ExperimentManager();
 
   async optimize(experimentId: ObjectIdOrString): Promise<void> {
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    });
+    if (workflow.status !== ExperimentStatus.computing) {
+      throw new Error(
+        'Оптимізацію можна запускати лише після переходу експерименту в статус "Обчислення".'
+      );
+    }
+
     const graph = await GraphStructureModel.findOne({ experimentId }).lean();
     const metrics = graph?.settings?.metrics;
     if (!metrics) {
@@ -77,12 +87,22 @@ export class ComputationManager {
       throw new Error('There are uncomuted pipelines.');
     }
 
+    await this.experimentManager.changeStatus({
+      experimentId,
+      status: ExperimentStatus.optimization,
+    });
+
     await this.optimizationRunner.run({
       experimentId,
       backendUrl: config.backend.graphqlUrl,
       backendToken: config.backend.serviceToken,
       hyperOptimizationMinutesPerPipeline,
       timeoutSeconds: optimizationTimeoutSeconds,
+    });
+
+    await this.experimentManager.changeStatus({
+      experimentId,
+      status: ExperimentStatus.completed,
     });
   }
 
@@ -148,9 +168,24 @@ export class ComputationManager {
       pipelineIds = [stringIdToObjectId(pipelineId)];
     }
 
+    const idlePipelineIds = (
+      await Promise.all(
+        pipelineIds.map(async (nextPipelineId) => {
+          const workflow = await this.workflowManager.getWorkflow({
+            instanceId: nextPipelineId,
+            type: WorkflowType.PIPELINE,
+          });
+          return workflow.status === PipelineStatus.idle ? nextPipelineId : null;
+        })
+      )
+    ).filter(Boolean) as Types.ObjectId[];
+
     await Promise.all(
-      pipelineIds.map((pipelineId) =>
-        this.pipelineManager.changeStatus({ pipelineId, status: PipelineStatus.queued })
+      idlePipelineIds.map((nextPipelineId) =>
+        this.pipelineManager.changeStatus({
+          pipelineId: nextPipelineId,
+          status: PipelineStatus.queued,
+        })
       )
     );
   }
@@ -161,14 +196,18 @@ export class ComputationManager {
       instanceId: pipeline._id,
       type: WorkflowType.PIPELINE,
     });
-    if (
-      workflow.status === PipelineStatus.completed ||
-      workflow.status === PipelineStatus.failed ||
-      workflow.status === PipelineStatus.stopped
-    ) {
+    if (workflow.status !== PipelineStatus.running) {
       return pipeline;
     }
-    return pipeline;
+    if (pipeline.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
+      await this.cancelCloudJob(pipeline.cloudJobId);
+    }
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.idle,
+      message: 'Зупинено користувачем',
+    });
+    return PipelineBaseService.getById(pipelineId);
   }
 
   async claimNextRun(
@@ -200,6 +239,10 @@ export class ComputationManager {
     });
 
     if (normalizedMachineInfo) {
+      await PipelineModel.updateOne(
+        { _id: pipeline._id },
+        { $set: { machineInfo: normalizedMachineInfo } }
+      );
       await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
     }
 
@@ -218,24 +261,82 @@ export class ComputationManager {
     });
   }
 
+  async completeRun({
+    runId,
+    resultJson,
+    statusMessage,
+  }: {
+    runId: string;
+    resultJson: string;
+    statusMessage?: string;
+  }): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(runId);
+    const parsedResult = JSON.parse(resultJson) as Record<string, unknown>;
+    await PipelineModel.updateOne(
+      { _id: pipeline._id },
+      { $set: { computingResult: parsedResult } }
+    );
+
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+    if (workflow.status === PipelineStatus.running) {
+      await this.pipelineManager.changeStatus({
+        pipelineId: pipeline._id,
+        status: PipelineStatus.completed,
+        message: statusMessage ?? 'Завершено',
+      });
+    }
+
+    return PipelineBaseService.getById(runId);
+  }
+
+  async failRun({
+    runId,
+    statusMessage,
+  }: {
+    runId: string;
+    statusMessage?: string;
+  }): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(runId);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+    if (workflow.status !== PipelineStatus.running) {
+      return pipeline;
+    }
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.idle,
+      message: statusMessage ?? 'Некоректне завершення обчислення',
+    });
+    return PipelineBaseService.getById(runId);
+  }
+
   async pauseExperimentRuns(experimentId: ObjectIdOrString): Promise<Pipeline[]> {
-    const runs = await PipelineModel.find({
-      experimentId,
-      status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
-    }).lean();
+    const runs = await WorkflowModel.aggregate<Pipeline>([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { experimentId: stringIdToObjectId(experimentId) } },
+    ]);
 
     if (runs.length === 0) return [];
-
-    const runIds = runs.map((run) => run._id);
-    await PipelineModel.updateMany(
-      { _id: { $in: runIds } },
-      {
-        $set: {
-          status: PipelineStatus.paused,
-          statusMessage: 'Пауза',
-        },
-      }
-    );
 
     const cloudJobs = runs.filter((run) => run.queue === ComputationQueue.cloud && run.cloudJobId);
     for (const run of cloudJobs) {
@@ -244,6 +345,16 @@ export class ComputationManager {
       }
     }
 
+    await Promise.all(
+      runs.map((run) =>
+        this.failRun({
+          runId: run._id.toString(),
+          statusMessage: 'Обчислення зупинено',
+        })
+      )
+    );
+
+    const runIds = runs.map((run) => run._id);
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
   }
 
@@ -253,27 +364,33 @@ export class ComputationManager {
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     const experimentObjectId = new Types.ObjectId(trimmedId);
-    const runs = await PipelineModel.find({
-      experimentId: experimentObjectId,
-      status: PipelineStatus.paused,
-    }).lean();
+    const runs = await WorkflowModel.aggregate<Pipeline>([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: PipelineStatus.idle,
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { experimentId: experimentObjectId } },
+    ]);
 
     if (runs.length === 0) return [];
 
     const runIds = runs.map((run) => run._id);
-    await PipelineModel.updateMany(
-      { _id: { $in: runIds } },
-      {
-        $set: {
-          status: PipelineStatus.queued,
-          progress: 0,
-          statusMessage: 'В черзі',
-          priority: 1,
-        },
-        $unset: {
-          cloudJobId: '',
-        },
-      }
+    await Promise.all(
+      runIds.map((runId) =>
+        this.pipelineManager.changeStatus({ pipelineId: runId, status: PipelineStatus.queued })
+      )
     );
 
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
@@ -299,6 +416,8 @@ export class ComputationManager {
     if (release) normalized.release = release;
     const cpuModel = trim(input?.cpuModel);
     if (cpuModel) normalized.cpuModel = cpuModel;
+    const gpuModel = trim(input?.gpuModel);
+    if (gpuModel) normalized.gpuModel = gpuModel;
 
     if (typeof input?.cores === 'number' && Number.isFinite(input.cores) && input.cores > 0) {
       normalized.cores = Math.round(input.cores);
@@ -383,7 +502,7 @@ export class ComputationManager {
           })
         );
       } catch (innerError) {
-        console.warn('Failed to cancel AWS job', innerError);
+        console.warn('Не вдалося скасувати AWS-завдання', innerError);
       }
     }
   }
@@ -396,10 +515,7 @@ export class ComputationManager {
     if (runs.length === 0) return;
 
     const hasActive = runs.some(
-      (run) =>
-        run.status === PipelineStatus.queued ||
-        run.status === PipelineStatus.running ||
-        run.status === PipelineStatus.paused
+      (run) => run.status === PipelineStatus.queued || run.status === PipelineStatus.running
     );
     const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
 

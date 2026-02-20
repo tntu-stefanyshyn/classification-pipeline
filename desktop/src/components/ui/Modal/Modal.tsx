@@ -2,7 +2,7 @@ import { useEffect, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModalProps } from './Modal.types';
 
-const Modal: FC<ModalProps> = ({ open, title, children, footer, onClose }) => {
+const Modal: FC<ModalProps> = ({ open, title, children, footer, className, onClose }) => {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -31,7 +31,7 @@ const Modal: FC<ModalProps> = ({ open, title, children, footer, onClose }) => {
   return createPortal(
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="modal"
+        className={className ? `modal ${className}` : 'modal'}
         role="dialog"
         aria-modal="true"
         aria-label={title}

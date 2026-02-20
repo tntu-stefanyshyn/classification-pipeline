@@ -6,6 +6,19 @@ query PipelineInfo($pipelineId: ID!) {
     queue
     statusMessage
     progress
+    machineInfo {
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      platform
+      arch
+      release
+      appVersion
+      queue
+      lastSeenAt
+    }
     computingResult {
       accuracyScores
       duration

@@ -14,7 +14,7 @@ const formatDuration = (value?: number) =>
   Number.isFinite(value) ? `${value?.toFixed(2)} с` : 'Немає даних';
 
 const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
-  const { history, pathNodes, queue, status, progress } = pipeline;
+  const { history, pathNodes, queue, status, progress, machineInfo } = pipeline;
   const title = pathNodes?.map((pathNode) => pathNode.label).join('->');
   const [latestLog] = history?.toReversed() ?? [];
   const [firstLog] = history ?? [];
@@ -24,11 +24,17 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   const eegRows = payload?.sampleCount;
   const durationLabel = formatDuration(payload?.duration);
   const hasResults = Boolean(payload);
+  const machineQueue = machineInfo?.queue ? uk.computationQueue[machineInfo.queue] : null;
+  const machineRamLabel =
+    typeof machineInfo?.memoryGb === 'number' ? `${machineInfo.memoryGb} ГБ` : 'Немає даних';
+  const platformDetails = [machineInfo?.platform, machineInfo?.release, machineInfo?.arch]
+    .filter(Boolean)
+    .join(' ');
   const metricRows = useMemo<MetricRow[]>(
     () => [
-      { metric: 'Точність (CV)', values: payload?.accuracyScores?.map(String) ?? [] },
-      { metric: 'F1 (CV)', values: payload?.f1Scores?.map(String) ?? [] },
-      { metric: 'ROC AUC (CV)', values: payload?.rocAucScores?.map(String) ?? [] },
+      { metric: 'Точність', values: payload?.accuracyScores?.map(String) ?? [] },
+      { metric: 'F1', values: payload?.f1Scores?.map(String) ?? [] },
+      { metric: 'ROC AUC', values: payload?.rocAucScores?.map(String) ?? [] },
     ],
     [payload?.accuracyScores, payload?.f1Scores, payload?.rocAucScores]
   );
@@ -77,7 +83,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
               </div>
               <div className="result-meta-item">
                 <span className="muted small">Останній запуск</span>
-                <span>{firstLog.createdAt.toLocaleString()}</span>
+                <span>{new Date(firstLog.createdAt).toLocaleString()}</span>
               </div>
             </div>
             {typeof progress === 'number' ? (
@@ -125,15 +131,49 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
                   </div>
                   <div className="result-meta-item">
                     <span className="muted small">Назви каналів</span>
-                    <span className="result-snippet">
-                      {channelNames.length ? channelNames.join(', ') : 'Немає даних'}
-                    </span>
+                    <span>{channelNames.length ? channelNames.join(', ') : 'Немає даних'}</span>
                   </div>
                 </div>
               </>
             ) : (
               <p className="muted">Результати обчислення ще не доступні.</p>
             )}
+          </div>
+          <div className="result-section">
+            <div className="result-section-head">
+              <div>
+                <h4 className="result-section-title">Вузол обчислення</h4>
+                <p className="muted small">Пристрій, на якому виконано запуск.</p>
+              </div>
+            </div>
+            <div className="result-meta-grid">
+              <div className="result-meta-item">
+                <span className="muted small">Пристрій</span>
+                <span>{machineInfo?.hostname || 'Немає даних'}</span>
+              </div>
+              <div className="result-meta-item">
+                <span className="muted small">CPU</span>
+                <span>
+                  {machineInfo?.cpuModel || 'Немає даних'} ({machineInfo?.cores ?? '—'} ядер)
+                </span>
+              </div>
+              <div className="result-meta-item">
+                <span className="muted small">GPU</span>
+                <span>{machineInfo?.gpuModel || 'Немає даних'}</span>
+              </div>
+              <div className="result-meta-item">
+                <span className="muted small">RAM</span>
+                <span>{machineRamLabel}</span>
+              </div>
+              <div className="result-meta-item">
+                <span className="muted small">Платформа</span>
+                <span>{platformDetails || 'Немає даних'}</span>
+              </div>
+              <div className="result-meta-item">
+                <span className="muted small">Черга вузла</span>
+                <span>{machineQueue || 'Немає даних'}</span>
+              </div>
+            </div>
           </div>
           <div className="result-section">
             <div className="result-section-head">

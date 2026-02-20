@@ -12,6 +12,7 @@ import { buildGraphPaths } from '../../pages/ExperimentDetailsPage/utils/buildGr
 import {
   ClassificationStage,
   ComputationQueue,
+  ExperimentStatus,
   PipelineStatus,
 } from '../../../graphql/types.generated';
 import { config } from '../../../config/config';
@@ -192,6 +193,7 @@ const OptimizationCard: FC = () => {
 
   const canOptimize = useMemo(() => {
     if (!experiment || !graph || graphPaths.length === 0) return false;
+    if (experiment.status !== ExperimentStatus.computing) return false;
     if (!graphSettingsReady) return false;
     if (!allPathsHaveClassification) return false;
     if (allowedQueues.length === 0) return false;
@@ -208,6 +210,9 @@ const OptimizationCard: FC = () => {
   ]);
 
   const optimizeBlocker = useMemo(() => {
+    if (experiment?.status !== ExperimentStatus.computing) {
+      return 'Оптимізація доступна лише зі статусу експерименту "Обчислення".';
+    }
     if (!graphSettingsReady) {
       return 'Заповніть налаштування графа, щоб запускати оптимізацію.';
     }
@@ -221,7 +226,13 @@ const OptimizationCard: FC = () => {
       return 'Тип обчислень не налаштовано.';
     }
     return null;
-  }, [allPathsHaveClassification, allPathsCompleted, allowedQueues.length, graphSettingsReady]);
+  }, [
+    allPathsHaveClassification,
+    allPathsCompleted,
+    allowedQueues.length,
+    experiment?.status,
+    graphSettingsReady,
+  ]);
 
   const handleStartOptimization = async () => {
     if (!experiment) return;

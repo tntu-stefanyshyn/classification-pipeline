@@ -5,7 +5,7 @@ import {
   type ClassificationStage,
 } from '../../../../../components/experiments/ExperimentGraphConstructor';
 
-export type NodeRunStatus = 'idle' | 'queued' | 'running' | 'paused' | 'failed' | 'completed';
+export type NodeRunStatus = 'idle' | 'queued' | 'running' | 'completed';
 
 export type StatusGraphNodeData = {
   _id: string;

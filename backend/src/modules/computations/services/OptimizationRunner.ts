@@ -81,12 +81,12 @@ export class OptimizationRunner {
         timeoutSeconds > 0
           ? setTimeout(() => {
               proc.kill('SIGTERM');
-              reject(new Error(`Optimization timed out after ${timeoutSeconds} seconds.`));
+              reject(new Error(`Оптимізація перевищила ліміт часу (${timeoutSeconds} с).`));
             }, timeoutSeconds * 1000)
           : null;
       proc.on('error', (error) => {
         if (timeoutId) clearTimeout(timeoutId);
-        console.log(error);
+        console.error('Помилка запуску процесу оптимізації', error);
         reject(error);
       });
 

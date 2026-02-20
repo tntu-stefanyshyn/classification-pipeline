@@ -125,7 +125,7 @@ export class CloudComputationWorker {
   start() {
     if (this.running) return;
     if (!this.jobQueue || !this.jobDefinition || !this.resultsBucket) {
-      console.warn('Cloud worker disabled: AWS Batch or results bucket is not configured.');
+      console.warn('Хмарний воркер вимкнено: AWS Batch або bucket для результатів не налаштовано.');
       return;
     }
     this.stopping = false;
@@ -142,14 +142,17 @@ export class CloudComputationWorker {
       try {
         await this.reconcileRuns();
       } catch (error) {
-        console.warn('Cloud worker failed to reconcile runs', new Error(error as any).message);
+        console.warn(
+          'Хмарний воркер не зміг синхронізувати запуски',
+          new Error(error as any).message
+        );
       }
 
       let run = null;
       try {
         run = await this.manager.claimNextRun(ComputationQueue.cloud, this.buildMachineInfo());
       } catch (error) {
-        console.warn('Cloud worker failed to claim a run', error);
+        console.warn('Хмарний воркер не зміг отримати запуск з черги', error);
         await sleep(this.pollMs);
         continue;
       }
@@ -189,7 +192,8 @@ export class CloudComputationWorker {
     ]);
 
     for (const run of runnings) {
-      const runId = String(run._id);
+      const runId = String((run as { pipeline?: { _id?: Types.ObjectId } }).pipeline?._id ?? '');
+      if (!runId) continue;
       const resultPayload = await this.fetchResultPayload(runId);
       if (!resultPayload) continue;
 

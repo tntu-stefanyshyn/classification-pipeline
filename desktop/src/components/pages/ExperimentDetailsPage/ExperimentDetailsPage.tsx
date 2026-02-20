@@ -66,6 +66,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
   const isExperimentLocked =
     experiment?.status === ExperimentStatus.computing ||
+    experiment?.status === ExperimentStatus.optimization ||
     experiment?.status === ExperimentStatus.completed;
 
   const graphSettingsReady = useMemo(() => {
@@ -85,6 +86,8 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     const sum = weights.reduce((total, value) => total + value, 0);
     return Math.abs(sum - 1) <= 0.0001;
   }, [graphSettings]);
+  const canMoveToComputing =
+    experiment?.status === ExperimentStatus.configuring && graphSettingsReady;
 
   const reportUrl = useMemo(() => {
     if (!experiment) return '';
@@ -151,6 +154,13 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     if (!experiment?.fileId) return null;
     return uploadedFiles.find((file) => file._id === experiment.fileId) ?? null;
   }, [experiment?.fileId, uploadedFiles]);
+  const hosts = useMemo(
+    () =>
+      [...(experiment?.computationHosts ?? [])].sort(
+        (a, b) => new Date(b.lastSeenAt ?? 0).getTime() - new Date(a.lastSeenAt ?? 0).getTime()
+      ),
+    [experiment?.computationHosts]
+  );
 
   return (
     <AuthLayout
@@ -228,6 +238,47 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                   )}
                 </div>
               </div>
+              <div className="experiment-detail-row">
+                <span className="experiment-detail-label">Обчислювальні вузли</span>
+                <div className="experiment-detail-value-block">
+                  {hosts.length === 0 ? (
+                    <span className="muted small">
+                      Ще немає даних. Запустіть локальні обчислення, щоб зафіксувати пристрій.
+                    </span>
+                  ) : (
+                    <div className="host-list">
+                      {hosts.map((host, index) => (
+                        <div
+                          key={`${host.queue ?? 'unknown'}-${host.hostname ?? 'host'}-${index}`}
+                          className="host-item"
+                        >
+                          <div className="host-item-head">
+                            <span className="experiment-detail-value">
+                              {host.hostname || 'Невідомий пристрій'}
+                            </span>
+                            <span className="muted small">
+                              {host.queue === ComputationQueue.local
+                                ? 'Локальна черга'
+                                : 'Хмарна черга'}
+                            </span>
+                          </div>
+                          <span className="muted small">
+                            CPU: {host.cpuModel || '—'} ({host.cores ?? '—'} ядер)
+                          </span>
+                          <span className="muted small">GPU: {host.gpuModel || '—'}</span>
+                          <span className="muted small">
+                            RAM: {typeof host.memoryGb === 'number' ? `${host.memoryGb} ГБ` : '—'}
+                          </span>
+                          <span className="muted small">
+                            Оновлено:{' '}
+                            {host.lastSeenAt ? new Date(host.lastSeenAt).toLocaleString() : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
           <section className="card data-card">
@@ -241,6 +292,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               <ChangeExperimentStatusButton
                 label="Перейти до обчислень"
                 status={ExperimentStatus.computing}
+                disabled={!canMoveToComputing}
               />
               {experiment ? (
                 <Link className="btn ghost" to={`/app/experiments/${experiment._id}/constructor`}>

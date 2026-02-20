@@ -142,7 +142,7 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message=f"Optimization started (budget {hyper_minutes} min/pipeline)",
+        message=f"Оптимізацію розпочато (бюджет {hyper_minutes} хв/конвеєр)",
         progress=0,
         status="optimizing",
         token=token,
@@ -216,7 +216,7 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message="Fetching pipelines for optimization",
+        message="Отримання конвеєрів для оптимізації",
         progress=5,
         token=token,
     )
@@ -252,7 +252,7 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message="Linear optimization started",
+        message="Лінійну оптимізацію розпочато",
         progress=progress_base,
         token=token,
     )
@@ -262,7 +262,7 @@ def optimize(payload: Dict[str, Any]):
         _emit(
             backend_url,
             experimentId,
-            message=f"Start pipeline optimization: {parsedPipeline['pipelineId']}",
+            message=f"Початок оптимізації конвеєра: {parsedPipeline['pipelineId']}",
             progress=start_progress,
             token=token,
         )
@@ -297,7 +297,7 @@ def optimize(payload: Dict[str, Any]):
         _emit(
             backend_url,
             experimentId,
-            message=f"End pipeline optimization: {parsedPipeline['pipelineId']}",
+            message=f"Завершення оптимізації конвеєра: {parsedPipeline['pipelineId']}",
             progress=end_progress,
             token=token,
         )
@@ -308,14 +308,14 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message="Linear optimization completed",
+        message="Лінійну оптимізацію завершено",
         progress=90,
         token=token,
     )
     _emit(
         backend_url,
         experimentId,
-        message=f"Best pipeline selected: {best['pipelineId']}",
+        message=f"Обрано найкращий конвеєр: {best['pipelineId']}",
         progress=95,
         token=token,
     )
@@ -329,7 +329,7 @@ def optimize(payload: Dict[str, Any]):
     _emit(
         backend_url,
         experimentId,
-        message="Optimization completed",
+        message="Оптимізацію завершено",
         progress=100,
         status="completed",
         token=token,
@@ -360,7 +360,7 @@ def main() -> None:
         _emit(
             backend_url,
             experimentId,
-            message=f"Optimization failed: {exc}",
+            message=f"Оптимізація завершилася з помилкою: {exc}",
             status="failed",
             token=token,
         )

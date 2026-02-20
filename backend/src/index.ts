@@ -21,6 +21,7 @@ import { Files } from './modules/files/graphql/Files';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
+import { runMigrations } from './migrations';
 import { ComputationResolver } from './modules/computations';
 import { PipelineResolver } from './core/pipeline/graphql/pipeline';
 
@@ -122,6 +123,7 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
+    await runMigrations();
     await runSeeders();
     // cloudWorker = new CloudComputationWorker();
     // cloudWorker.start();

@@ -442,7 +442,12 @@ def _run_classifier(
 
     for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
         progress = (progress_for_one_step * 0.5) * (fold_index)
-        _emit(backend_url, pipelineId, message=f"Start cross-validations: step {fold_index}/{folds}", progress=progress)
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Початок крос-валідації: крок {fold_index}/{folds}",
+            progress=progress
+        )
         X_train = X.iloc[train_idx]
         y_train = y.iloc[train_idx]
         X_val = X.iloc[val_idx]
@@ -461,7 +466,12 @@ def _run_classifier(
         matrix = confusion_matrix(y_val, y_pred, labels=labels)
         confusionMatrixes.append(matrix.tolist())
         progress = (progress_for_one_step) * (fold_index)
-        _emit(backend_url, pipelineId, message=f"End cross-validations: step {fold_index}/{folds}", progress=progress)
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Завершення крос-валідації: крок {fold_index}/{folds}",
+            progress=progress
+        )
 
     channelNames =  [str(label) for label in labels]
     return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, channelNames
@@ -512,13 +522,13 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
-    _emit(backend_url, pipelineId, message="Start computing", progress=1)
+    _emit(backend_url, pipelineId, message="Початок обчислення", progress=1)
 
    
 
-    _emit(backend_url, pipelineId, message="Read EEG file", progress=3)
+    _emit(backend_url, pipelineId, message="Зчитування файлу ЕЕГ", progress=3)
     df = _load_dataframe(payload, backend_url or None)
-    _emit(backend_url, pipelineId, message="EEG file read", progress=5)
+    _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5)
 
     X, y = _prepare_features(df)
 
@@ -531,11 +541,16 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
-        label = technology or stage or f"step {index}"
+        label = technology or stage or f"крок {index}"
 
         progress = (progress_for_one_step * 0.5) * (index)
 
-        _emit(backend_url, pipelineId, message=f"Step start: {label}, {stage}", progress=progress)
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Початок кроку: {label}, {stage}",
+            progress=progress
+        )
 
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
@@ -563,7 +578,12 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             report["channelNames"] = channelNames
             break
         progress = (progress_for_one_step) * (index)
-        _emit(backend_url, pipelineId, message=f"Step end: {label}, {stage}", progress=progress)
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Завершення кроку: {label}, {stage}",
+            progress=progress
+        )
 
 
     duration = max(time.time() - started_at, 0.0)
@@ -571,7 +591,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     report["sampleCount"] = sampleCount
     report["duration"] = duration
 
-    _emit(backend_url, pipelineId, message="Computing end", progress=100)
+    _emit(backend_url, pipelineId, message="Обчислення завершено", progress=100)
     return report
 
 

@@ -220,6 +220,26 @@ const ComputationCard: FC = () => {
       },
     },
     {
+      header: 'Пристрій',
+      id: 'machine',
+      cell: ({ row }) => {
+        const machine = row.original.machineInfo;
+        const ramLabel =
+          typeof machine?.memoryGb === 'number' ? `${machine.memoryGb} ГБ` : 'Немає даних';
+
+        return (
+          <div className="table-stack">
+            <span className="item-title">{machine?.hostname || 'Немає даних'}</span>
+            <span className="muted small">
+              CPU: {machine?.cpuModel || 'Немає даних'} ({machine?.cores ?? '—'} ядер)
+            </span>
+            <span className="muted small">GPU: {machine?.gpuModel || 'Немає даних'}</span>
+            <span className="muted small">RAM: {ramLabel}</span>
+          </div>
+        );
+      },
+    },
+    {
       header: 'Результати',
       id: 'results',
       cell: ({ row }) => (
@@ -246,7 +266,7 @@ const ComputationCard: FC = () => {
     },
     {
       header: 'Остання активність',
-      id: 'results',
+      id: 'last-activity',
       cell: ({ row }) => {
         const [latestResult] = row.original.history.toReversed() ?? [];
         return <span>{latestResult?.message}</span>;
@@ -257,49 +277,26 @@ const ComputationCard: FC = () => {
       id: 'actions',
       cell: ({ row }) => {
         const { status, _id } = row.original;
-        const activeRun =
-          status === PipelineStatus.running ||
-          status === PipelineStatus.queued ||
-          status === PipelineStatus.paused;
-
         const actionBusy = enqueueing || stopping;
-        const hasActive = Boolean(activeRun);
-        const canRun = canStartComputations && !hasActive && !actionBusy;
-        const canStop = Boolean(activeRun) && !stopping;
-        const canRecompute = canStartComputations && !hasActive && !actionBusy;
+        const canRun = canStartComputations && status === PipelineStatus.idle && !actionBusy;
+        const canStop = status === PipelineStatus.running && !stopping;
 
         return (
           <div className="table-actions">
-            {activeQueue !== ComputationQueue.cloud && (
+            {canRun && (
               <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M8 6l10 6-10 6V6z" fill="currentColor" />
                 </svg>
               </ChangePipelineStatusButton>
             )}
-            <ChangePipelineStatusButton status={PipelineStatus.paused} pipelineId={_id}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="7" y="7" width="10" height="10" fill="currentColor" />
-              </svg>
-            </ChangePipelineStatusButton>
-            <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M6.5 8.5a6 6 0 1 1 1.7 7.6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="1.6"
-                />
-                <path
-                  d="M6 5v4h4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="1.6"
-                />
-              </svg>
-            </ChangePipelineStatusButton>
+            {canStop && (
+              <ChangePipelineStatusButton status={PipelineStatus.idle} pipelineId={_id}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" fill="currentColor" />
+                </svg>
+              </ChangePipelineStatusButton>
+            )}
           </div>
         );
       },
@@ -312,8 +309,8 @@ const ComputationCard: FC = () => {
     const map = new Map<string, { color: string; priority: number }>();
     graphPaths.forEach((path) => {
       const status = pathStatusMap.get(path.id) ?? PipelineStatus.idle;
-      const color = runStatusColors[status];
-      const priority = runStatusPriority[status];
+      const color = runStatusColors[status] ?? runStatusColors[PipelineStatus.idle] ?? '#cbd5e1';
+      const priority = runStatusPriority[status] ?? runStatusPriority[PipelineStatus.idle] ?? 99;
       const nodeChain = [ROOT_NODE_ID, ...path.nodeIds];
       for (let i = 1; i < nodeChain.length; i += 1) {
         const edgeId = `edge-${nodeChain[i - 1]}-${nodeChain[i]}`;
@@ -372,9 +369,9 @@ const ComputationCard: FC = () => {
 
   const shouldShowGraphPreview =
     experiment?.status === ExperimentStatus.computing ||
+    experiment?.status === ExperimentStatus.optimization ||
     experiment?.status === ExperimentStatus.completed;
 
-  console.log(allowedQueues);
   return (
     <section className="card data-card">
       <header className="card-head">

@@ -105,7 +105,7 @@ type ExperimentOptimization {
   bestPipelineId: ID
   bestScore: Float
   history: [OptimizationHistoryItem!]
-  progress: Int
+  progress: Float
   status: OptimizationStatus
 }
 
@@ -246,10 +246,11 @@ type Pipeline {
   experimentId: ID!
   graphStructureId: ID!
   history: [PipelineHistoryItem!]!
+  machineInfo: PipelineMachineInfo
   optimizationScores: [Float!]
   pathNodeIds: [ID!]!
   pathNodes: [GraphNode!]!
-  progress: Int
+  progress: Float
   queue: ComputationQueue!
   status: PipelineStatus!
   statusMessage: String
@@ -267,6 +268,7 @@ type PipelineMachineInfo {
   arch: String
   cores: Int
   cpuModel: String
+  gpuModel: String
   hostname: String
   lastSeenAt: DateTimeISO
   memoryGb: Float
@@ -280,6 +282,7 @@ input PipelineMachineInfoInput {
   arch: String
   cores: Int
   cpuModel: String
+  gpuModel: String
   hostname: String
   memoryGb: Float
   platform: String
@@ -288,12 +291,9 @@ input PipelineMachineInfoInput {
 
 enum PipelineStatus {
   completed
-  failed
   idle
-  paused
   queued
   running
-  stopped
 }
 
 type Query {

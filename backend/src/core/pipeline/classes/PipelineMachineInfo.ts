@@ -24,6 +24,10 @@ export class PipelineMachineInfo {
   @prop({ trim: true })
   cpuModel?: string;
 
+  @Field({ nullable: true })
+  @prop({ trim: true })
+  gpuModel?: string;
+
   @Field(() => Int, { nullable: true })
   @prop({ min: 1 })
   cores?: number;
@@ -61,6 +65,9 @@ export class PipelineMachineInfoInput {
 
   @Field({ nullable: true })
   cpuModel?: string;
+
+  @Field({ nullable: true })
+  gpuModel?: string;
 
   @Field(() => Int, { nullable: true })
   cores?: number;

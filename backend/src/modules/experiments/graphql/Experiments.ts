@@ -77,7 +77,14 @@ export class Experiments {
   ): Promise<Experiment> {
     const user = await this.auth.me(context.req);
     const experiment = await this.manager.update(input, user._id.toString());
-    if (input.graphSettings || input.graphNodes || input.fileId) {
+    const hasConfigurationChanges =
+      input.name !== undefined ||
+      input.description !== undefined ||
+      input.fileId !== undefined ||
+      input.graphNodes !== undefined ||
+      input.graphSettings !== undefined ||
+      input.graphComputationMode !== undefined;
+    if (hasConfigurationChanges) {
       const workflow = await this.workflowManager.getWorkflow({
         instanceId: input._id,
         type: WorkflowType.EXPERIMENT,

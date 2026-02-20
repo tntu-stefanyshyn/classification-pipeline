@@ -6,13 +6,10 @@ const uk = {
     string
   >,
   computationStatus: {
-    queued: 'Очікування',
+    queued: 'Черга',
     running: 'Обчислення',
-    paused: 'Пауза',
     completed: 'Завершено',
-    failed: 'Провалився',
-    stopped: 'Зупинено',
-    idle: 'Немає запусків',
+    idle: 'Бездіяльність',
   } satisfies Record<PipelineStatus, string>,
   experimentStatus: {
     creating: 'Створення',

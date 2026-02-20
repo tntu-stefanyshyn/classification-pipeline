@@ -81,6 +81,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const isGraphBusy = graphUpdating || graphGenerating;
   const isExperimentLocked =
     experiment?.status === ExperimentStatus.computing ||
+    experiment?.status === ExperimentStatus.optimization ||
     experiment?.status === ExperimentStatus.completed;
   const graphActionsDisabled = isGraphBusy || !techReady || isExperimentLocked;
 

@@ -6,9 +6,9 @@ const backendSchema = resolve(__dirname, '..', '..', 'backend', 'schema.gql');
 const desktopSchema = resolve(__dirname, '..', 'schema.graphql');
 
 if (!existsSync(backendSchema)) {
-  console.error(`Backend schema not found at ${backendSchema}`);
+  console.error(`Схему backend не знайдено: ${backendSchema}`);
   process.exit(1);
 }
 
 copyFileSync(backendSchema, desktopSchema);
-console.log(`Schema synced: ${desktopSchema}`);
+console.log(`Схему синхронізовано: ${desktopSchema}`);

@@ -7,6 +7,14 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
     progress
     statusMessage
     optimizationScores
+    machineInfo {
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      queue
+    }
     history {
       message
       createdAt

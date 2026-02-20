@@ -6,6 +6,19 @@ query Experiment($_id: ID!) {
     fileId
     status
     createdAt
+    computationHosts {
+      queue
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      platform
+      arch
+      release
+      appVersion
+      lastSeenAt
+    }
     optimization {
       progress
       status

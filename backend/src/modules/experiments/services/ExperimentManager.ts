@@ -83,6 +83,7 @@ export class ExperimentManager {
     });
     if (
       workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.optimization ||
       workflow.status === ExperimentStatus.completed
     ) {
       throw new Error('Редагування експерименту недоступне після початку обчислень.');
@@ -170,16 +171,13 @@ export class ExperimentManager {
     });
     if (
       workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.optimization ||
       workflow.status === ExperimentStatus.completed
     ) {
       throw new Error('Редагування графа недоступне після початку обчислень.');
     }
 
     await this.graphManager.generateGraphFromSelections(trimmedId, input.stages ?? []);
-    await ExperimentModel.updateOne(
-      { _id: trimmedId },
-      { $set: { status: ExperimentStatus.configuring } }
-    ).exec();
 
     return experiment;
   }
@@ -198,6 +196,10 @@ export class ExperimentManager {
     },
     {
       from: ExperimentStatus.computing,
+      to: ExperimentStatus.optimization,
+    },
+    {
+      from: ExperimentStatus.optimization,
       to: ExperimentStatus.completed,
     },
   ];

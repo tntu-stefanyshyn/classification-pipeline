@@ -40,6 +40,7 @@ export class Pipeline extends TimeStamps {
   @prop({ _id: false, type: () => [PipelineHistoryItem], default: [] })
   history!: PipelineHistoryItem[];
 
+  @Field(() => PipelineMachineInfo, { nullable: true })
   @prop({ _id: false, type: () => PipelineMachineInfo })
   machineInfo?: PipelineMachineInfo;
 

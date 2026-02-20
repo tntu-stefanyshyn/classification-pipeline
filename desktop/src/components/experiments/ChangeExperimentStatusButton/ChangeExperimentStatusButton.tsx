@@ -5,7 +5,11 @@ import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { ChangeExperimentStatusButtonProps } from './ChangeExperimentStatusButton.types';
 
-const ChangeExperimentStatusButton: FC<ChangeExperimentStatusButtonProps> = ({ label, status }) => {
+const ChangeExperimentStatusButton: FC<ChangeExperimentStatusButtonProps> = ({
+  label,
+  status,
+  disabled,
+}) => {
   const { id: experimentId } = useParams() as { id: string };
   const [changeExperimentStatus, { loading }] = useChangeExperimentStatusMutation({
     variables: { input: { experimentId, status } },
@@ -15,7 +19,7 @@ const ChangeExperimentStatusButton: FC<ChangeExperimentStatusButtonProps> = ({ l
   });
 
   return (
-    <Button onClick={() => changeExperimentStatus()} loading={loading}>
+    <Button onClick={() => changeExperimentStatus()} loading={loading} disabled={disabled}>
       {label}
     </Button>
   );

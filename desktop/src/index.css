@@ -664,6 +664,29 @@ h1 {
   word-break: break-word;
 }
 
+.host-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.host-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.host-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
 .graph-summary-value {
   font-size: 1.2rem;
   font-weight: 700;
@@ -1798,6 +1821,10 @@ h1 {
   border: 1px solid var(--border);
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.18);
   overflow: hidden;
+}
+
+.modal.modal-wide {
+  width: min(980px, 100%);
 }
 
 .modal-header {

@@ -80,7 +80,7 @@ export class PipelineManager {
               statusMessage: 'В черзі',
               priority: 0,
             },
-            $unset: { machineInfo: '' },
+            $unset: { machineInfo: '', cloudJobId: '' },
           }
         ).exec();
       },
@@ -94,33 +94,8 @@ export class PipelineManager {
           {
             $set: {
               progress: 0,
-              statusMessage: 'Запущено',
+              statusMessage: 'Обчислення',
             },
-          }
-        ).exec();
-      },
-    },
-    {
-      from: PipelineStatus.running,
-      to: PipelineStatus.paused,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          {
-            $set: { statusMessage: 'Пауза' },
-            $unset: { machineInfo: '', cloudJobId: '' },
-          }
-        ).exec();
-      },
-    },
-    {
-      from: PipelineStatus.paused,
-      to: PipelineStatus.running,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          {
-            $set: { statusMessage: 'Запущено' },
           }
         ).exec();
       },
@@ -137,16 +112,6 @@ export class PipelineManager {
     },
     {
       from: PipelineStatus.running,
-      to: PipelineStatus.failed,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          { $set: { progress: 100, statusMessage: 'Помилка' } }
-        ).exec();
-      },
-    },
-    {
-      from: PipelineStatus.running,
       to: PipelineStatus.idle,
       sideEffect: async ({ instanceId }) => {
         await PipelineModel.updateOne(
@@ -154,48 +119,6 @@ export class PipelineManager {
           { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
       },
-    },
-    {
-      from: PipelineStatus.paused,
-      to: PipelineStatus.idle,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
-        ).exec();
-      },
-    },
-    {
-      from: PipelineStatus.queued,
-      to: PipelineStatus.idle,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
-        ).exec();
-      },
-    },
-    {
-      from: PipelineStatus.failed,
-      to: PipelineStatus.queued,
-      sideEffect: async ({ instanceId }) => {
-        await PipelineModel.updateOne(
-          { _id: instanceId },
-          {
-            $set: { progress: 0, statusMessage: 'В черзі' },
-            $unset: { machineInfo: '', cloudJobId: '' },
-          }
-        );
-      },
-    },
-    // TODO: delete it
-    {
-      from: PipelineStatus.running,
-      to: PipelineStatus.queued,
-    },
-    {
-      from: PipelineStatus.completed,
-      to: PipelineStatus.queued,
     },
   ];
 

@@ -21,4 +21,8 @@ export class GraphStructureSettings {
   @Field(() => Int, { nullable: true })
   @prop({ type: () => Number, default: 30 })
   hyperOptimizationMinutesPerPipeline?: number;
+
+  @Field(() => Int, { nullable: true })
+  @prop({ type: () => Number, default: 20 })
+  predictDataPercent?: number;
 }

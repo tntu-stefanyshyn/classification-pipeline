@@ -146,12 +146,12 @@ export class LocalComputationWorker {
         if (stopped || controller.signal.aborted) return;
         try {
           const run = await fetchExperimentRun(this.requireClient(), runId);
-          if (run?.status === PipelineStatus.idle) {
+          if (run && run.status !== PipelineStatus.running) {
             controller.abort();
             return;
           }
         } catch (error) {
-          console.warn('Локальний воркер не зміг оновити статус запуску', error);
+          console.warn('Локальний воркер не зміг оновити статус запуску');
         }
       }
     };

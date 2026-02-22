@@ -302,10 +302,12 @@ export const technologiesSeeder: Seeder = {
       updateOne: {
         filter: { name: technology.name, stage: technology.stage },
         update: {
+          $set: {
+            settings: technology.settings,
+          },
           $setOnInsert: {
             name: technology.name,
             stage: technology.stage,
-            settings: technology.settings,
           },
         },
         upsert: true,

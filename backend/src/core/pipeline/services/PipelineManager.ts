@@ -11,6 +11,13 @@ import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput'
 import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 
+const PIPELINE_STATUS_LOG_MESSAGES: Record<PipelineStatus, string> = {
+  [PipelineStatus.idle]: 'Перехід у стан очікування',
+  [PipelineStatus.queued]: 'Перехід у чергу',
+  [PipelineStatus.running]: 'Початок обчислення',
+  [PipelineStatus.completed]: 'Обчислення завершено',
+};
+
 export class PipelineManager {
   private readonly graphManager = new GraphManager();
   private readonly workflowManager = new WorkflowManager();
@@ -123,13 +130,28 @@ export class PipelineManager {
   ];
 
   async changeStatus({ pipelineId, status, message }: ChangePipelineStatusInput) {
+    const normalizedMessage = message?.trim() || PIPELINE_STATUS_LOG_MESSAGES[status];
+
     await this.workflowManager.changeStatus({
       instanceId: pipelineId,
       status,
       transitions: this.transitions,
       type: WorkflowType.PIPELINE,
-      message,
+      message: normalizedMessage,
     });
+
+    await PipelineModel.updateOne(
+      { _id: pipelineId },
+      {
+        $push: {
+          history: {
+            createdAt: new Date(),
+            message: normalizedMessage,
+            status,
+          },
+        },
+      }
+    ).exec();
 
     return true;
   }

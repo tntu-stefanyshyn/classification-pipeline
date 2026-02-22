@@ -21,6 +21,7 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
         queues
         folds
         hyperOptimizationMinutesPerPipeline
+        predictDataPercent
       }
       nodes {
         _id

@@ -24,9 +24,12 @@ import { runSeeders } from './seeders';
 import { runMigrations } from './migrations';
 import { ComputationResolver } from './modules/computations';
 import { PipelineResolver } from './core/pipeline/graphql/pipeline';
+import { CloudComputationWorker } from './modules/computations/services/CloudComputationWorker';
+import { LocalBackendComputationWorker } from './modules/computations/services/LocalBackendComputationWorker';
 
 async function bootstrap() {
-  // let cloudWorker: CloudComputationWorker | null = null;
+  let cloudWorker: CloudComputationWorker | null = null;
+  let localWorker: LocalBackendComputationWorker | null = null;
   let shuttingDown = false;
   const schema = buildSchemaSync({
     resolvers: [
@@ -125,8 +128,14 @@ async function bootstrap() {
     console.log('Connected to MongoDB');
     await runMigrations();
     await runSeeders();
-    // cloudWorker = new CloudComputationWorker();
-    // cloudWorker.start();
+    if (config.computations.cloudWorkerEnabled) {
+      cloudWorker = new CloudComputationWorker();
+      cloudWorker.start();
+    }
+    if (config.computations.localWorkerEnabled) {
+      localWorker = new LocalBackendComputationWorker();
+      localWorker.start();
+    }
   } else {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
@@ -141,7 +150,8 @@ async function bootstrap() {
     console.log(`Received ${signal}, shutting down...`);
 
     try {
-      // cloudWorker?.stop();
+      cloudWorker?.stop();
+      localWorker?.stop();
       await apollo.stop();
       await mongoose.disconnect();
       await new Promise<void>((resolve, reject) => {

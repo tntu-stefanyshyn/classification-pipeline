@@ -10,6 +10,7 @@ import { metricKeys } from '../constants/labels';
 
 const DEFAULT_FOLDS = 5;
 const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
+const DEFAULT_PREDICT_DATA_PERCENT = 20;
 
 export const buildSettingsDraft = (
   settings?: GraphStructureSettings | null
@@ -31,6 +32,13 @@ export const buildSettingsDraft = (
     settings.hyperOptimizationMinutesPerPipeline > 0
       ? settings.hyperOptimizationMinutesPerPipeline
       : DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE,
+  predictDataPercent:
+    typeof settings?.predictDataPercent === 'number' &&
+    Number.isInteger(settings.predictDataPercent) &&
+    settings.predictDataPercent >= 1 &&
+    settings.predictDataPercent <= 99
+      ? settings.predictDataPercent
+      : DEFAULT_PREDICT_DATA_PERCENT,
 });
 
 export const normalizeMetricInput = (value: string, fallback: string): string => {
@@ -90,6 +98,14 @@ export const validateGraphSettings = (
     errors.push('Час гіпероптимізації для одного конвеєра має бути цілим числом більше 0.');
   }
 
+  if (
+    !Number.isInteger(settingsDraft.predictDataPercent) ||
+    settingsDraft.predictDataPercent < 1 ||
+    settingsDraft.predictDataPercent > 99
+  ) {
+    errors.push('Відсоток даних для предікту має бути цілим числом від 1 до 99.');
+  }
+
   const normalizedMetrics: Record<MetricKey, number> = {
     accuracy: parsedMetrics.accuracy / 100,
     f1: parsedMetrics.f1 / 100,
@@ -108,6 +124,7 @@ export const validateGraphSettings = (
             queues: settingsDraft.queues,
             folds: settingsDraft.folds,
             hyperOptimizationMinutesPerPipeline: settingsDraft.hyperOptimizationMinutesPerPipeline,
+            predictDataPercent: settingsDraft.predictDataPercent,
           }
         : null,
   };

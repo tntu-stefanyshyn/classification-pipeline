@@ -31,7 +31,20 @@ AWS_COMPUTATION_RESULTS_REGION=...
 AWS_REGION=...
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
+BACKEND_CLOUD_WORKER_ENABLED=true
+BACKEND_LOCAL_WORKER_ENABLED=true
+BACKEND_LOCAL_DOCKER_IMAGE=aws-jobs
 ```
+
+- `BACKEND_CLOUD_WORKER_ENABLED=true` вмикає обробку черги `cloud`.
+- `BACKEND_LOCAL_WORKER_ENABLED=true` вмикає обробку черги `local` на бекенді через Docker.
+- `BACKEND_LOCAL_DOCKER_IMAGE` задає локальний образ для `local`-обчислень (за замовчуванням `aws-jobs`).
+
+## 3.1 Вибір середовища (локально / хмара)
+
+- У налаштуваннях графа ввімкніть потрібні черги (`Локально`, `У хмарі`).
+- У карточці обчислень доступний перемикач середовища запуску.
+- Якщо ввімкнені обидві черги, можна запускати один і той самий шлях або в `local`, або в `cloud`.
 
 ## 4. Формат обміну
 

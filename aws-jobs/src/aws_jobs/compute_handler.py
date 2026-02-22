@@ -16,13 +16,21 @@ from sklearn.metrics import (
   f1_score,
   roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import ShuffleSplit, StratifiedShuffleSplit
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from graphql.completePipeline import completePipeline 
 from graphql.graphqlRequest import graphqlRequest 
 from graphql.updatePipelineProgress import updatePipelineProgress 
+
+STAGE_LABELS_UA: Dict[str, str] = {
+    "PREPROCESSING": "Попередня обробка",
+    "DATA_ENHANCEMENT": "Покращення даних",
+    "FEATURE_EXTRACTION": "Видобування ознак",
+    "DIMENSIONALITY_REDUCTION": "Зниження розмірності",
+    "CLASSIFICATION": "Класифікація",
+}
 
 
 def _emit(
@@ -39,6 +47,12 @@ def _emit(
     message=message,
     progress=progress
   )
+
+
+def _format_step_log(action: str, technology: str, stage: str) -> str:
+    stage_ua = STAGE_LABELS_UA.get(stage, stage) or "Невідомий етап"
+    technology_label = technology.strip() or stage_ua or "Невідомий крок"
+    return f'{action} "{technology_label}", етап {stage_ua}'
 
 def _load_payload() -> Dict[str, Any]:
     raw = sys.stdin.read()
@@ -80,6 +94,7 @@ def _fetch_path_from_backend(
           graph {
             settings {
               folds
+              predictDataPercent
             }
             nodes {
               _id
@@ -111,7 +126,8 @@ def _fetch_path_from_backend(
         path_nodes.append(node)
 
     file_id = experiment.get("fileId")
-    return path_nodes, file_id, experiment.get("graph").get('settings')
+    graph_settings = (experiment.get("graph") or {}).get("settings") or {}
+    return path_nodes, file_id, graph_settings
 
 
 def _fetch_signed_download_url(
@@ -369,7 +385,8 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
             gamma_value = gamma
         coef0 = _to_float(settings.get("coef0"), 0.0) or 0.0
         shrinking = _to_bool(settings.get("shrinking"), True)
-        probability = _to_bool(settings.get("probability"), False)
+        # Keep ROC-AUC available for SVM in every run.
+        probability = True
         tol = _to_float(settings.get("tol"), 0.001) or 0.001
         max_iter = _to_int(settings.get("max_iter"), -1) or -1
         class_weight_raw = (settings.get("class_weight") or "none").lower()
@@ -413,39 +430,53 @@ def _run_classifier(
     y: pd.Series,
     technology: str,
     settings: Dict[str, str],
-    graphStructureSettings: Dict[str, str],
+    graphStructureSettings: Dict[str, Any],
     progress_for_one_step: float,
     backend_url: str,
     pipelineId: str,
 ):
-    test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
     random_state = _to_int(settings.get("random_state"), 42)
-    folds =_to_int(graphStructureSettings.get('folds'))
+    folds = _to_int(graphStructureSettings.get("folds"), 5) or 5
+    predict_percent = _to_float(graphStructureSettings.get("predictDataPercent"))
+    if predict_percent is None:
+        # Backward compatibility for old node-level settings.
+        predict_percent = _to_float(settings.get("predict_percent"), 20.0)
+    predict_percent = predict_percent or 20.0
+    if predict_percent <= 0 or predict_percent >= 100:
+        predict_percent = 20.0
+    predict_fraction = predict_percent / 100.0
 
     labels = np.unique(y)
-    folds = _to_int(graphStructureSettings.get('folds')) 
     try:
-        splitter = StratifiedKFold(
-            n_splits=folds, shuffle=True, random_state=random_state
+        splitter = StratifiedShuffleSplit(
+            n_splits=folds, test_size=predict_fraction, random_state=random_state
         )
         splits = splitter.split(X, y)
     except Exception:
-        splitter = KFold(n_splits=folds, shuffle=True, random_state=random_state)
+        splitter = ShuffleSplit(
+            n_splits=folds, test_size=predict_fraction, random_state=random_state
+        )
         splits = splitter.split(X)
 
     all_true: List[Any] = []
     all_pred: List[Any] = []
     accuracyScores: List[float] = []
     f1Scores: List[float] = []
-    rocAucScores: List[Optional[float]] = []
+    rocAucScores: List[float] = []
     confusionMatrixes: List[List[float]] = []
+    predictionSampleCounts: List[int] = []
+    predictionSampleCount: Optional[int] = None
 
     for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
+        prediction_rows = len(val_idx)
+        predictionSampleCounts.append(prediction_rows)
+        if predictionSampleCount is None:
+            predictionSampleCount = prediction_rows
         progress = (progress_for_one_step * 0.5) * (fold_index)
         _emit(
             backend_url,
             pipelineId,
-            message=f"Початок крос-валідації: крок {fold_index}/{folds}",
+            message=f"Початок перехресної валідації: крок {fold_index}/{folds}",
             progress=progress
         )
         X_train = X.iloc[train_idx]
@@ -459,7 +490,8 @@ def _run_classifier(
 
         accuracyScores.append(float(accuracy_score(y_val, y_pred)))
         f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
-        rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
+        scores = model.predict_proba(X_val)
+        rocAucScores.append(float(roc_auc_score(y_val, scores, multi_class="ovr", average="macro")))
 
         all_true.extend(list(y_val))
         all_pred.extend(list(y_pred))
@@ -469,39 +501,21 @@ def _run_classifier(
         _emit(
             backend_url,
             pipelineId,
-            message=f"Завершення крос-валідації: крок {fold_index}/{folds}",
+            message=f"Завершення перехресної валідації: крок {fold_index}/{folds}",
             progress=progress
         )
 
-    channelNames =  [str(label) for label in labels]
-    return accuracyScores, f1Scores, rocAucScores, confusionMatrixes, channelNames
-
-
-def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
-    scores: Any = None
-    if hasattr(model, "predict_proba"):
-        try:
-            scores = model.predict_proba(X_val)
-        except Exception:
-            scores = None
-    if scores is None and hasattr(model, "decision_function"):
-        try:
-            scores = model.decision_function(X_val)
-        except Exception:
-            scores = None
-    if scores is None:
-        return None
-    try:
-        scores_array = np.asarray(scores)
-        if scores_array.ndim == 1:
-            return float(roc_auc_score(y_val, scores_array))
-        if scores_array.shape[1] == 2:
-            return float(roc_auc_score(y_val, scores_array[:, 1]))
-        return float(
-            roc_auc_score(y_val, scores_array, multi_class="ovr", average="macro")
-        )
-    except Exception:
-        return None
+    channelNames = [str(label) for label in labels]
+    return (
+        accuracyScores,
+        f1Scores,
+        rocAucScores,
+        confusionMatrixes,
+        channelNames,
+        predictionSampleCount or 0,
+        predictionSampleCounts,
+        predict_percent,
+    )
 
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -541,14 +555,13 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
-        label = technology or stage or f"крок {index}"
 
         progress = (progress_for_one_step * 0.5) * (index)
 
         _emit(
             backend_url,
             pipelineId,
-            message=f"Початок кроку: {label}, {stage}",
+            message=_format_step_log("Початок кроку", technology, stage),
             progress=progress
         )
 
@@ -561,7 +574,16 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif stage == "DIMENSIONALITY_REDUCTION":
             X = _apply_pca(X, settings)
         elif stage == "CLASSIFICATION":
-            accuracyScores, f1Scores, rocAucScores, confusionMatrixes, channelNames = _run_classifier(
+            (
+                accuracyScores,
+                f1Scores,
+                rocAucScores,
+                confusionMatrixes,
+                channelNames,
+                predictionSampleCount,
+                predictionSampleCounts,
+                predictPercent,
+            ) = _run_classifier(
                 X,
                 y,
                 technology or "svm",
@@ -576,12 +598,15 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             report["rocAucScores"] = rocAucScores
             report["confusionMatrixes"] = confusionMatrixes
             report["channelNames"] = channelNames
+            report["predictionSampleCount"] = predictionSampleCount
+            report["predictionSampleCounts"] = predictionSampleCounts
+            report["predictionDataPercent"] = predictPercent
             break
         progress = (progress_for_one_step) * (index)
         _emit(
             backend_url,
             pipelineId,
-            message=f"Завершення кроку: {label}, {stage}",
+            message=_format_step_log("Завершення кроку", technology, stage),
             progress=progress
         )
 

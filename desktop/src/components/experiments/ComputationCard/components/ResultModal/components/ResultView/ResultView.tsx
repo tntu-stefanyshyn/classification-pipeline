@@ -1,4 +1,4 @@
-import { FC, useMemo } from 'react';
+import { FC, type CSSProperties, useMemo } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { ResultViewProps } from './ResultView.types';
 import { HistoryTable } from './components';
@@ -8,6 +8,37 @@ import { DataTable } from '../../../../../../ui/DataTable';
 type MetricRow = {
   metric: string;
   values: string[];
+};
+
+const formatMatrixValue = (value: unknown) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const calculateMatrixPercent = (value: unknown, rowTotal: number) => {
+  const numeric = formatMatrixValue(value);
+  if (!Number.isFinite(rowTotal) || rowTotal <= 0) {
+    return 0;
+  }
+  return (numeric / rowTotal) * 100;
+};
+
+const formatMatrixPercent = (value: unknown, rowTotal: number) => {
+  return `${calculateMatrixPercent(value, rowTotal).toFixed(2)}%`;
+};
+
+const getConfusionCellStyle = (percent: number): CSSProperties => {
+  const ratio = Math.max(0, Math.min(percent, 100)) / 100;
+  const hue = 4 + (130 - 4) * ratio;
+  const saturation = 72;
+  const lightness = 93 - ratio * 38;
+  const textColor = ratio >= 0.58 ? '#ffffff' : '#0b1220';
+
+  return {
+    backgroundColor: `hsl(${hue.toFixed(1)} ${saturation}% ${lightness.toFixed(1)}%)`,
+    color: textColor,
+    fontWeight: 700,
+  };
 };
 
 const formatDuration = (value?: number) =>
@@ -24,6 +55,33 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   const eegRows = payload?.sampleCount;
   const durationLabel = formatDuration(payload?.duration);
   const hasResults = Boolean(payload);
+  const predictionSampleCounts = payload?.predictionSampleCounts ?? [];
+  const predictionDataPercent = payload?.predictionDataPercent;
+  const confusionMatrixes = useMemo(() => {
+    const matrices = payload?.confusionMatrixes ?? [];
+    if (matrices.length > 0) return matrices;
+    if (payload?.confusionMatrix && payload.confusionMatrix.length > 0) {
+      return [payload.confusionMatrix];
+    }
+    return [];
+  }, [payload?.confusionMatrix, payload?.confusionMatrixes]);
+  const predictionSampleCount = useMemo(() => {
+    const singleRaw = Number(payload?.predictionSampleCount);
+    if (Number.isFinite(singleRaw) && singleRaw > 0) {
+      return singleRaw;
+    }
+    const fromList = predictionSampleCounts.find(
+      (value) => Number.isFinite(Number(value)) && Number(value) > 0
+    );
+    if (Number.isFinite(Number(fromList)) && Number(fromList) > 0) {
+      return Number(fromList);
+    }
+    const firstMatrixTotal = (confusionMatrixes[0] ?? []).reduce(
+      (total, row) => total + row.reduce((rowTotal, cell) => rowTotal + formatMatrixValue(cell), 0),
+      0
+    );
+    return firstMatrixTotal > 0 ? firstMatrixTotal : null;
+  }, [confusionMatrixes, payload?.predictionSampleCount, predictionSampleCounts]);
   const machineQueue = machineInfo?.queue ? uk.computationQueue[machineInfo.queue] : null;
   const machineRamLabel =
     typeof machineInfo?.memoryGb === 'number' ? `${machineInfo.memoryGb} ГБ` : 'Немає даних';
@@ -105,7 +163,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
             <div className="result-section-head">
               <div>
                 <h4 className="result-section-title">Результати обчислення</h4>
-                <p className="muted small">Кросвалідація та параметри EEG.</p>
+                <p className="muted small">Перехресна валідація та параметри EEG.</p>
               </div>
               <span className="result-count">{payload?.accuracyScores?.length ?? 0}</span>
             </div>
@@ -116,6 +174,71 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
                   columns={metricColumns}
                   emptyMessage="Немає метрик для відображення."
                 />
+                {confusionMatrixes.length > 0 ? (
+                  <div className="result-details">
+                    <span className="muted small">
+                      Матриці неточностей по кроках перехресної валідації
+                    </span>
+                    <div className="muted small">
+                      {`База: ${
+                        Number.isFinite(predictionSampleCount ?? Number.NaN)
+                          ? predictionSampleCount
+                          : 'Немає даних'
+                      } рядків предікту${
+                        Number.isFinite(predictionDataPercent ?? Number.NaN)
+                          ? ` (${predictionDataPercent}% даних)`
+                          : ''
+                      }`}
+                    </div>
+                    {confusionMatrixes.map((matrix, matrixIndex) => {
+                      return (
+                        <div
+                          className="result-confusion"
+                          key={`confusion-matrix-${matrixIndex + 1}`}
+                        >
+                          <table className="confusion-table">
+                            <thead>
+                              <tr>
+                                <th>{`Крок ${matrixIndex + 1}`}</th>
+                                {matrix[0]?.map((_, columnIndex) => (
+                                  <th key={`matrix-head-${matrixIndex + 1}-${columnIndex}`}>
+                                    {channelNames[columnIndex] ?? `Клас ${columnIndex + 1}`}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matrix.map((row, rowIndex) => (
+                                <tr key={`matrix-row-${matrixIndex + 1}-${rowIndex}`}>
+                                  <th>{channelNames[rowIndex] ?? `Клас ${rowIndex + 1}`}</th>
+                                  {row.map((cell, columnIndex) => {
+                                    const rowTotal = row.reduce(
+                                      (rowTotal, nextCell) =>
+                                        rowTotal + formatMatrixValue(nextCell),
+                                      0
+                                    );
+                                    const cellPercent = calculateMatrixPercent(cell, rowTotal);
+
+                                    return (
+                                      <td
+                                        key={`matrix-cell-${matrixIndex + 1}-${rowIndex}-${columnIndex}`}
+                                        style={getConfusionCellStyle(cellPercent)}
+                                      >
+                                        {formatMatrixPercent(cell, rowTotal)}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="muted small">Матриці неточностей відсутні.</p>
+                )}
                 <div className="result-meta-grid">
                   <div className="result-meta-item">
                     <span className="muted small">Час виконання</span>

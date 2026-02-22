@@ -76,6 +76,7 @@ export class OptimizationRunner {
       const proc = spawn('docker', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      let stderrBuffer = '';
       const timeoutSeconds = Math.max(0, Math.trunc(payload.timeoutSeconds ?? 0));
       const timeoutId =
         timeoutSeconds > 0
@@ -84,15 +85,23 @@ export class OptimizationRunner {
               reject(new Error(`Оптимізація перевищила ліміт часу (${timeoutSeconds} с).`));
             }, timeoutSeconds * 1000)
           : null;
+      proc.stderr.on('data', (chunk) => {
+        stderrBuffer += chunk.toString();
+      });
       proc.on('error', (error) => {
         if (timeoutId) clearTimeout(timeoutId);
         console.error('Помилка запуску процесу оптимізації', error);
         reject(error);
       });
 
-      proc.on('close', () => {
+      proc.on('close', (code) => {
         if (timeoutId) clearTimeout(timeoutId);
-        resolve();
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        const message = stderrBuffer.trim() || `Оптимізація завершилась з кодом ${code}`;
+        reject(new Error(message));
       });
 
       proc.stdin.write(JSON.stringify(containerPayload));

@@ -59,8 +59,11 @@ export class WorkflowManager {
     const transition = transitions.find(
       (transition) => transition.from === workflow.status && transition.to === status
     );
-    console.log('change status => ', { prev: workflow.status, status, message });
     if (!transition) throw new Error('TRANSITION_NOT_FOUND');
+    const normalizedMessage =
+      typeof message === 'string' && message.trim()
+        ? message.trim()
+        : `Перехід статусу: ${String(workflow.status)} -> ${String(status)}`;
 
     await WorkflowModel.updateOne(
       { _id: workflow._id },
@@ -70,7 +73,7 @@ export class WorkflowManager {
           history: {
             previousStatus: workflow.status,
             nextStatus: status,
-            message,
+            message: normalizedMessage,
             createdAt: new Date(),
           },
         },

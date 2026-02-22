@@ -1,6 +1,13 @@
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 const defaultGraphqlUrl =
   process.env.BACKEND_GRAPHQL_URL ?? 'http://host.docker.internal:4000/graphql';
+const toBool = (value: string | undefined, defaultValue: boolean) => {
+  if (value === undefined) return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') return true;
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') return false;
+  return defaultValue;
+};
 
 export const config = {
   nodeEnv,
@@ -37,6 +44,9 @@ export const config = {
     pythonBin: process.env.PYTHON_BIN ?? 'python3',
     handlerModule: process.env.COMPUTE_HANDLER_MODULE ?? 'aws_jobs.compute_handler',
     optimizationModule: process.env.OPTIMIZATION_HANDLER_MODULE ?? 'aws_jobs.optimization_handler',
+    cloudWorkerEnabled: toBool(process.env.BACKEND_CLOUD_WORKER_ENABLED, true),
+    localWorkerEnabled: toBool(process.env.BACKEND_LOCAL_WORKER_ENABLED, true),
+    localDockerImage: process.env.BACKEND_LOCAL_DOCKER_IMAGE ?? 'aws-jobs',
   },
 };
 

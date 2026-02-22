@@ -21,8 +21,13 @@ query PipelineInfo($pipelineId: ID!) {
     }
     computingResult {
       accuracyScores
+      confusionMatrix
+      confusionMatrixes
       duration
       f1Scores
+      predictionDataPercent
+      predictionSampleCount
+      predictionSampleCounts
       rocAucScores
       sampleCount
       channelNames

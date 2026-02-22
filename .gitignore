@@ -96,6 +96,7 @@ desktop/out/
 # Workspace builds
 dist/
 backend/src/**/*.js
+backend/backups/
 
 # GraphQL codegen outputs
 generated/

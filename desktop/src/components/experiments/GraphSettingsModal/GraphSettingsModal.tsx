@@ -136,6 +136,25 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 }}
                 value={settingsDraft.hyperOptimizationMinutesPerPipeline.toString()}
               />
+              <InputControl
+                type="number"
+                label="Відсоток даних для предікту (%)"
+                min={1}
+                max={99}
+                step={1}
+                onChange={(e) => {
+                  const nextValue = Number.parseInt(e.target.value, 10);
+                  setSettingsDraft((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          predictDataPercent: Number.isFinite(nextValue) ? nextValue : 0,
+                        }
+                      : prev
+                  );
+                }}
+                value={settingsDraft.predictDataPercent.toString()}
+              />
             </div>
 
             <p className="graph-settings-label muted small">Середовище обчислення</p>

@@ -11,5 +11,13 @@ query DashboardData {
     name
     status
     createdAt
+    computationHosts {
+      lastSeenAt
+    }
+    optimization {
+      history {
+        createdAt
+      }
+    }
   }
 }

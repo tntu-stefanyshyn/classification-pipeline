@@ -1,8 +1,25 @@
 import { useMemo, type FC } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthLayout } from '../../layout/AuthLayout';
 import { useDashboardDataQuery, useServerInfoQuery } from './graphql';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import type { DashboardPageProps } from './DashboardPage.types';
+import { ExperimentStatus } from '../../../graphql/types.generated';
+
+const toTimestamp = (value: unknown): number => {
+  if (!value) return 0;
+  const timestamp = new Date(String(value)).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const experimentStatusLabel = (status?: ExperimentStatus | null) => {
+  if (status === ExperimentStatus.creating) return 'Створення';
+  if (status === ExperimentStatus.configuring) return 'Налаштування';
+  if (status === ExperimentStatus.computing) return 'Обчислення';
+  if (status === ExperimentStatus.optimization) return 'Оптимізація';
+  if (status === ExperimentStatus.completed) return 'Завершено';
+  return 'Невідомо';
+};
 
 const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
   const { data, loading, error, refetch } = useDashboardDataQuery({
@@ -19,6 +36,28 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
 
   const files = data?.uploadedFiles ?? [];
   const experiments = data?.experiments ?? [];
+  const experimentsByLastActivity = useMemo(() => {
+    return experiments
+      .map((experiment) => {
+        const activityTimestamps = [
+          toTimestamp(experiment.createdAt),
+          ...(experiment.computationHosts ?? []).map((host) => toTimestamp(host?.lastSeenAt)),
+          ...((experiment.optimization?.history ?? []).map((item) =>
+            toTimestamp(item?.createdAt)
+          ) ?? []),
+        ].filter((timestamp) => timestamp > 0);
+
+        const latestTimestamp = activityTimestamps.length
+          ? Math.max(...activityTimestamps)
+          : toTimestamp(experiment.createdAt);
+
+        return {
+          ...experiment,
+          latestTimestamp,
+        };
+      })
+      .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+  }, [experiments]);
 
   const summary = useMemo(
     () => [
@@ -126,18 +165,25 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
               <p className="muted">Експерименти ще не створені. Розпочніть перший запуск.</p>
             )}
 
-            {experiments.map((experiment) => (
-              <div key={experiment._id} className="item-row">
-                <div className="item-meta">
-                  <p className="item-title">{experiment.name}</p>
-                  <p className="muted">Створено {formatTimeAgo(experiment.createdAt)}</p>
+            {experimentsByLastActivity.map((experiment) => (
+              <div key={experiment._id} className="item-row experiment-row">
+                <Link className="experiment-link" to={`/app/experiments/${experiment._id}`}>
+                  <div className="item-meta">
+                    <p className="item-title">{experiment.name}</p>
+                    <p className="muted">
+                      Остання активність{' '}
+                      {formatTimeAgo(new Date(experiment.latestTimestamp).toISOString())}
+                    </p>
+                  </div>
+                </Link>
+                <div className="experiment-meta">
+                  <span className={`status-pill status-${experiment.status}`}>
+                    {experimentStatusLabel(experiment.status)}
+                  </span>
+                  <Link className="table-link small" to={`/app/experiments/${experiment._id}`}>
+                    Відкрити експеримент
+                  </Link>
                 </div>
-                <span className={`status-pill status-${experiment.status}`}>
-                  {experiment.status === 'creating' ? 'Створення' : null}
-                  {experiment.status === 'configuring' ? 'Налаштування' : null}
-                  {experiment.status === 'computing' ? 'Обчислення' : null}
-                  {experiment.status === 'completed' ? 'Завершено' : null}
-                </span>
               </div>
             ))}
           </div>

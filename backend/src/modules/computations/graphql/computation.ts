@@ -15,9 +15,8 @@ export class ComputationResolver {
   @Query(() => OptimizationResult)
   async optimizeExperimentRuns(
     @Arg('experimentId', () => ID) experimentId: string
-  ): Promise<boolean> {
-    await this.manager.optimize(experimentId);
-    return true;
+  ): Promise<OptimizationResult> {
+    return this.manager.optimize(experimentId);
   }
 
   @Mutation(() => Boolean)

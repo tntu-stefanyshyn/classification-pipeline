@@ -202,6 +202,10 @@ export class ExperimentManager {
       from: ExperimentStatus.optimization,
       to: ExperimentStatus.completed,
     },
+    {
+      from: ExperimentStatus.completed,
+      to: ExperimentStatus.optimization,
+    },
   ];
 
   async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {

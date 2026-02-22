@@ -16,7 +16,6 @@ export type PythonHandlerCallbacks = {
 };
 
 const DOCKER_BUILD_PREFIX = '[docker build] ';
-const DOCKER_RUN_PREFIX = '[docker run] ';
 const DOCKER_IMAGE = 'aws-jobs';
 const rebuildFlag = (process.env.LOCAL_WORKER_REBUILD_IMAGE ?? '').trim().toLowerCase();
 const shouldRebuildImage =
@@ -27,8 +26,7 @@ let imageReadyPromise: Promise<void> | null = null;
 
 const attachStreamLogger = (
   stream: NodeJS.ReadableStream | null,
-  callbacks: PythonHandlerCallbacks,
-  prefix: string
+  callbacks: PythonHandlerCallbacks
 ) => {
   if (!stream) return;
   let buffer = '';
@@ -39,7 +37,7 @@ const attachStreamLogger = (
       const line = buffer.slice(0, idx).trim();
       buffer = buffer.slice(idx + 1);
       if (line) {
-        void callbacks.onLog?.(`${prefix}${line}`);
+        void callbacks.onLog?.(`${line}`);
       }
       idx = buffer.indexOf('\n');
     }
@@ -47,7 +45,7 @@ const attachStreamLogger = (
   stream.on('end', () => {
     const leftover = buffer.trim();
     if (leftover) {
-      void callbacks.onLog?.(`${prefix}${leftover}`);
+      void callbacks.onLog?.(`${leftover}`);
     }
   });
 };
@@ -64,8 +62,8 @@ const runDockerCommand = (
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    attachStreamLogger(proc.stdout, callbacks, logPrefix);
-    attachStreamLogger(proc.stderr, callbacks, logPrefix);
+    attachStreamLogger(proc.stdout, callbacks);
+    attachStreamLogger(proc.stderr, callbacks);
 
     let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {
@@ -179,8 +177,8 @@ export const runPythonHandler = async (
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    attachStreamLogger(proc.stdout, callbacks, DOCKER_RUN_PREFIX);
-    attachStreamLogger(proc.stderr, callbacks, DOCKER_RUN_PREFIX);
+    attachStreamLogger(proc.stdout, callbacks);
+    attachStreamLogger(proc.stderr, callbacks);
 
     let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {

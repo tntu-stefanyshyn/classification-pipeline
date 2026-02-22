@@ -125,8 +125,14 @@ def vector_length(v: List[float]) -> float:
     return math.sqrt(sum(x * x for x in v))
 
 def _min_max_normalize(values: List[float]) -> List[float]:
+    if not values:
+        return []
     min_value = min(values)
     max_value = max(values)
+    if not math.isfinite(min_value) or not math.isfinite(max_value):
+        return [0.0 for _ in values]
+    if max_value == min_value:
+        return [0.0 for _ in values]
     return [(value - min_value) / (max_value - min_value) for value in values]
 
 
@@ -224,23 +230,46 @@ def optimize(payload: Dict[str, Any]):
     parsedPipelines: List[Dict[str, Any]] = []
 
     for pipeline in pipelines or []:
-        computingResult = pipeline["computingResult"]
+        if str(pipeline.get("status") or "").lower() != "completed":
+            continue
+
+        computingResult = pipeline.get("computingResult") or {}
+        accuracy_values = _flatten_numeric(computingResult.get("accuracyScores"))
+        f1_values = _flatten_numeric(computingResult.get("f1Scores"))
+        roc_auc_values = _flatten_numeric(computingResult.get("rocAucScores"))
+        duration = _to_number(computingResult.get("duration"))
+        sample_count = _to_number(computingResult.get("sampleCount"))
+
+        if (
+            not accuracy_values
+            or not f1_values
+            or not roc_auc_values
+            or duration is None
+            or sample_count is None
+            or sample_count <= 0
+        ):
+            continue
+
         metrics = {
-          "accuracy":  vector_length(computingResult["accuracyScores"]),
-          "f1": vector_length(computingResult["f1Scores"]),
-          "rocAuc": vector_length(computingResult["rocAucScores"]),
-          "ntps": computingResult["duration"] / computingResult["sample_count"]
+          "accuracy":  vector_length(accuracy_values),
+          "f1": vector_length(f1_values),
+          "rocAuc": vector_length(roc_auc_values),
+          "ntps": duration / sample_count
         }
         parsedPipelines.append({
-          "pipelineId": pipeline["_id"],
-          "metrics": metrics,
+            "pipelineId": pipeline["_id"],
+            "metrics": metrics,
         })
-    metrics = ["accuracy", "f1", "rocAuc", "ntps"]
+
+    if not parsedPipelines:
+        raise ValueError("Немає завершених конвеєрів з валідними результатами для оптимізації.")
+
+    metric_names = ["accuracy", "f1", "rocAuc", "ntps"]
     normalized = {
       metric: _min_max_normalize(
-        [item[metric] for item in parsedPipelines if metric in item]
+        [item["metrics"][metric] for item in parsedPipelines]
       )
-      for metric in metrics
+      for metric in metric_names
     }
 
     best: Optional[Dict[str, Any]] = None

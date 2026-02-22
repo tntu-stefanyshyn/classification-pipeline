@@ -13,6 +13,7 @@ import {
   ClassificationStage,
   ComputationQueue,
   ExperimentStatus,
+  OptimizationStatus,
   PipelineStatus,
 } from '../../../graphql/types.generated';
 import { config } from '../../../config/config';
@@ -152,6 +153,8 @@ const OptimizationCard: FC = () => {
           }
         : null;
 
+  const optimizationStatus = optimization?.status;
+  const isOptimizationRunning = optimizationStatus === OptimizationStatus.optimizing;
   const progress = typeof optimization?.progress === 'number' ? optimization.progress : null;
 
   const graphSettingsReady = useMemo(() => {
@@ -160,6 +163,14 @@ const OptimizationCard: FC = () => {
     if (
       !Number.isInteger(graphSettings.hyperOptimizationMinutesPerPipeline) ||
       (graphSettings.hyperOptimizationMinutesPerPipeline ?? 0) < 1
+    ) {
+      return false;
+    }
+    const predictDataPercent = graphSettings.predictDataPercent ?? 20;
+    if (
+      !Number.isInteger(predictDataPercent) ||
+      predictDataPercent < 1 ||
+      predictDataPercent > 99
     ) {
       return false;
     }
@@ -193,7 +204,16 @@ const OptimizationCard: FC = () => {
 
   const canOptimize = useMemo(() => {
     if (!experiment || !graph || graphPaths.length === 0) return false;
-    if (experiment.status !== ExperimentStatus.computing) return false;
+    if (
+      experiment.status !== ExperimentStatus.computing &&
+      experiment.status !== ExperimentStatus.completed &&
+      experiment.status !== ExperimentStatus.optimization
+    ) {
+      return false;
+    }
+    if (experiment.status === ExperimentStatus.optimization && isOptimizationRunning) {
+      return false;
+    }
     if (!graphSettingsReady) return false;
     if (!allPathsHaveClassification) return false;
     if (allowedQueues.length === 0) return false;
@@ -207,11 +227,19 @@ const OptimizationCard: FC = () => {
     graph,
     graphPaths.length,
     graphSettingsReady,
+    isOptimizationRunning,
   ]);
 
   const optimizeBlocker = useMemo(() => {
-    if (experiment?.status !== ExperimentStatus.computing) {
-      return 'Оптимізація доступна лише зі статусу експерименту "Обчислення".';
+    if (experiment?.status === ExperimentStatus.optimization && isOptimizationRunning) {
+      return 'Оптимізація вже виконується.';
+    }
+    if (
+      experiment?.status !== ExperimentStatus.computing &&
+      experiment?.status !== ExperimentStatus.completed &&
+      experiment?.status !== ExperimentStatus.optimization
+    ) {
+      return 'Оптимізація доступна лише зі статусів експерименту "Обчислення" або "Завершено".';
     }
     if (!graphSettingsReady) {
       return 'Заповніть налаштування графа, щоб запускати оптимізацію.';
@@ -232,7 +260,14 @@ const OptimizationCard: FC = () => {
     allowedQueues.length,
     experiment?.status,
     graphSettingsReady,
+    isOptimizationRunning,
   ]);
+
+  const optimizationButtonLabel = optimizing
+    ? 'Оптимізація...'
+    : optimization
+      ? 'Перезапустити оптимізацію'
+      : 'Запустити оптимізацію';
 
   const handleStartOptimization = async () => {
     if (!experiment) return;
@@ -291,10 +326,7 @@ const OptimizationCard: FC = () => {
   return (
     <section className="card data-card">
       <header className="card-head">
-        <div>
-          <h3>Оптимізація</h3>
-          <p className="muted">Стан оптимізації та лідери експерименту.</p>
-        </div>
+        <h3>Оптимізація</h3>
         <div className="card-actions">
           <button
             className="btn ghost small"
@@ -303,7 +335,7 @@ const OptimizationCard: FC = () => {
             disabled={!canOptimize || optimizing}
             title={optimizeBlocker ?? 'Запустити оптимізацію'}
           >
-            {optimizing ? 'Оптимізація...' : 'Запустити оптимізацію'}
+            {optimizationButtonLabel}
           </button>
           <a
             className="btn ghost small"

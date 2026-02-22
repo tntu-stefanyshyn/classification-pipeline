@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useMemo, useState, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
+import { useApolloClient } from '@apollo/client';
 import ReactFlow from 'reactflow';
 import { DataTable, tableLabels } from '../../ui/DataTable';
 import {
@@ -27,9 +28,14 @@ import {
   useStopExperimentRunMutation,
 } from '../../pages/ExperimentDetailsPage/graphql';
 import ResultModal from './components/ResultModal/ResultModal';
-import { PipelinesQuery } from '../../../graphql/queries/generated/pipelines';
+import {
+  PipelinesDocument,
+  type PipelinesQuery,
+  type PipelinesQueryVariables,
+} from '../../../graphql/queries/generated/pipelines';
 import uk from '../../../i18n/uk';
 import { ChangePipelineStatusButton } from './components';
+import { useChangePipelineStatusMutation } from './components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus';
 
 const ComputationCard: FC = () => {
   const params = useParams();
@@ -76,13 +82,12 @@ const ComputationCard: FC = () => {
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();
+  const [changePipelineStatus] = useChangePipelineStatusMutation();
+  const apolloClient = useApolloClient();
+  const [movingToWaiting, setMovingToWaiting] = useState(false);
 
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const runs = runsData?.pipelines ?? [];
-  const pathLabels = useMemo(
-    () => new Map(graphPaths.map((path) => [path.id, path.label])),
-    [graphPaths]
-  );
   const runsByPath = useMemo(() => {
     const map = new Map<string, typeof runs>();
     runs.forEach((run) => {
@@ -96,11 +101,33 @@ const ComputationCard: FC = () => {
     );
     return map;
   }, [runs]);
-  const resolvePathLabel = (nodeIds: string[]) =>
-    pathLabels.get(nodeIds.join('.')) ?? nodeIds.join(' -> ');
+  const localMachineInfo = useMemo(() => {
+    const runsWithMachine = runs.filter((run) => {
+      const machine = run.machineInfo;
+      return (
+        Boolean(machine?.hostname || machine?.cpuModel || machine?.gpuModel) ||
+        typeof machine?.memoryGb === 'number' ||
+        typeof machine?.cores === 'number'
+      );
+    });
+    if (runsWithMachine.length === 0) return null;
+
+    const [latestRun] = [...runsWithMachine].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    return latestRun?.machineInfo ?? null;
+  }, [runs]);
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
+    const predictDataPercent = graphSettings.predictDataPercent ?? 20;
+    if (
+      !Number.isInteger(predictDataPercent) ||
+      predictDataPercent < 1 ||
+      predictDataPercent > 99
+    ) {
+      return false;
+    }
     const { accuracy, f1, rocAuc, ntps } = graphSettings.metrics;
     const weights = [accuracy, f1, rocAuc, ntps];
     if (weights.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
@@ -153,13 +180,55 @@ const ComputationCard: FC = () => {
     });
     return map;
   }, [graphPaths, runsByPath]);
+  const handleMoveAllLocalToWaiting = async () => {
+    if (!id) return;
+
+    setMovingToWaiting(true);
+    try {
+      const localRunsResult = await apolloClient.query<PipelinesQuery, PipelinesQueryVariables>({
+        query: PipelinesDocument,
+        variables: { experimentId: id, queue: ComputationQueue.local },
+        fetchPolicy: 'network-only',
+      });
+      const localRunsToMove = (localRunsResult.data?.pipelines ?? []).filter(
+        (run) => run.status === PipelineStatus.idle || run.status === PipelineStatus.running
+      );
+
+      if (localRunsToMove.length === 0) {
+        setActionStatus('Немає локальних обчислень для переведення в очікування.');
+        return;
+      }
+
+      await Promise.all(
+        localRunsToMove.map((run) =>
+          changePipelineStatus({
+            variables: {
+              input: {
+                pipelineId: run._id,
+                status: PipelineStatus.queued,
+                message: 'Переведено у статус очікування',
+              },
+            },
+          })
+        )
+      );
+
+      setActionStatus(`Локальні обчислення переведено в очікування: ${localRunsToMove.length}.`);
+      await Promise.all([refetchRuns(), refetch()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Невідома помилка';
+      setActionStatus(`Помилка переведення в очікування: ${message}`);
+    } finally {
+      setMovingToWaiting(false);
+    }
+  };
   const handleStartPath = async (pipelineId: string, isRecompute = false) => {
     if (!experiment || !canStartComputations) {
       setActionStatus(runBlocker ?? 'Спочатку налаштуйте обчислення.');
       return;
     }
     try {
-      const result = await enqueueRuns({
+      await enqueueRuns({
         variables: {
           input: {
             experimentId: experiment._id,
@@ -169,7 +238,6 @@ const ComputationCard: FC = () => {
           },
         },
       });
-      const created = result.data?.enqueueExperimentRuns ?? [];
       const queueLabel = activeQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
       setActionStatus(`${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу.`);
       await Promise.all([refetchRuns(), refetch()]);
@@ -199,9 +267,6 @@ const ComputationCard: FC = () => {
           <span className="muted small">
             {row.original.pathNodes.map((e) => e.label).join('->')}
           </span>
-          <div className="table-stack">
-            <span className="muted small">{row.original._id}</span>
-          </div>
         </div>
       ),
     },
@@ -216,26 +281,6 @@ const ComputationCard: FC = () => {
           <span className={`status-pill status-${status}`}>
             {uk.computationStatus[status] ?? status}
           </span>
-        );
-      },
-    },
-    {
-      header: 'Пристрій',
-      id: 'machine',
-      cell: ({ row }) => {
-        const machine = row.original.machineInfo;
-        const ramLabel =
-          typeof machine?.memoryGb === 'number' ? `${machine.memoryGb} ГБ` : 'Немає даних';
-
-        return (
-          <div className="table-stack">
-            <span className="item-title">{machine?.hostname || 'Немає даних'}</span>
-            <span className="muted small">
-              CPU: {machine?.cpuModel || 'Немає даних'} ({machine?.cores ?? '—'} ядер)
-            </span>
-            <span className="muted small">GPU: {machine?.gpuModel || 'Немає даних'}</span>
-            <span className="muted small">RAM: {ramLabel}</span>
-          </div>
         );
       },
     },
@@ -375,10 +420,15 @@ const ComputationCard: FC = () => {
   return (
     <section className="card data-card">
       <header className="card-head">
-        <div>
-          <h3>Шляхи класифікації</h3>
-          <p className="muted">Таблиця запусків та графовий стан обчислень.</p>
-        </div>
+        <h3>Шляхи класифікації</h3>
+        <button
+          className="btn ghost small"
+          type="button"
+          onClick={handleMoveAllLocalToWaiting}
+          disabled={movingToWaiting || !id}
+        >
+          {movingToWaiting ? 'Оновлюю...' : 'Перекинути все в очікування'}
+        </button>
       </header>
       {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
       {graph && (
@@ -400,6 +450,18 @@ const ComputationCard: FC = () => {
                   </button>
                 ))}
               </div>
+            )}
+            <p className="muted small">
+              Локальний пристрій: <strong>{localMachineInfo?.hostname || 'Ще немає даних'}</strong>
+            </p>
+            {localMachineInfo && (
+              <p className="muted small">
+                CPU: {localMachineInfo.cpuModel || 'Немає даних'} ({localMachineInfo.cores ?? '—'}{' '}
+                ядер), GPU: {localMachineInfo.gpuModel || 'Немає даних'}, RAM:{' '}
+                {typeof localMachineInfo.memoryGb === 'number'
+                  ? `${localMachineInfo.memoryGb} ГБ`
+                  : 'Немає даних'}
+              </p>
             )}
             {runBlocker && <p className="error small">{runBlocker}</p>}
             {runsLoading && <p className="muted small">Оновлення статусів запусків...</p>}

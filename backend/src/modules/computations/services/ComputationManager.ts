@@ -10,6 +10,7 @@ import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
+import { OptimizationStatus } from '../../experiments/classes/OptimizationStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
@@ -30,6 +31,7 @@ import { WorkflowModel, workflowsCollectionName } from '../../../core/workflow/m
 import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
+import { OptimizationResult } from '../classes/OptimizationResult';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -39,15 +41,28 @@ export class ComputationManager {
   private readonly pipelineManager = new PipelineManager();
   private readonly experimentManager = new ExperimentManager();
 
-  async optimize(experimentId: ObjectIdOrString): Promise<void> {
+  async optimize(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
+    const experiment = await ExperimentModel.findById(experimentId).lean();
+    if (!experiment) {
+      throw new Error('Experiment not found');
+    }
+
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: experimentId,
       type: WorkflowType.EXPERIMENT,
     });
-    if (workflow.status !== ExperimentStatus.computing) {
-      throw new Error(
-        'Оптимізацію можна запускати лише після переходу експерименту в статус "Обчислення".'
-      );
+    const optimizationStatus = experiment.optimization?.status;
+    const isOptimizationInProgress = optimizationStatus === OptimizationStatus.optimizing;
+    const canEnterOptimization =
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.completed;
+
+    if (workflow.status === ExperimentStatus.optimization && isOptimizationInProgress) {
+      throw new Error('Оптимізація вже виконується.');
+    }
+
+    if (!canEnterOptimization && workflow.status !== ExperimentStatus.optimization) {
+      throw new Error('Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".');
     }
 
     const graph = await GraphStructureModel.findOne({ experimentId }).lean();
@@ -87,10 +102,12 @@ export class ComputationManager {
       throw new Error('There are uncomuted pipelines.');
     }
 
-    await this.experimentManager.changeStatus({
-      experimentId,
-      status: ExperimentStatus.optimization,
-    });
+    if (canEnterOptimization) {
+      await this.experimentManager.changeStatus({
+        experimentId,
+        status: ExperimentStatus.optimization,
+      });
+    }
 
     await this.optimizationRunner.run({
       experimentId,
@@ -104,6 +121,8 @@ export class ComputationManager {
       experimentId,
       status: ExperimentStatus.completed,
     });
+
+    return this.getOptimizationResult(experimentId);
   }
 
   async enqueueRuns(input: EnqueueExperimentRunsInput) {
@@ -214,6 +233,26 @@ export class ComputationManager {
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
   ): Promise<Pipeline | undefined> {
+    if (queue === ComputationQueue.local) {
+      const [localRunningPipeline] = await WorkflowModel.aggregate([
+        { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.running } },
+        {
+          $lookup: {
+            from: pipelinesCollectionName,
+            localField: 'instanceId',
+            foreignField: '_id',
+            as: 'pipeline',
+          },
+        },
+        { $unwind: '$pipeline' },
+        { $match: { 'pipeline.queue': ComputationQueue.local } },
+        { $limit: 1 },
+      ]);
+      if (localRunningPipeline) {
+        return;
+      }
+    }
+
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
     const [pipeline] = await WorkflowModel.aggregate<Pipeline | undefined>([
       { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.queued } },
@@ -228,7 +267,7 @@ export class ComputationManager {
       { $unwind: '$pipeline' },
       { $replaceRoot: { newRoot: '$pipeline' } },
       { $match: { queue } },
-      { $sort: { priority: -1, createdAt: 1 } },
+      { $sort: { priority: -1, updatedAt: 1 } },
     ]);
 
     if (!pipeline) return;
@@ -445,9 +484,7 @@ export class ComputationManager {
 
     const existingHosts = experiment.computationHosts ?? [];
     const matchIndex = existingHosts.findIndex(
-      (host) =>
-        String(host.queue ?? '') === String(machineInfo.queue ?? '') &&
-        String(host.hostname ?? '') === String(machineInfo.hostname ?? '')
+      (host) => String(host.queue ?? '') === String(machineInfo.queue ?? '')
     );
 
     const nextHosts = [...existingHosts];
@@ -520,5 +557,23 @@ export class ComputationManager {
     const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
 
     await ExperimentModel.updateOne({ _id: experimentId }, { $set: { status: nextStatus } }).exec();
+  }
+
+  private async getOptimizationResult(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
+    const experiment = await ExperimentModel.findById(experimentId).lean();
+    const bestPipelineId = experiment?.optimization?.bestPipelineId;
+    const bestScore = experiment?.optimization?.bestScore;
+
+    if (!bestPipelineId || typeof bestScore !== 'number') {
+      throw new Error('Optimization result is missing');
+    }
+
+    const pipeline = await PipelineBaseService.getById(bestPipelineId);
+
+    return {
+      runId: String(bestPipelineId),
+      pathNodeIds: (pipeline.pathNodeIds ?? []).map((id) => String(id)),
+      score: bestScore,
+    };
   }
 }

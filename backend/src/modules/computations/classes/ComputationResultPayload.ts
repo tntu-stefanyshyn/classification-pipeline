@@ -23,13 +23,29 @@ export class ComputationResultPayload {
   @prop({ required: true })
   duration!: number;
 
-  @Field(() => [[Int]])
-  @prop({ type: () => [[Number]], required: true })
-  confusionMatrix!: number[][];
+  @Field(() => [[Int]], { nullable: true })
+  @prop({ type: () => [[Number]] })
+  confusionMatrix?: number[][];
+
+  @Field(() => [[[Int]]], { nullable: true })
+  @prop({ type: () => [[[Number]]], default: [] })
+  confusionMatrixes?: number[][][];
 
   @Field(() => [String])
   @prop({ type: () => [String], required: true })
   channelNames!: string[];
+
+  @Field(() => [Int], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  predictionSampleCounts?: number[];
+
+  @Field(() => Int, { nullable: true })
+  @prop()
+  predictionSampleCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  @prop()
+  predictionDataPercent?: number;
 }
 
 @InputType()
@@ -54,4 +70,13 @@ export class ComputationResultPayloadInput {
 
   @Field(() => [String])
   channelNames!: string[];
+
+  @Field(() => [Int], { nullable: true })
+  predictionSampleCounts?: number[];
+
+  @Field(() => Int, { nullable: true })
+  predictionSampleCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  predictionDataPercent?: number;
 }

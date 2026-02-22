@@ -21,6 +21,7 @@ type TechnologyIndex = {
 const DEFAULT_NODE_TYPE = 'technology';
 const DEFAULT_FOLDS = 5;
 const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
+const DEFAULT_PREDICT_DATA_PERCENT = 20;
 
 export class GraphManager {
   private readonly technologyManager = new TechnologyManager();
@@ -313,11 +314,19 @@ export class GraphManager {
       throw new Error('Час гіпероптимізації для одного конвеєра має бути більшим за 0 хвилин.');
     }
 
+    const predictDataPercent = Number.isFinite(Number(settings.predictDataPercent))
+      ? Math.trunc(Number(settings.predictDataPercent))
+      : DEFAULT_PREDICT_DATA_PERCENT;
+    if (predictDataPercent < 1 || predictDataPercent > 99) {
+      throw new Error('Відсоток даних для предікту має бути цілим числом від 1 до 99.');
+    }
+
     return {
       metrics: { accuracy, f1, rocAuc, ntps },
       queues: uniqueQueues,
       folds,
       hyperOptimizationMinutesPerPipeline,
+      predictDataPercent,
     };
   }
 

@@ -78,6 +78,14 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     ) {
       return false;
     }
+    const predictDataPercent = graphSettings.predictDataPercent ?? 20;
+    if (
+      !Number.isInteger(predictDataPercent) ||
+      predictDataPercent < 1 ||
+      predictDataPercent > 99
+    ) {
+      return false;
+    }
     const { accuracy, f1, rocAuc, ntps } = graphSettings.metrics;
     const weights = [accuracy, f1, rocAuc, ntps];
     if (weights.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
@@ -154,13 +162,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     if (!experiment?.fileId) return null;
     return uploadedFiles.find((file) => file._id === experiment.fileId) ?? null;
   }, [experiment?.fileId, uploadedFiles]);
-  const hosts = useMemo(
-    () =>
-      [...(experiment?.computationHosts ?? [])].sort(
-        (a, b) => new Date(b.lastSeenAt ?? 0).getTime() - new Date(a.lastSeenAt ?? 0).getTime()
-      ),
-    [experiment?.computationHosts]
-  );
 
   return (
     <AuthLayout
@@ -238,47 +239,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                   )}
                 </div>
               </div>
-              <div className="experiment-detail-row">
-                <span className="experiment-detail-label">Обчислювальні вузли</span>
-                <div className="experiment-detail-value-block">
-                  {hosts.length === 0 ? (
-                    <span className="muted small">
-                      Ще немає даних. Запустіть локальні обчислення, щоб зафіксувати пристрій.
-                    </span>
-                  ) : (
-                    <div className="host-list">
-                      {hosts.map((host, index) => (
-                        <div
-                          key={`${host.queue ?? 'unknown'}-${host.hostname ?? 'host'}-${index}`}
-                          className="host-item"
-                        >
-                          <div className="host-item-head">
-                            <span className="experiment-detail-value">
-                              {host.hostname || 'Невідомий пристрій'}
-                            </span>
-                            <span className="muted small">
-                              {host.queue === ComputationQueue.local
-                                ? 'Локальна черга'
-                                : 'Хмарна черга'}
-                            </span>
-                          </div>
-                          <span className="muted small">
-                            CPU: {host.cpuModel || '—'} ({host.cores ?? '—'} ядер)
-                          </span>
-                          <span className="muted small">GPU: {host.gpuModel || '—'}</span>
-                          <span className="muted small">
-                            RAM: {typeof host.memoryGb === 'number' ? `${host.memoryGb} ГБ` : '—'}
-                          </span>
-                          <span className="muted small">
-                            Оновлено:{' '}
-                            {host.lastSeenAt ? new Date(host.lastSeenAt).toLocaleString() : '—'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           </section>
           <section className="card data-card">
@@ -333,6 +293,12 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 {graphSettings?.hyperOptimizationMinutesPerPipeline
                   ? `${graphSettings.hyperOptimizationMinutesPerPipeline} хв`
                   : '—'}
+              </span>
+            </div>
+            <div className="graph-summary-item">
+              <span className="muted small">Дані для предікту</span>
+              <span className="graph-settings-value">
+                {`${graphSettings?.predictDataPercent ?? 20}%`}
               </span>
             </div>
             <div>

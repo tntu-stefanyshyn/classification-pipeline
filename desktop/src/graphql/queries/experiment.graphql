@@ -45,6 +45,7 @@ query Experiment($_id: ID!) {
         queues
         folds
         hyperOptimizationMinutesPerPipeline
+        predictDataPercent
       }
       nodes {
         _id

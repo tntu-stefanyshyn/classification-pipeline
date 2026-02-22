@@ -46,9 +46,13 @@ enum ComputationQueue {
 type ComputationResultPayload {
   accuracyScores: [Float!]!
   channelNames: [String!]!
-  confusionMatrix: [[Int!]!]!
+  confusionMatrix: [[Int!]!]
+  confusionMatrixes: [[[Int!]!]!]
   duration: Float!
   f1Scores: [Float!]!
+  predictionDataPercent: Float
+  predictionSampleCount: Int
+  predictionSampleCounts: [Int!]
   rocAucScores: [Float!]!
   sampleCount: Int!
 }
@@ -59,6 +63,9 @@ input ComputationResultPayloadInput {
   confusionMatrixes: [[[Int!]!]!]!
   duration: Float!
   f1Scores: [Float!]!
+  predictionDataPercent: Float
+  predictionSampleCount: Int
+  predictionSampleCounts: [Int!]
   rocAucScores: [Float!]!
   sampleCount: Int!
 }
@@ -184,6 +191,7 @@ type GraphStructureSettings {
   folds: Int!
   hyperOptimizationMinutesPerPipeline: Int
   metrics: GraphMetricWeights!
+  predictDataPercent: Int
   queues: [ComputationQueue!]!
 }
 
@@ -191,6 +199,7 @@ input GraphStructureSettingsInput {
   folds: Int!
   hyperOptimizationMinutesPerPipeline: Int
   metrics: GraphMetricWeightsInput!
+  predictDataPercent: Int
   queues: [ComputationQueue!]!
 }
 

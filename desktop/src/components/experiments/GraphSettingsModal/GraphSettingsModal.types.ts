@@ -11,6 +11,7 @@ export type GraphSettingsDraft = {
   queues: ComputationQueue[];
   folds: number;
   hyperOptimizationMinutesPerPipeline: number;
+  predictDataPercent: number;
 };
 
 export type GraphSettingsValidation = {

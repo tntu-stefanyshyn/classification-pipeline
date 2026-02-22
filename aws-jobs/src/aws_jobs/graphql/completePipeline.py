@@ -12,6 +12,20 @@ def completePipeline(
     completePipeline(input: $input)
   }
   """
+
+  print(
+    {
+      "backend_url": backend_url,
+      "mutation": mutation,
+      "data": {
+        "input": {
+          "payload": payload,
+          "pipelineId": pipelineId,
+        }
+      },
+      "token": token,
+    }
+  )
   return graphqlRequest(
     backend_url,
     mutation,

@@ -15,6 +15,10 @@ export class ComputationResultPayload {
   @prop({ type: () => [Number], required: true })
   rocAucScores!: number[];
 
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  optimizationIntermediateScores?: number[];
+
   @Field(() => Int)
   @prop({ required: true })
   sampleCount!: number;
@@ -58,6 +62,9 @@ export class ComputationResultPayloadInput {
 
   @Field(() => [Float])
   rocAucScores!: number[];
+
+  @Field(() => [Float], { nullable: true })
+  optimizationIntermediateScores?: number[];
 
   @Field(() => Int)
   sampleCount!: number;

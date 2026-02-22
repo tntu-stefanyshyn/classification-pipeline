@@ -164,7 +164,7 @@ const ComputationCard: FC = () => {
       return 'Тип обчислень не дозволений у налаштуваннях графа.';
     }
     if (!allPathsHaveClassification) {
-      return 'Усі шляхи мають містити етап класифікації.';
+      return 'Усі конвеєри мають містити етап класифікації.';
     }
     return null;
   }, [allPathsHaveClassification, graph, graphPaths.length, graphSettingsReady, queueAllowed]);
@@ -259,11 +259,11 @@ const ComputationCard: FC = () => {
 
   const pathTableColumns = [
     {
-      header: 'Шлях',
+      header: 'Конвеєр',
       id: 'path',
       cell: ({ row }) => (
         <div className="table-stack">
-          <span className="item-title">{`Шлях ${row.index + 1}`}</span>
+          <span className="item-title">{`Конвеєр ${row.index + 1}`}</span>
           <span className="muted small">
             {row.original.pathNodes.map((e) => e.label).join('->')}
           </span>
@@ -292,7 +292,7 @@ const ComputationCard: FC = () => {
           className="btn ghost small icon"
           type="button"
           onClick={() => setResultsPathId(row.original._id)}
-          aria-label={`Результати: шлях ${row.index + 1}`}
+          aria-label={`Результати: конвеєр ${row.index + 1}`}
           title="Результати"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -420,7 +420,7 @@ const ComputationCard: FC = () => {
   return (
     <section className="card data-card">
       <header className="card-head">
-        <h3>Шляхи класифікації</h3>
+        <h3>Конвеєри класифікації</h3>
         <button
           className="btn ghost small"
           type="button"
@@ -438,7 +438,7 @@ const ComputationCard: FC = () => {
               Тип обчислень для запуску: <strong>{activeQueueLabel}</strong>
             </p>
             {allowedQueues.length > 1 && (
-              <div className="path-queue-switch" role="group" aria-label="Середовище обчислень">
+              <div className="path-queue-switch" role="group" aria-label="Режими виконання">
                 {allowedQueues.map((queueType) => (
                   <button
                     key={queueType}
@@ -469,7 +469,7 @@ const ComputationCard: FC = () => {
           <DataTable
             data={runsData?.pipelines ?? []}
             columns={pathTableColumns}
-            emptyMessage="Немає доступних шляхів у графі."
+            emptyMessage="Немає доступних конвеєрів у графі."
             labels={tableLabels}
             pageSize={6}
             pageSizeOptions={[6, 12, 24]}
@@ -484,7 +484,7 @@ const ComputationCard: FC = () => {
           {shouldShowGraphPreview && (
             <div className="graph-preview">
               <div className="form-divider">Графова структура обчислення</div>
-              <p className="muted small">Колір шляху відповідає поточному статусу.</p>
+              <p className="muted small">Колір конвеєра відповідає поточному статусу.</p>
               <div className="graph-legend status-legend">
                 {statusLegendOrder.map((statusKey) => (
                   <div key={statusKey} className="graph-legend-item">

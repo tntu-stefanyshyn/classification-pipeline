@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sys
 import tempfile
@@ -31,6 +32,10 @@ STAGE_LABELS_UA: Dict[str, str] = {
     "DIMENSIONALITY_REDUCTION": "Зниження розмірності",
     "CLASSIFICATION": "Класифікація",
 }
+
+
+def _vector_length(values: List[float]) -> float:
+    return math.sqrt(sum(value * value for value in values))
 
 
 def _emit(
@@ -463,6 +468,7 @@ def _run_classifier(
     accuracyScores: List[float] = []
     f1Scores: List[float] = []
     rocAucScores: List[float] = []
+    optimizationIntermediateScores: List[float] = []
     confusionMatrixes: List[List[float]] = []
     predictionSampleCounts: List[int] = []
     predictionSampleCount: Optional[int] = None
@@ -492,6 +498,17 @@ def _run_classifier(
         f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
         scores = model.predict_proba(X_val)
         rocAucScores.append(float(roc_auc_score(y_val, scores, multi_class="ovr", average="macro")))
+        optimizationIntermediateScores.append(
+            float(
+                _vector_length(
+                    [
+                        accuracyScores[-1],
+                        f1Scores[-1],
+                        rocAucScores[-1],
+                    ]
+                )
+            )
+        )
 
         all_true.extend(list(y_val))
         all_pred.extend(list(y_pred))
@@ -510,6 +527,7 @@ def _run_classifier(
         accuracyScores,
         f1Scores,
         rocAucScores,
+        optimizationIntermediateScores,
         confusionMatrixes,
         channelNames,
         predictionSampleCount or 0,
@@ -578,6 +596,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 accuracyScores,
                 f1Scores,
                 rocAucScores,
+                optimizationIntermediateScores,
                 confusionMatrixes,
                 channelNames,
                 predictionSampleCount,
@@ -596,6 +615,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             report["accuracyScores"] = accuracyScores
             report["f1Scores"] = f1Scores
             report["rocAucScores"] = rocAucScores
+            report["optimizationIntermediateScores"] = optimizationIntermediateScores
             report["confusionMatrixes"] = confusionMatrixes
             report["channelNames"] = channelNames
             report["predictionSampleCount"] = predictionSampleCount

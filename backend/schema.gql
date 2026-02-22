@@ -50,6 +50,7 @@ type ComputationResultPayload {
   confusionMatrixes: [[[Int!]!]!]
   duration: Float!
   f1Scores: [Float!]!
+  optimizationIntermediateScores: [Float!]
   predictionDataPercent: Float
   predictionSampleCount: Int
   predictionSampleCounts: [Int!]
@@ -63,6 +64,7 @@ input ComputationResultPayloadInput {
   confusionMatrixes: [[[Int!]!]!]!
   duration: Float!
   f1Scores: [Float!]!
+  optimizationIntermediateScores: [Float!]
   predictionDataPercent: Float
   predictionSampleCount: Int
   predictionSampleCounts: [Int!]

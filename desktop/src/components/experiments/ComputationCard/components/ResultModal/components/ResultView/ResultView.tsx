@@ -121,7 +121,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   return (
     <div className="node-modal">
       <p className="item-title">{title}</p>
-      <p className="muted small">Вузлів у шляху: {pathNodes?.length}</p>
+      <p className="muted small">Етапів у конвеєрі: {pathNodes?.length}</p>
       {latestLog ? (
         <div className="result-details">
           <div className="result-section">
@@ -310,7 +310,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
           </div>
         </div>
       ) : (
-        <p className="muted">Запуски для цього шляху ще не виконувались.</p>
+        <p className="muted">Запуски для цього конвеєра ще не виконувались.</p>
       )}
     </div>
   );

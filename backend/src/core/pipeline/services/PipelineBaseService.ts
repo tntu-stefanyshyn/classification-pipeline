@@ -19,7 +19,7 @@ class PipelineBaseServiceClass {
 
   async getById(pipelineId: ObjectIdOrString): Promise<Pipeline> {
     const pipeline = await PipelineModel.findById(pipelineId).lean();
-    if (!pipeline) throw new Error('Шляху не знайдено');
+    if (!pipeline) throw new Error('Конвеєр не знайдено');
     return pipeline;
   }
 

@@ -245,10 +245,10 @@ const OptimizationCard: FC = () => {
       return 'Заповніть налаштування графа, щоб запускати оптимізацію.';
     }
     if (!allPathsHaveClassification) {
-      return 'Усі шляхи мають містити етап класифікації.';
+      return 'Усі конвеєри мають містити етап класифікації.';
     }
     if (!allPathsCompleted) {
-      return 'Оптимізація доступна після завершення всіх шляхів.';
+      return 'Оптимізація доступна після завершення всіх конвеєрів.';
     }
     if (allowedQueues.length === 0) {
       return 'Тип обчислень не налаштовано.';
@@ -353,7 +353,7 @@ const OptimizationCard: FC = () => {
       {optimizeError && (
         <Alert variant="error">Помилка запуску оптимізації: {optimizeError.message}</Alert>
       )}
-      {pipelinesError && <Alert variant="error">Помилка шляхів: {pipelinesError.message}</Alert>}
+      {pipelinesError && <Alert variant="error">Помилка конвеєрів: {pipelinesError.message}</Alert>}
 
       <div className="result-section">
         <div className="result-section-head">
@@ -392,14 +392,14 @@ const OptimizationCard: FC = () => {
         <div className="result-section">
           <div className="result-section-head">
             <div>
-              <h4 className="result-section-title">Найкращий шлях</h4>
-              <p className="muted small">Результат та склад шляху.</p>
+              <h4 className="result-section-title">Найкращий конвеєр</h4>
+              <p className="muted small">Результат та склад конвеєра.</p>
             </div>
           </div>
           {bestDetails ? (
             <div className="result-meta-grid">
               <div className="result-meta-item">
-                <span className="muted small">Шлях</span>
+                <span className="muted small">Конвеєр</span>
                 <span>{bestDetails.label}</span>
               </div>
               <div className="result-meta-item">
@@ -425,7 +425,7 @@ const OptimizationCard: FC = () => {
         <div className="result-section-head">
           <div>
             <h4 className="result-section-title">Таблиця лідерів</h4>
-            <p className="muted small">Останні оцінки оптимізації для кожного шляху.</p>
+            <p className="muted small">Останні оцінки оптимізації для кожного конвеєра.</p>
           </div>
         </div>
         {sortedLeaderboard.length > 0 ? (
@@ -433,7 +433,7 @@ const OptimizationCard: FC = () => {
             data={sortedLeaderboard}
             columns={[
               {
-                header: 'Шлях',
+                header: 'Конвеєр',
                 accessorKey: 'label',
               },
               {
@@ -457,10 +457,10 @@ const OptimizationCard: FC = () => {
             pageSize={5}
             labels={tableLabels}
             className="path-table"
-            emptyMessage="Немає оцінених шляхів."
+            emptyMessage="Немає оцінених конвеєрів."
           />
         ) : (
-          <p className="muted small">Немає оцінених шляхів.</p>
+          <p className="muted small">Немає оцінених конвеєрів.</p>
         )}
       </div>
 
@@ -468,7 +468,7 @@ const OptimizationCard: FC = () => {
         <div className="result-section-head">
           <div>
             <h4 className="result-section-title">Графік результатів</h4>
-            <p className="muted small">Порівняння шляхів за значенням оптимізації.</p>
+            <p className="muted small">Порівняння конвеєрів за значенням оптимізації.</p>
           </div>
         </div>
         {sortedLeaderboard.length > 0 ? (
@@ -480,7 +480,7 @@ const OptimizationCard: FC = () => {
                   <div
                     className="bar-chart-fill"
                     style={{ width: renderBarWidth(row.score) }}
-                    aria-label={`Шлях ${row.label} зі значенням ${row.score ?? '—'}`}
+                    aria-label={`Конвеєр ${row.label} зі значенням ${row.score ?? '—'}`}
                   />
                 </div>
                 <div className="bar-chart-labels">
@@ -500,7 +500,7 @@ const OptimizationCard: FC = () => {
       <Modal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        title="Історія оптимізації"
+        title="Журнал оптимізації"
         footer={
           <button className="btn primary" type="button" onClick={() => setHistoryOpen(false)}>
             Закрити
@@ -532,7 +532,7 @@ const OptimizationCard: FC = () => {
             emptyMessage="Історія порожня."
           />
         ) : (
-          <p className="muted">Історія оптимізації порожня.</p>
+          <p className="muted">Журнал оптимізації порожній.</p>
         )}
       </Modal>
     </section>

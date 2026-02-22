@@ -275,11 +275,11 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             )}
             <div className="graph-summary-grid">
               <div className="graph-summary-item">
-                <span className="muted small">Кількість шляхів</span>
+                <span className="muted small">Кількість конвеєрів</span>
                 <span className="graph-summary-value">{graphPaths.length}</span>
               </div>
               <div className="graph-summary-item">
-                <span className="muted small">Середовище обчислення</span>
+                <span className="muted small">Обрані режими виконання</span>
                 <span className="graph-settings-value">{settingsQueueLabel}</span>
               </div>
             </div>

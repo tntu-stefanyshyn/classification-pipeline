@@ -176,7 +176,7 @@ export class ComputationManager {
       path.some((nodeId) => nodeById.get(nodeId)?.stage === ClassificationStage.CLASSIFICATION)
     );
     if (!allPathsHaveClassification) {
-      throw new Error('Усі шляхи мають містити етап класифікації.');
+      throw new Error('Усі конвеєри мають містити етап класифікації.');
     }
 
     let pipelineIds: Types.ObjectId[] = [];

@@ -157,7 +157,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
               />
             </div>
 
-            <p className="graph-settings-label muted small">Середовище обчислення</p>
+            <p className="graph-settings-label muted small">Режими виконання</p>
             <div className="graph-settings-queues">
               {queueOptions.map((queue) => {
                 const inputId = `queue-${queue}`;

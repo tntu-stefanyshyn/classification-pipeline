@@ -18,6 +18,7 @@ import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphRepor
 import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
+import { UploadedFileModel } from './modules/files/models/UploadedFileModel';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
@@ -80,10 +81,43 @@ async function bootstrap() {
 
       const graph = await graphManager.getByExperimentId(experimentId);
       const pipelines = await PipelineModel.find({ experimentId }).lean();
+      const sourceFile = experiment.fileId
+        ? await UploadedFileModel.findById(experiment.fileId).lean()
+        : null;
       const report = await buildGraphReportPdf({
         experimentId,
         experimentName: experiment.name,
+        description: experiment.description,
         createdAt: experiment.createdAt ? new Date(experiment.createdAt) : undefined,
+        graph: {
+          settings: graph.settings
+            ? {
+                metrics: graph.settings.metrics
+                  ? {
+                      accuracy: graph.settings.metrics.accuracy,
+                      f1: graph.settings.metrics.f1,
+                      rocAuc: graph.settings.metrics.rocAuc,
+                      ntps: graph.settings.metrics.ntps,
+                    }
+                  : undefined,
+                queues: graph.settings.queues ? [...graph.settings.queues] : [],
+                folds: graph.settings.folds,
+                hyperOptimizationMinutesPerPipeline:
+                  graph.settings.hyperOptimizationMinutesPerPipeline,
+                predictDataPercent: graph.settings.predictDataPercent,
+              }
+            : undefined,
+          computationMode: graph.computationMode ?? undefined,
+        },
+        file: sourceFile
+          ? {
+              filename: sourceFile.filename,
+              sizeMb: sourceFile.sizeMb,
+              status: sourceFile.status,
+              uploadedAt: sourceFile.uploadedAt ? new Date(sourceFile.uploadedAt) : undefined,
+              uploadedByName: sourceFile.uploadedByName,
+            }
+          : undefined,
         nodes: graph.nodes ?? [],
         pipelines: pipelines.map((pipeline) => ({
           _id: String(pipeline._id),

@@ -12,7 +12,7 @@ const ChangePipelineStatusButton: FC<ChangePipelineStatusButtonProps> = ({
   const [changeExperimentStatus, { loading }] = useChangePipelineStatusMutation({
     variables: { input: { pipelineId, status } },
     onError: (error) => {
-      toast.error(error.message || 'Помилка при зміні статусу шляху');
+      toast.error(error.message || 'Помилка при зміні статусу конвеєра');
     },
   });
 

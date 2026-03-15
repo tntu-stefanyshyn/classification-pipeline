@@ -107,6 +107,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 type="number"
                 label="Кількість кроків перехресної валідації"
                 min={1}
+                max={20}
                 step={1}
                 onChange={(e) => {
                   const nextValue = Number.parseInt(e.target.value, 10);

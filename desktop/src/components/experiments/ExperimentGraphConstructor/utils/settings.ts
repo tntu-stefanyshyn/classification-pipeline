@@ -26,8 +26,10 @@ export const buildSettingsMap = (
 
   const result: Record<string, string> = {};
   settingDefinitions.forEach((setting) => {
-    const fallback = setting.defaultValue ?? '';
-    result[setting.key] = values.get(setting.key) ?? fallback;
+    const value = values.get(setting.key);
+    if (value !== undefined) {
+      result[setting.key] = value;
+    }
   });
   return result;
 };
@@ -38,15 +40,19 @@ export const settingsMapToInput = (
 ): GraphNodeSettingInput[] | undefined => {
   const values = settings ?? {};
   if (!technology || technology.settings.length === 0) {
-    const entries = Object.entries(values);
+    const entries = Object.entries(values).filter(
+      ([key, value]) => key.trim() && String(value ?? '').trim() !== ''
+    );
     if (entries.length === 0) return undefined;
-    return entries.map(([key, value]) => ({ key, value }));
+    return entries.map(([key, value]) => ({ key, value: String(value).trim() }));
   }
 
-  return technology.settings.map((setting) => ({
-    key: setting.key,
-    value: values[setting.key] ?? setting.defaultValue ?? '',
-  }));
+  const allowedKeys = new Set(technology.settings.map((setting) => setting.key));
+  const input = Object.entries(values)
+    .map(([key, value]) => ({ key: key.trim(), value: String(value ?? '').trim() }))
+    .filter((entry) => entry.key && entry.value !== '' && allowedKeys.has(entry.key));
+
+  return input.length > 0 ? input : undefined;
 };
 
 export const settingsRecordToList = (

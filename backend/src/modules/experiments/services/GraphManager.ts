@@ -20,6 +20,7 @@ type TechnologyIndex = {
 
 const DEFAULT_NODE_TYPE = 'technology';
 const DEFAULT_FOLDS = 5;
+const MAX_FOLDS = 20;
 const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
 const DEFAULT_PREDICT_DATA_PERCENT = 20;
 
@@ -304,6 +305,11 @@ export class GraphManager {
     if (folds < 1) {
       throw new Error('Кількість кроків перехресної валідації має бути більшою за 0.');
     }
+    if (folds > MAX_FOLDS) {
+      throw new Error(
+        `Кількість кроків перехресної валідації має бути не більшою за ${MAX_FOLDS}.`
+      );
+    }
 
     const hyperOptimizationMinutesPerPipeline = Number.isFinite(
       Number(settings.hyperOptimizationMinutesPerPipeline)
@@ -397,20 +403,21 @@ export class GraphManager {
     (inputSettings ?? []).forEach((setting) => {
       const key = setting.key.trim();
       if (!key) return;
-      values.set(key, String(setting.value ?? '').trim());
+      const value = String(setting.value ?? '').trim();
+      if (!value) return;
+      values.set(key, value);
     });
 
-    return technology.settings.map((setting) => {
-      const fallback = setting.defaultValue ?? '';
-      const value = values.get(setting.key) ?? fallback;
-      if (setting.required && !value) {
-        throw new Error(`Setting "${setting.key}" is required for ${technology.name}`);
-      }
-      return {
-        key: setting.key,
-        value,
-      };
-    });
+    return technology.settings
+      .map((setting) => {
+        const value = values.get(setting.key);
+        if (value === undefined) return null;
+        return {
+          key: setting.key,
+          value,
+        };
+      })
+      .filter((setting): setting is GraphNodeSetting => setting !== null);
   }
 
   private async ensureGraphNodeIntegrity(graph: GraphStructure): Promise<GraphStructure> {

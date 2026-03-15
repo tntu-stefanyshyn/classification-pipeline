@@ -33,6 +33,8 @@ STAGE_LABELS_UA: Dict[str, str] = {
     "CLASSIFICATION": "Класифікація",
 }
 
+MAX_FOLDS = 20
+
 
 def _vector_length(values: List[float]) -> float:
     return math.sqrt(sum(value * value for value in values))
@@ -200,8 +202,21 @@ def _settings_to_dict(settings: List[Dict[str, Any]]) -> Dict[str, str]:
         if not key:
             continue
         value = entry.get("value")
-        result[key] = str(value) if value is not None else ""
+        if value is None:
+            continue
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            continue
+        result[key] = normalized_value
     return result
+
+
+def _get_setting(settings: Dict[str, str], key: str) -> Optional[str]:
+    value = settings.get(key)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _to_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -245,17 +260,18 @@ def _validate_eeg_dataframe(df: pd.DataFrame) -> None:
     if df.shape[1] < 3:
         raise ValueError(INVALID_FILE_ERROR)
 
-    missing_mask = df.isna().to_numpy()
+    missing_mask = np.asarray(df.isna())
     if missing_mask.any():
         raise ValueError(INVALID_FILE_ERROR)
 
-    feature_columns = df.columns[1:]
+    feature_frame = df.iloc[:, 1:]
+    feature_columns = feature_frame.columns
     for column_name in feature_columns:
-        column = df[column_name]
+        column = feature_frame[column_name]
         if not pd.api.types.is_numeric_dtype(column):
             raise ValueError(INVALID_FILE_ERROR)
 
-    values = df.loc[:, feature_columns].to_numpy(dtype=float)
+    values = np.asarray(feature_frame, dtype=float)
     if not np.isfinite(values).all():
         raise ValueError(INVALID_FILE_ERROR)
 
@@ -273,7 +289,8 @@ def _prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
 
 def _apply_preprocessing(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
     values = X.values.astype(float)
-    if _to_bool(settings.get("log")):
+    log_setting = _get_setting(settings, "log")
+    if log_setting is not None and _to_bool(log_setting):
         values = np.sign(values) * np.log1p(np.abs(values))
 
     scaler = StandardScaler()
@@ -308,27 +325,39 @@ def _apply_artifact_suppression(X: pd.DataFrame, settings: Dict[str, str]) -> pd
 
 
 def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
-    n_components = _to_int(settings.get("n_components")) or min(20, X.shape[1])
-    algorithm = (settings.get("algorithm") or "parallel").lower()
-    whiten = (settings.get("whiten") or "unit-variance").lower()
-    fun = (settings.get("fun") or "logcosh").lower()
-    max_iter = _to_int(settings.get("max_iter"), 200) or 200
-    tol = _to_float(settings.get("tol"), 0.0001) or 0.0001
-    random_state = _to_int(settings.get("random_state"), 42)
+    transformer_kwargs: Dict[str, Any] = {}
+    n_components = _to_int(_get_setting(settings, "n_components"))
+    if n_components is not None:
+        transformer_kwargs["n_components"] = n_components
 
-    whiten_value: Any = whiten
-    if whiten in {"false", "none", "0"}:
-        whiten_value = False
+    algorithm = _get_setting(settings, "algorithm")
+    if algorithm is not None:
+        transformer_kwargs["algorithm"] = algorithm.lower()
 
-    transformer = FastICA(
-        n_components=n_components,
-        algorithm=algorithm, # type: ignore
-        whiten=whiten_value,
-        fun=fun,# type: ignore
-        max_iter=max_iter,
-        tol=tol,
-        random_state=random_state,
-    )
+    whiten = _get_setting(settings, "whiten")
+    if whiten is not None:
+        whiten_value: Any = whiten.lower()
+        if whiten_value in {"false", "none", "0"}:
+            whiten_value = False
+        transformer_kwargs["whiten"] = whiten_value
+
+    fun = _get_setting(settings, "fun")
+    if fun is not None:
+        transformer_kwargs["fun"] = fun.lower()
+
+    max_iter = _to_int(_get_setting(settings, "max_iter"))
+    if max_iter is not None and max_iter > 0:
+        transformer_kwargs["max_iter"] = max_iter
+
+    tol = _to_float(_get_setting(settings, "tol"))
+    if tol is not None:
+        transformer_kwargs["tol"] = tol
+
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    if random_state is not None:
+        transformer_kwargs["random_state"] = random_state
+
+    transformer = FastICA(**transformer_kwargs)
     values = transformer.fit_transform(X.values.astype(float))
     columns = [f"ica_{idx}" for idx in range(values.shape[1])]
     return pd.DataFrame(values, columns=columns)
@@ -356,21 +385,32 @@ def _parse_pca_components(value: Any) -> Any:
 
 
 def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
-    n_components = _parse_pca_components(settings.get("n_components"))
-    svd_solver = (settings.get("svd_solver") or "auto").lower()
-    whiten = _to_bool(settings.get("whiten"), False)
-    iterated_power = settings.get("iterated_power") or "auto"
-    random_state = _to_int(settings.get("random_state"), 42)
-    tol = _to_float(settings.get("tol"), 0.0) or 0.0
+    transformer_kwargs: Dict[str, Any] = {}
+    n_components = _parse_pca_components(_get_setting(settings, "n_components"))
+    if n_components is not None:
+        transformer_kwargs["n_components"] = n_components
 
-    transformer = PCA(
-        n_components=n_components,
-        svd_solver=svd_solver,# type: ignore
-        whiten=whiten,
-        iterated_power=iterated_power,
-        random_state=random_state,
-        tol=tol,
-    )
+    svd_solver = _get_setting(settings, "svd_solver")
+    if svd_solver is not None:
+        transformer_kwargs["svd_solver"] = svd_solver.lower()
+
+    whiten_raw = _get_setting(settings, "whiten")
+    if whiten_raw is not None:
+        transformer_kwargs["whiten"] = _to_bool(whiten_raw, False)
+
+    iterated_power = _get_setting(settings, "iterated_power")
+    if iterated_power is not None:
+        transformer_kwargs["iterated_power"] = iterated_power
+
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    if random_state is not None:
+        transformer_kwargs["random_state"] = random_state
+
+    tol = _to_float(_get_setting(settings, "tol"))
+    if tol is not None:
+        transformer_kwargs["tol"] = tol
+
+    transformer = PCA(**transformer_kwargs)
     values = transformer.fit_transform(X.values.astype(float))
     columns = [f"pca_{idx}" for idx in range(values.shape[1])]
     return pd.DataFrame(values, columns=columns)
@@ -380,54 +420,109 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
     normalized = technology.strip().lower()
 
     if normalized == "svm":
-        c_value = _to_float(settings.get("c"), 1.0) or 1.0
-        kernel = (settings.get("kernel") or "rbf").lower()
-        degree = _to_int(settings.get("degree"), 3) or 3
-        gamma = settings.get("gamma") or "scale"
-        try:
-            gamma_value: Any = float(gamma)
-        except (TypeError, ValueError):
-            gamma_value = gamma
-        coef0 = _to_float(settings.get("coef0"), 0.0) or 0.0
-        shrinking = _to_bool(settings.get("shrinking"), True)
-        # Keep ROC-AUC available for SVM in every run.
-        probability = True
-        tol = _to_float(settings.get("tol"), 0.001) or 0.001
-        max_iter = _to_int(settings.get("max_iter"), -1) or -1
-        class_weight_raw = (settings.get("class_weight") or "none").lower()
-        class_weight = "balanced" if class_weight_raw == "balanced" else None
+        classifier_kwargs: Dict[str, Any] = {}
+        c_value = _to_float(_get_setting(settings, "c"))
+        if c_value is not None:
+            classifier_kwargs["C"] = c_value
 
-        return SVC(
-            C=c_value,
-            kernel=kernel,# type: ignore
-            degree=degree,
-            gamma=gamma_value,
-            coef0=coef0,
-            shrinking=shrinking,
-            probability=probability,
-            tol=tol,
-            max_iter=max_iter,
-            class_weight=class_weight,
-        )
+        kernel = _get_setting(settings, "kernel")
+        if kernel is not None:
+            classifier_kwargs["kernel"] = kernel.lower()
+
+        degree = _to_int(_get_setting(settings, "degree"))
+        if degree is not None:
+            classifier_kwargs["degree"] = degree
+
+        gamma = _get_setting(settings, "gamma")
+        if gamma is not None:
+            try:
+                classifier_kwargs["gamma"] = float(gamma)
+            except (TypeError, ValueError):
+                classifier_kwargs["gamma"] = gamma
+
+        coef0 = _to_float(_get_setting(settings, "coef0"))
+        if coef0 is not None:
+            classifier_kwargs["coef0"] = coef0
+
+        shrinking = _get_setting(settings, "shrinking")
+        if shrinking is not None:
+            classifier_kwargs["shrinking"] = _to_bool(shrinking, True)
+
+        probability = _get_setting(settings, "probability")
+        if probability is not None:
+            classifier_kwargs["probability"] = _to_bool(probability, False)
+
+        tol = _to_float(_get_setting(settings, "tol"))
+        if tol is not None:
+            classifier_kwargs["tol"] = tol
+
+        max_iter = _to_int(_get_setting(settings, "max_iter"))
+        if max_iter is not None:
+            classifier_kwargs["max_iter"] = max_iter
+
+        class_weight_raw = _get_setting(settings, "class_weight")
+        if class_weight_raw is not None and class_weight_raw.lower() == "balanced":
+            classifier_kwargs["class_weight"] = "balanced"
+
+        return SVC(**classifier_kwargs)
 
     if normalized == "cnn":
-        epochs = _to_int(settings.get("epochs"), 30) or 30
-        batch_size = _to_int(settings.get("batch_size"), 32) or 32
-        learning_rate = _to_float(settings.get("learning_rate"), 0.001) or 0.001
-        optimizer = (settings.get("optimizer") or "adam").lower()
-        solver = "sgd" if optimizer == "sgd" else "adam"
-        random_state = _to_int(settings.get("random_state"), 42)
+        classifier_kwargs: Dict[str, Any] = {"hidden_layer_sizes": (128, 64)}
+        epochs = _to_int(_get_setting(settings, "epochs"))
+        if epochs is not None and epochs > 0:
+            classifier_kwargs["max_iter"] = epochs
 
-        return MLPClassifier(
-            hidden_layer_sizes=(128, 64),
-            solver=solver,
-            batch_size=batch_size,
-            learning_rate_init=learning_rate,
-            max_iter=epochs,
-            random_state=random_state,
-        )
+        batch_size = _to_int(_get_setting(settings, "batch_size"))
+        if batch_size is not None and batch_size > 0:
+            classifier_kwargs["batch_size"] = batch_size
 
-    return LogisticRegression(max_iter=1000)
+        learning_rate = _to_float(_get_setting(settings, "learning_rate"))
+        if learning_rate is not None:
+            classifier_kwargs["learning_rate_init"] = learning_rate
+
+        optimizer = _get_setting(settings, "optimizer")
+        if optimizer is not None:
+            classifier_kwargs["solver"] = "sgd" if optimizer.lower() == "sgd" else "adam"
+
+        random_state = _to_int(_get_setting(settings, "random_state"))
+        if random_state is not None:
+            classifier_kwargs["random_state"] = random_state
+
+        return MLPClassifier(**classifier_kwargs)
+
+    return LogisticRegression()
+
+
+def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> float:
+    scores: Any = None
+    try:
+        if hasattr(model, "predict_proba"):
+            scores = model.predict_proba(X_val)
+    except Exception:
+        scores = None
+
+    if scores is None:
+        try:
+            if hasattr(model, "decision_function"):
+                scores = model.decision_function(X_val)
+        except Exception:
+            scores = None
+
+    if scores is None:
+        return 0.0
+
+    try:
+        scores_array = np.asarray(scores)
+        unique_labels = pd.Series(y_val).nunique(dropna=True)
+        if unique_labels <= 2:
+            if scores_array.ndim == 2 and scores_array.shape[1] > 1:
+                positive_scores = scores_array[:, 1]
+            else:
+                positive_scores = scores_array.ravel()
+            return float(roc_auc_score(y_val, positive_scores))
+        return float(roc_auc_score(y_val, scores_array, multi_class="ovr", average="macro"))
+    except Exception:
+        return 0.0
 
 
 def _run_classifier(
@@ -440,28 +535,37 @@ def _run_classifier(
     backend_url: str,
     pipelineId: str,
 ):
-    random_state = _to_int(settings.get("random_state"), 42)
-    folds = _to_int(graphStructureSettings.get("folds"), 5) or 5
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    raw_folds = _to_int(graphStructureSettings.get("folds"))
+    splitter_kwargs: Dict[str, Any] = {}
+
+    if raw_folds is not None and raw_folds > 0:
+        folds = min(raw_folds, MAX_FOLDS)
+        if raw_folds > MAX_FOLDS:
+            _emit(
+                backend_url,
+                pipelineId,
+                message=f"Кількість кроків CV обмежено до {MAX_FOLDS} для стабільного виконання.",
+            )
+        splitter_kwargs["n_splits"] = folds
+
     predict_percent = _to_float(graphStructureSettings.get("predictDataPercent"))
     if predict_percent is None:
-        # Backward compatibility for old node-level settings.
-        predict_percent = _to_float(settings.get("predict_percent"), 20.0)
-    predict_percent = predict_percent or 20.0
-    if predict_percent <= 0 or predict_percent >= 100:
-        predict_percent = 20.0
-    predict_fraction = predict_percent / 100.0
+        predict_percent = _to_float(_get_setting(settings, "predict_percent"))
+    if predict_percent is not None and 0 < predict_percent < 100:
+        splitter_kwargs["test_size"] = predict_percent / 100.0
+
+    if random_state is not None:
+        splitter_kwargs["random_state"] = random_state
 
     labels = np.unique(y)
     try:
-        splitter = StratifiedShuffleSplit(
-            n_splits=folds, test_size=predict_fraction, random_state=random_state
-        )
+        splitter = StratifiedShuffleSplit(**splitter_kwargs)
         splits = splitter.split(X, y)
     except Exception:
-        splitter = ShuffleSplit(
-            n_splits=folds, test_size=predict_fraction, random_state=random_state
-        )
+        splitter = ShuffleSplit(**splitter_kwargs)
         splits = splitter.split(X)
+    folds = int(getattr(splitter, "n_splits", 1) or 1)
 
     all_true: List[Any] = []
     all_pred: List[Any] = []
@@ -478,7 +582,8 @@ def _run_classifier(
         predictionSampleCounts.append(prediction_rows)
         if predictionSampleCount is None:
             predictionSampleCount = prediction_rows
-        progress = (progress_for_one_step * 0.5) * (fold_index)
+        fold_fraction = fold_index / folds
+        progress = (progress_for_one_step * 0.5) * fold_fraction
         _emit(
             backend_url,
             pipelineId,
@@ -496,8 +601,7 @@ def _run_classifier(
 
         accuracyScores.append(float(accuracy_score(y_val, y_pred)))
         f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
-        scores = model.predict_proba(X_val)
-        rocAucScores.append(float(roc_auc_score(y_val, scores, multi_class="ovr", average="macro")))
+        rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
         optimizationIntermediateScores.append(
             float(
                 _vector_length(
@@ -514,7 +618,7 @@ def _run_classifier(
         all_pred.extend(list(y_pred))
         matrix = confusion_matrix(y_val, y_pred, labels=labels)
         confusionMatrixes.append(matrix.tolist())
-        progress = (progress_for_one_step) * (fold_index)
+        progress = progress_for_one_step * fold_fraction
         _emit(
             backend_url,
             pipelineId,

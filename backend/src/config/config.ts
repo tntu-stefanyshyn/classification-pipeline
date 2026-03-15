@@ -44,6 +44,7 @@ export const config = {
     pythonBin: process.env.PYTHON_BIN ?? 'python3',
     handlerModule: process.env.COMPUTE_HANDLER_MODULE ?? 'aws_jobs.compute_handler',
     optimizationModule: process.env.OPTIMIZATION_HANDLER_MODULE ?? 'aws_jobs.optimization_handler',
+    hyperOptimizationEnabled: toBool(process.env.BACKEND_HYPER_OPTIMIZATION_ENABLED, false),
     cloudWorkerEnabled: toBool(process.env.BACKEND_CLOUD_WORKER_ENABLED, true),
     localWorkerEnabled: toBool(process.env.BACKEND_LOCAL_WORKER_ENABLED, true),
     localDockerImage: process.env.BACKEND_LOCAL_DOCKER_IMAGE ?? 'aws-jobs',

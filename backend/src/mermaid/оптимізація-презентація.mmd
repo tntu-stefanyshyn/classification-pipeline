@@ -1,0 +1,51 @@
+flowchart LR
+
+A["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>🔬</div>
+<div><b>Результати перехресної валідації:</b></div>
+<div><b>крок 1, крок 2, ...</b></div>
+</div>"]
+
+B["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>📊</div>
+<div><b>Інтегральні значення метрик</b></div>
+</div>"]
+
+C["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>📏</div>
+<div><b>Нормалізовані значення метрик</b></div>
+</div>"]
+
+D["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>⚙️</div>
+<b>Мінімізовані значення метрик: 
+<div>
+Точність, F1-міра, Площа під ROC кривою, Нормалізований час обробки зразка
+</div>
+</b>
+</div>"]
+
+E["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>⚖️</div>
+<div><b>Ваги метрик</b></div>
+</div>"]
+
+F["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>🧮</div>
+<div><b>Цільова функція</b></div>
+</div>"]
+
+G["<div style='text-align:center; line-height:1.1; margin:0; padding:0; font-weight:700;'>
+<div style='font-size:88px; margin:0; line-height:1;'>🎯</div>
+<div><b>Задача мінімізації</b></div>
+</div>"]
+
+A --> B
+B --> C
+C --> D
+D --> F
+E --> F
+F --> G
+
+classDef compact padding:2px 4px;
+class A,B,C,D,E,F,G compact;

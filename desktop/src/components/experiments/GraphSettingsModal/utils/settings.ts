@@ -9,6 +9,7 @@ import type { GraphStructureSettings } from '../../../../graphql/types.generated
 import { metricKeys } from '../constants/labels';
 
 const DEFAULT_FOLDS = 5;
+const MAX_FOLDS = 20;
 const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
 const DEFAULT_PREDICT_DATA_PERCENT = 20;
 
@@ -89,6 +90,9 @@ export const validateGraphSettings = (
 
   if (!Number.isInteger(settingsDraft.folds) || settingsDraft.folds < 1) {
     errors.push('Кількість кроків перехресної валідації має бути цілим числом більше 0.');
+  }
+  if (Number.isInteger(settingsDraft.folds) && settingsDraft.folds > MAX_FOLDS) {
+    errors.push(`Кількість кроків перехресної валідації має бути не більшою за ${MAX_FOLDS}.`);
   }
 
   if (

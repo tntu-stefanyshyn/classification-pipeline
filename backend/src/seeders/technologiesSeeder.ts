@@ -233,7 +233,7 @@ const TECHNOLOGY_SEEDS = [
         key: 'max_iter',
         label: 'Максимум ітерацій',
         type: TechnologySettingType.NUMBER,
-        defaultValue: '-1',
+        defaultValue: '5000',
       },
       {
         key: 'class_weight',

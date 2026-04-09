@@ -20,6 +20,7 @@
     "prestart": "npm run build:optimization-container && (sudo kill -9 `sudo lsof -t -i:4000` || true)",
     "start": "ts-node-dev src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --experimental-test-coverage --test-coverage-exclude='dist/**/*.test.js' --test-coverage-exclude='dist/test/**' --test-coverage-exclude='scripts/**' ./scripts/run-tests.mjs",
     "build:optimization-container": "bash ./scripts/build-optimization-container.sh",
     "db:backup": "bash ./scripts/backup-db.sh",
     "db:restore": "bash ./scripts/restore-db.sh"

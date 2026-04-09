@@ -118,3 +118,5 @@ aws-jobs/.venv/
 aws-jobs/.python-version
 aws-jobs/.coverage
 aws-jobs/.pytest_cache/
+
+.codex

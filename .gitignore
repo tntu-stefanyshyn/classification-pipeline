@@ -95,6 +95,9 @@ desktop/out/
 
 # Workspace builds
 dist/
+*.test-dist/
+.test-dist/
+**/.test-dist/
 backend/src/**/*.js
 backend/backups/
 

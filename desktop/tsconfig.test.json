@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2022",
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false,
+    "composite": false,
+    "types": ["node", "vite/client"]
+  },
+  "include": ["tests/**/*.ts", "tests/**/*.tsx"],
+  "exclude": ["node_modules", ".test-dist"]
+}

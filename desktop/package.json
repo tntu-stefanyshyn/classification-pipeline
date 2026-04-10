@@ -24,6 +24,7 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
+    "test": "node ./scripts/build-tests.mjs && node ./scripts/run-tests.mjs",
     "codegen:clean": "find src -type d -name generated -prune -exec rm -rf {} +",
     "sync:schema": "node scripts/sync-schema.js",
     "codegen": "npm run codegen:clean && npm run sync:schema && graphql-codegen --config codegen.ts"

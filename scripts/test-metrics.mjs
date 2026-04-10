@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,102 @@ export const parseNodeCoverageSummary = (output) => {
     coverage: Number(coverageMatch[1]),
   };
 };
+
+export const parseNodeCoverageFilePercents = (output) => {
+  const coverageByFile = new Map();
+  const tree = [];
+  const lines = output.split(/\r?\n/);
+
+  for (const line of lines) {
+    const match = line.match(/^#(?<indent>\s+)(?<name>[^|]+?)\s+\|\s*(?<linePercent>[0-9]+(?:\.[0-9]+)?)?\s*\|/);
+    if (!match || !match.groups) {
+      continue;
+    }
+
+    const indent = match.groups.indent.length;
+    const name = match.groups.name.trim();
+    const linePercent = match.groups.linePercent ? Number(match.groups.linePercent) : null;
+
+    while (tree.length > 0 && tree[tree.length - 1].indent >= indent) {
+      tree.pop();
+    }
+
+    if (linePercent === null) {
+      tree.push({ indent, name });
+      continue;
+    }
+
+    const pathParts = [...tree.map((entry) => entry.name), name];
+    coverageByFile.set(pathParts.join('/'), linePercent);
+  }
+
+  return coverageByFile;
+};
+
+export const walkFilesRecursive = async (dir) => {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return walkFilesRecursive(fullPath);
+      }
+      return [fullPath];
+    })
+  );
+
+  return files.flat();
+};
+
+export const countRelevantLines = (content) =>
+  content
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed !== '' && trimmed !== '/*' && trimmed !== '*/' && !trimmed.startsWith('//') && trimmed !== '*';
+    }).length;
+
+export const computeFullNodeCoverage = async ({ filePaths, output, cwd }) => {
+  const coverageByFile = parseNodeCoverageFilePercents(output);
+  const files = [...filePaths].sort((left, right) => left.localeCompare(right));
+
+  let totalRelevantLines = 0;
+  let coveredRelevantLines = 0;
+  let coveredFileCount = 0;
+
+  for (const filePath of files) {
+    const relativeToDist = path.relative(cwd, filePath).split(path.sep).join('/');
+    const content = await readFile(filePath, 'utf8');
+    const relevantLines = countRelevantLines(content);
+
+    totalRelevantLines += relevantLines;
+
+    const linePercent = coverageByFile.get(relativeToDist) ?? 0;
+    if (linePercent > 0) {
+      coveredFileCount += 1;
+    }
+    coveredRelevantLines += (relevantLines * linePercent) / 100;
+  }
+
+  return {
+    fileCount: files.length,
+    coveredFileCount,
+    coverage: totalRelevantLines === 0 ? 0 : (coveredRelevantLines / totalRelevantLines) * 100,
+  };
+};
+
+export const computeFullDesktopCoverage = async ({ distSrcDir, output, cwd }) => {
+  const files = (await walkFilesRecursive(distSrcDir))
+    .filter((filePath) => filePath.endsWith('.js'))
+    .filter((filePath) => !filePath.endsWith('.d.js'));
+
+  return computeFullNodeCoverage({
+    filePaths: files,
+    output,
+    cwd,
+  });
+};
+
 
 export const parsePythonTraceSummary = (output) => {
   const testsMatch = output.match(/^Ran (\d+) tests? in /m);

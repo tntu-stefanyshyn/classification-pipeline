@@ -3,10 +3,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  computeFullNodeCoverage,
   parseNodeCoverageSummary,
   readCommandOutputFile,
   runCommandWithTee,
   upsertTestMetricsRow,
+  walkFilesRecursive,
 } from '../../scripts/test-metrics.mjs';
 
 const distDir = path.resolve(process.cwd(), 'dist');
@@ -63,13 +65,35 @@ if (process.env[childEnvName] === '1') {
     }
   );
 
-  const summary = parseNodeCoverageSummary(await readCommandOutputFile(outputFile));
+  const output = await readCommandOutputFile(outputFile);
+  const summary = parseNodeCoverageSummary(output);
+  const sourceFiles = (await walkFilesRecursive(path.resolve(process.cwd(), 'src')))
+    .filter((filePath) => filePath.endsWith('.ts'))
+    .filter((filePath) => !filePath.endsWith('.d.ts'))
+    .filter((filePath) => !filePath.endsWith('.test.ts'))
+    .filter((filePath) => !filePath.includes(`${path.sep}test${path.sep}`));
+  const compiledFiles = sourceFiles.map((filePath) =>
+    path.join(
+      process.cwd(),
+      'dist',
+      path.relative(path.join(process.cwd(), 'src'), filePath).replace(/\.ts$/, '.js')
+    )
+  );
+  const fullCoverage = await computeFullNodeCoverage({
+    filePaths: compiledFiles,
+    output,
+    cwd: process.cwd(),
+  });
+
+  console.log(
+    `# full backend coverage: ${fullCoverage.coverage.toFixed(2)}% (${fullCoverage.coveredFileCount}/${fullCoverage.fileCount} files in scope)`
+  );
 
   if (summary) {
     await upsertTestMetricsRow({
       component: 'backend',
       testCount: summary.testCount,
-      coverage: summary.coverage,
+      coverage: fullCoverage.coverage,
     });
   } else if (coverageResult.code === 0) {
     throw new Error('Could not parse backend test summary');

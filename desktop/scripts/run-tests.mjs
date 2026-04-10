@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  computeFullDesktopCoverage,
   parseNodeCoverageSummary,
   readCommandOutputFile,
   runCommandWithTee,
@@ -34,7 +35,7 @@ const coverageArgs = [
   '--experimental-test-coverage',
   '--test-coverage-include=.test-dist/src/**/*.js',
   '--test-coverage-exclude=.test-dist/tests/**/*.js',
-  '--test-coverage-exclude=.test-dist/src/graphql/**/*.js',
+  '--test-coverage-exclude=.test-dist/src/**/*.d.js',
   '--test',
   ...testFiles,
 ];
@@ -47,13 +48,23 @@ const coverageResult = await runCommandWithTee(process.execPath, coverageArgs, {
   outputFile,
 });
 
-const summary = parseNodeCoverageSummary(await readCommandOutputFile(outputFile));
+const output = await readCommandOutputFile(outputFile);
+const summary = parseNodeCoverageSummary(output);
+const fullCoverage = await computeFullDesktopCoverage({
+  distSrcDir: path.resolve(process.cwd(), '.test-dist/src'),
+  output,
+  cwd: process.cwd(),
+});
+
+console.log(
+  `# full frontend coverage: ${fullCoverage.coverage.toFixed(2)}% (${fullCoverage.coveredFileCount}/${fullCoverage.fileCount} files in scope)`
+);
 
 if (summary) {
   await upsertTestMetricsRow({
     component: 'desktop',
     testCount: summary.testCount,
-    coverage: summary.coverage,
+    coverage: fullCoverage.coverage,
   });
 } else if (coverageResult.code === 0) {
   throw new Error('Could not parse desktop test summary');

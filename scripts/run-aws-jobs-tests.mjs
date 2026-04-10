@@ -40,7 +40,8 @@ const runSuite = async ({ component, traceDir, pattern }) => {
     }
   );
 
-  const summary = parsePythonTraceSummary(await readCommandOutputFile(outputFile));
+  const output = await readCommandOutputFile(outputFile);
+  const summary = parsePythonTraceSummary(output);
 
   if (summary) {
     await upsertTestMetricsRow({
@@ -59,15 +60,20 @@ const runSuite = async ({ component, traceDir, pattern }) => {
   if (result.signal) {
     process.kill(process.pid, result.signal);
   }
+
+  return {
+    output,
+    testCount: summary ? summary.testCount : 0,
+  };
 };
 
-await runSuite({
+const computeSuite = await runSuite({
   component: 'aws-jobs:compute',
   traceDir: path.join('/tmp', 'aws-jobs-trace-compute'),
   pattern: 'test_compute*.py',
 });
 
-await runSuite({
+const optimizationSuite = await runSuite({
   component: 'aws-jobs:optimization',
   traceDir: path.join('/tmp', 'aws-jobs-trace-optimization'),
   pattern: 'test_optimization*.py',

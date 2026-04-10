@@ -33,6 +33,129 @@ class OptimizationHandlerTests(unittest.TestCase):
             },
         )
 
+    def test_load_payload_rejects_missing_required_params(self):
+        module = load_optimization_handler()
+
+        with patch.object(
+            module.sys,
+            "stdin",
+            io.StringIO('{"experimentId":"exp-1","backend_url":"   "}'),
+        ):
+            with self.assertRaises(ValueError) as error:
+                module._load_payload()
+
+        self.assertEqual(str(error.exception), "MISSING_PARAMS")
+
+    def test_flatten_numeric_collects_nested_numeric_values(self):
+        module = load_optimization_handler()
+
+        result = module._flatten_numeric(
+            {
+                "values": [
+                    1,
+                    "2.5",
+                    "bad",
+                    None,
+                    {
+                        "scores": [
+                            3,
+                            float("inf"),
+                            {"nested": [4, "nan", -1]},
+                        ]
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(result, [1.0, 2.5, 3.0, 4.0, -1.0])
+
+    def test_min_max_normalize_returns_zeroes_for_flat_values(self):
+        module = load_optimization_handler()
+
+        self.assertEqual(module._min_max_normalize([5.0, 5.0, 5.0]), [0.0, 0.0, 0.0])
+
+    def test_optimize_prefers_pipeline_with_lower_ntps(self):
+        module = load_optimization_handler()
+        payload = {
+            "backend_url": "http://backend/graphql",
+            "experimentId": "exp-1",
+            "backend_token": "svc-token",
+            "hyper_optimization_minutes_per_pipeline": 7,
+        }
+        pipeline_updates = []
+        experiment_updates = []
+
+        graphql_responses = [
+            {
+                "experiment": {
+                    "graph": {
+                        "settings": {
+                            "metrics": {
+                                "accuracy": 0,
+                                "f1": 0,
+                                "rocAuc": 0,
+                                "ntps": 1,
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "pipelines": [
+                    {
+                        "_id": "pipe-slow",
+                        "status": "completed",
+                        "computingResult": {
+                            "accuracyScores": [0.8],
+                            "f1Scores": [0.8],
+                            "rocAucScores": [0.8],
+                            "sampleCount": 10,
+                            "duration": 40,
+                        },
+                    },
+                    {
+                        "_id": "pipe-fast",
+                        "status": "completed",
+                        "computingResult": {
+                            "accuracyScores": [0.8],
+                            "f1Scores": [0.8],
+                            "rocAucScores": [0.8],
+                            "sampleCount": 10,
+                            "duration": 10,
+                        },
+                    },
+                ]
+            },
+        ]
+
+        with patch.object(module, "graphqlRequest", side_effect=graphql_responses), patch.object(
+            module, "_emit"
+        ), patch.object(
+            module,
+            "_update_pipeline_optimization",
+            side_effect=lambda *args, **kwargs: pipeline_updates.append((args, kwargs)),
+        ), patch.object(
+            module,
+            "_update_experiment_optimization",
+            side_effect=lambda *args, **kwargs: experiment_updates.append((args, kwargs)),
+        ):
+            module.optimize(payload)
+
+        self.assertEqual(len(pipeline_updates), 2)
+        self.assertEqual(pipeline_updates[0][0][1], "pipe-slow")
+        self.assertEqual(pipeline_updates[0][0][2], 1.0)
+        self.assertEqual(pipeline_updates[1][0][1], "pipe-fast")
+        self.assertEqual(pipeline_updates[1][0][2], 0.0)
+        self.assertEqual(
+            experiment_updates,
+            [
+                (
+                    ("http://backend/graphql", "exp-1", "pipe-fast", 0.0),
+                    {"token": "svc-token"},
+                )
+            ],
+        )
+
     def test_optimize_updates_pipeline_scores_and_best_pipeline(self):
         module = load_optimization_handler()
         payload = {
@@ -136,6 +259,68 @@ class OptimizationHandlerTests(unittest.TestCase):
         last_emit = emits[-1]
         self.assertEqual(last_emit[1]["status"], "completed")
         self.assertEqual(last_emit[1]["progress"], 100)
+
+    def test_optimize_raises_when_completed_pipelines_have_no_valid_results(self):
+        module = load_optimization_handler()
+        payload = {
+            "backend_url": "http://backend/graphql",
+            "experimentId": "exp-1",
+            "backend_token": "svc-token",
+            "hyper_optimization_minutes_per_pipeline": 5,
+        }
+        graphql_responses = [
+            {
+                "experiment": {
+                    "graph": {
+                        "settings": {
+                            "metrics": {
+                                "accuracy": 1,
+                                "f1": 1,
+                                "rocAuc": 1,
+                                "ntps": 1,
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "pipelines": [
+                    {
+                        "_id": "pipe-empty",
+                        "status": "completed",
+                        "computingResult": {
+                            "accuracyScores": [],
+                            "f1Scores": [0.8],
+                            "rocAucScores": [0.7],
+                            "sampleCount": 5,
+                            "duration": 3,
+                        },
+                    },
+                    {
+                        "_id": "pipe-zero-samples",
+                        "status": "completed",
+                        "computingResult": {
+                            "accuracyScores": [0.9],
+                            "f1Scores": [0.8],
+                            "rocAucScores": [0.7],
+                            "sampleCount": 0,
+                            "duration": 3,
+                        },
+                    },
+                ]
+            },
+        ]
+
+        with patch.object(module, "graphqlRequest", side_effect=graphql_responses), patch.object(
+            module, "_emit"
+        ):
+            with self.assertRaises(ValueError) as error:
+                module.optimize(payload)
+
+        self.assertIn(
+            "Немає завершених конвеєрів з валідними результатами для оптимізації.",
+            str(error.exception),
+        )
 
     def test_main_emits_failed_status_and_exits(self):
         module = load_optimization_handler()

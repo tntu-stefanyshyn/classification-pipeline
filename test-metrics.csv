@@ -1,5 +1,5 @@
 частини програмної системи,кількість тестів,покриття тестами коду
-desktop,21,88.64%
-backend,100,97.09%
-aws-jobs:compute,9,100.00%
-aws-jobs:optimization,6,100.00%
+desktop,57,60.72%
+backend,100,87.82%
+aws-jobs:compute,15,100.00%
+aws-jobs:optimization,11,100.00%

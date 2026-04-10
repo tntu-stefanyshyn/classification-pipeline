@@ -2,6 +2,7 @@ import type { TestContext } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import Module from 'node:module';
+import React from 'react';
 
 type MutableRecord = Record<PropertyKey, unknown>;
 
@@ -98,4 +99,70 @@ export const ensureFile = (filePath: string, content = '') => {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, content);
   }
+};
+
+export const findElements = (
+  node: unknown,
+  predicate: (element: React.ReactElement) => boolean,
+  results: React.ReactElement[] = []
+): React.ReactElement[] => {
+  if (Array.isArray(node)) {
+    node.forEach((child) => findElements(child, predicate, results));
+    return results;
+  }
+
+  if (!React.isValidElement(node)) {
+    return results;
+  }
+
+  if (predicate(node)) {
+    results.push(node);
+  }
+
+  findElements(node.props?.children, predicate, results);
+  return results;
+};
+
+export const findElement = (node: unknown, predicate: (element: React.ReactElement) => boolean) =>
+  findElements(node, predicate)[0] ?? null;
+
+export const getElementName = (element: React.ReactElement | null) => {
+  if (!element) return '';
+  if (typeof element.type === 'string') return element.type;
+  return (
+    (element.type as { displayName?: string; name?: string }).displayName ??
+    (element.type as { displayName?: string; name?: string }).name ??
+    ''
+  );
+};
+
+export const createUseStateStub = (seededValues: unknown[] = []) => {
+  const values = [...seededValues];
+  const calls: Array<{ index: number; value: unknown }> = [];
+  let cursor = 0;
+
+  const useState = <T>(initialState: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] => {
+    const index = cursor;
+    cursor += 1;
+
+    if (!(index in values)) {
+      values[index] =
+        typeof initialState === 'function' ? (initialState as () => T)() : initialState;
+    }
+
+    const setState = (next: T | ((prev: T) => T)) => {
+      const previous = values[index] as T;
+      const resolved = typeof next === 'function' ? (next as (prev: T) => T)(previous) : next;
+      values[index] = resolved;
+      calls.push({ index, value: resolved });
+    };
+
+    return [values[index] as T, setState];
+  };
+
+  const reset = () => {
+    cursor = 0;
+  };
+
+  return { useState, values, calls, reset };
 };

@@ -82,7 +82,7 @@ class ComputeHandlerTests(unittest.TestCase):
                 "gamma": "scale",
                 "coef0": "0.75",
                 "shrinking": "0",
-                "probability": "yes",
+                "probability": "false",
                 "tol": "0.001",
                 "max_iter": "150",
                 "class_weight": "balanced",

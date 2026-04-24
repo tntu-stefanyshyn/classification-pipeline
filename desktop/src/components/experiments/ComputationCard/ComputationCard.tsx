@@ -387,6 +387,7 @@ const ComputationCard: FC = () => {
       selectedNodeId: null,
       collapsedNodeIds: new Set(),
       graphActionsDisabled: true,
+      graphInspectionDisabled: true,
       graphUpdating: false,
       onAdd: () => undefined,
       onEdit: () => undefined,

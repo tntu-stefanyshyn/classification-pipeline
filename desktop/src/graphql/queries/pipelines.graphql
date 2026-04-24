@@ -7,6 +7,13 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
     progress
     statusMessage
     optimizationScores
+    computingResult {
+      accuracyScores
+      f1Scores
+      rocAucScores
+      duration
+      sampleCount
+    }
     machineInfo {
       hostname
       cpuModel

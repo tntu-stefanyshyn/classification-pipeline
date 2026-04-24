@@ -84,6 +84,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     experiment?.status === ExperimentStatus.optimization ||
     experiment?.status === ExperimentStatus.completed;
   const graphActionsDisabled = isGraphBusy || !techReady || isExperimentLocked;
+  const graphInspectionDisabled = isGraphBusy || !techReady;
 
   const graph = experiment?.graph;
   const graphSettings = graph?.settings ?? null;
@@ -206,7 +207,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const openEditModal = (nodeId: string) => {
-    if (graphActionsDisabled) return;
+    if (isGraphBusy || !techReady) return;
     const node = graphNodes.find((item) => item._id === nodeId);
     if (!node) return;
     const stage = node.stage ?? DEFAULT_STAGE;
@@ -263,7 +264,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const openSettingsModal = () => {
-    if (isExperimentLocked) return;
+    if (!experiment) return;
     setSettingsModalOpen(true);
   };
 
@@ -274,13 +275,12 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   useEffect(() => {
     const state = location.state as { openSettings?: boolean } | null;
     if (!state?.openSettings || openedSettingsRef.current) return;
-    if (!experiment || isExperimentLocked) {
-      openedSettingsRef.current = true;
+    if (!experiment) {
       return;
     }
     openSettingsModal();
     openedSettingsRef.current = true;
-  }, [experiment, isExperimentLocked, location.state]);
+  }, [experiment, location.state]);
 
   const openResetModal = () => {
     setResetModalOpen(true);
@@ -343,7 +343,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const handleSaveSettings = async (settings: GraphStructureSettingsInput) => {
-    if (!experiment) return;
+    if (!experiment || isExperimentLocked) return;
     try {
       await updateGraph({
         variables: {
@@ -366,7 +366,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const handleCreateNode = async () => {
-    if (!draftNode || modalState?.type !== 'add') return;
+    if (!draftNode || modalState?.type !== 'add' || isExperimentLocked) return;
     const newNode: FlatGraphNode = {
       _id: createObjectId(),
       label: draftNode.technologyName,
@@ -381,7 +381,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const handleUpdateNode = async () => {
-    if (!draftNode || modalState?.type !== 'edit') return;
+    if (!draftNode || modalState?.type !== 'edit' || isExperimentLocked) return;
     const nextNodes = graphNodes.map((node) =>
       node._id === modalState.nodeId
         ? {
@@ -398,7 +398,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   };
 
   const handleDeleteNode = async () => {
-    if (modalState?.type !== 'delete') return;
+    if (modalState?.type !== 'delete' || isExperimentLocked) return;
     const idsToRemove = collectDescendantIds(graphNodes, modalState.nodeId);
     const nextNodes = graphNodes.filter((node) => !idsToRemove.has(node._id));
     const targetNode = graphNodes.find((node) => node._id === modalState.nodeId) ?? null;
@@ -479,6 +479,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     selectedNodeId,
     collapsedNodeIds,
     graphActionsDisabled,
+    graphInspectionDisabled,
     graphUpdating: isGraphBusy,
     onAdd: openAddModal,
     onEdit: openEditModal,
@@ -514,9 +515,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
           className="btn ghost"
           type="button"
           onClick={openSettingsModal}
-          disabled={!experiment || isExperimentLocked}
+          disabled={!experiment}
         >
-          Змінити налаштування
+          {isExperimentLocked ? 'Переглянути налаштування' : 'Змінити налаштування'}
         </button>
         <button
           className="btn danger"
@@ -563,7 +564,13 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
 
       <Modal
         open={modalState?.type === 'add' || modalState?.type === 'edit'}
-        title={modalState?.type === 'edit' ? 'Редагувати вузол' : 'Додати вузол'}
+        title={
+          modalState?.type === 'edit'
+            ? isExperimentLocked
+              ? 'Переглянути вузол'
+              : 'Редагувати вузол'
+            : 'Додати вузол'
+        }
         onClose={closeModal}
       >
         {draftNode ? (
@@ -661,7 +668,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                             onChange={(event) =>
                               handleDraftSettingChange(setting.key, event.target.value)
                             }
-                            disabled={isGraphBusy || options.length === 0}
+                            disabled={isGraphBusy || isExperimentLocked || options.length === 0}
                             required={Boolean(setting.required)}
                           >
                             <option value="" disabled>
@@ -699,15 +706,17 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
             )}
             <div className="graph-panel-actions">
               <button className="btn ghost" type="button" onClick={closeModal}>
-                Скасувати
+                {isExperimentLocked ? 'Закрити' : 'Скасувати'}
               </button>
-              <button
-                className="btn primary"
-                type="submit"
-                disabled={isGraphBusy || graphActionsDisabled}
-              >
-                {modalState?.type === 'edit' ? 'Зберегти' : 'Створити'}
-              </button>
+              {!isExperimentLocked ? (
+                <button
+                  className="btn primary"
+                  type="submit"
+                  disabled={isGraphBusy || graphActionsDisabled}
+                >
+                  {modalState?.type === 'edit' ? 'Зберегти' : 'Створити'}
+                </button>
+              ) : null}
             </div>
           </form>
         ) : null}

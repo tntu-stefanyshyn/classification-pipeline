@@ -575,3 +575,70 @@ test('Graph settings helpers and modal normalize, validate, and save settings', 
     },
   ]);
 });
+
+test('Graph settings modal becomes read-only when experiment is locked', (t) => {
+  const helpers = loadFreshModule<
+    typeof import('../src/components/experiments/GraphSettingsModal/utils/settings')
+  >(path.resolve(__dirname, '../src/components/experiments/GraphSettingsModal/utils/settings'));
+  const modalModulePath = path.resolve(
+    __dirname,
+    '../src/components/experiments/GraphSettingsModal/GraphSettingsModal'
+  );
+  const modalCompiledFile = path.resolve(
+    __dirname,
+    '../src/components/experiments/GraphSettingsModal/GraphSettingsModal.js'
+  );
+  const settings = {
+    metrics: { accuracy: 0.4, f1: 0.2, rocAuc: 0.2, ntps: 0.2 },
+    queues: ['local', 'cloud'],
+    folds: 5,
+    hyperOptimizationMinutesPerPipeline: 20,
+    predictDataPercent: 25,
+  } as any;
+  const onCloseCalls: string[] = [];
+  const onSaveCalls: any[] = [];
+
+  stubReactHooks(t, modalCompiledFile, [helpers.buildSettingsDraft(settings)]);
+
+  const module =
+    loadFreshModule<
+      typeof import('../src/components/experiments/GraphSettingsModal/GraphSettingsModal')
+    >(modalModulePath);
+  const tree = module.default({
+    open: true,
+    settings,
+    onClose: () => onCloseCalls.push('close'),
+    onSave: (value) => onSaveCalls.push(value),
+    isBusy: false,
+    isLocked: true,
+    errorMessage: null,
+  });
+
+  assert.equal(
+    findElement(tree, (element) => getElementName(element) === 'MetricWeightsSlider')!.props
+      .disabled,
+    true
+  );
+  assert.equal(
+    findElements(tree, (element) => getElementName(element) === 'InputControl').every(
+      (element) => element.props.disabled === true
+    ),
+    true
+  );
+  assert.equal(
+    findElements(tree, (element) => getElementName(element) === 'CheckboxField').every(
+      (element) => element.props.disabled === true
+    ),
+    true
+  );
+
+  const buttons = findElements(tree, (element) => element.type === 'button');
+  assert.equal(
+    buttons.some((element) => element.props.children === 'Зберегти'),
+    false
+  );
+  buttons.find((element) => element.props.children === 'Закрити')!.props.onClick();
+
+  assert.deepEqual(onCloseCalls, ['close']);
+  assert.deepEqual(onSaveCalls, []);
+});

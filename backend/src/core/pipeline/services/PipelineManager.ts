@@ -10,6 +10,7 @@ import { Transitions } from '../../workflow/services/WorkflowManager.types.';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
+import { config } from '../../../config/config';
 
 const PIPELINE_STATUS_LOG_MESSAGES: Record<PipelineStatus, string> = {
   [PipelineStatus.idle]: 'Перехід у стан очікування',
@@ -57,12 +58,12 @@ export class PipelineManager {
       )
     );
 
-    const cloudPipelines = pipelines.filter(
-      (pipeline) => pipeline.queue === ComputationQueue.cloud
+    const autoQueuedPipelines = pipelines.filter((pipeline) =>
+      this.shouldAutoQueueGeneratedPipeline(pipeline.queue, queues)
     );
-    if (cloudPipelines.length > 0) {
+    if (autoQueuedPipelines.length > 0) {
       await Promise.all(
-        cloudPipelines.map((pipeline) =>
+        autoQueuedPipelines.map((pipeline) =>
           this.changeStatus({
             pipelineId: pipeline._id,
             status: PipelineStatus.queued,
@@ -72,6 +73,14 @@ export class PipelineManager {
     }
 
     return pipelines;
+  }
+
+  private shouldAutoQueueGeneratedPipeline(queue: ComputationQueue, configuredQueues: string[]) {
+    if (queue === ComputationQueue.cloud) {
+      return config.computations.cloudWorkerEnabled || config.computations.localWorkerEnabled;
+    }
+
+    return queue === ComputationQueue.local && !configuredQueues.includes(ComputationQueue.cloud);
   }
 
   private readonly transitions: Transitions<PipelineStatus> = [

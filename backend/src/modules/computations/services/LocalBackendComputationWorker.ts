@@ -6,17 +6,22 @@ import { config } from '../../../config/config';
 import { WorkflowType } from '../../../core/workflow/enums';
 import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
 import { PipelineStatus } from '../../../core/pipeline/enums';
+import { pipelinesCollectionName } from '../../../core/pipeline';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { sleep } from '../../../utils';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { ComputationManager } from './ComputationManager';
 
 const DEFAULT_POLL_MS = 3000;
 const DOCKER_STOP_TIMEOUT_MS = 2000;
+const IDLE_LOG_INTERVAL_MS = 30000;
 
 export class LocalBackendComputationWorker {
   private running = false;
   private stopping = false;
   private imageReadyPromise: Promise<void> | null = null;
+  private lastIdleLogAt = 0;
+  private readonly queue = ComputationQueue.cloud;
   private readonly activeControllers = new Map<string, AbortController>();
   private readonly workflowManager = new WorkflowManager();
   private readonly manager = new ComputationManager();
@@ -29,6 +34,7 @@ export class LocalBackendComputationWorker {
   }
 
   start() {
+    console.log('Запуск локального backend-воркера для обчислень...');
     if (this.running) return;
     this.stopping = false;
     void this.loop();
@@ -43,6 +49,9 @@ export class LocalBackendComputationWorker {
     this.running = true;
     try {
       await this.ensureDockerImageReady();
+      console.log(
+        `Локальний backend-воркер готовий: polling=${this.pollMs}ms, dockerImage="${this.dockerImage}".`
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'невідома помилка підготовки docker-образу';
@@ -54,7 +63,7 @@ export class LocalBackendComputationWorker {
     while (!this.stopping) {
       let run = null;
       try {
-        run = await this.manager.claimNextRun(ComputationQueue.local, this.buildMachineInfo());
+        run = await this.manager.claimNextRun(this.queue, this.buildMachineInfo());
       } catch (error) {
         console.warn('Локальний backend-воркер не зміг отримати запуск з черги', error);
         await sleep(this.pollMs);
@@ -62,7 +71,14 @@ export class LocalBackendComputationWorker {
       }
 
       if (run) {
-        await this.processRun(run._id.toString());
+        const runId = run._id.toString();
+        this.lastIdleLogAt = 0;
+        console.log(
+          `[local-backend-worker][${runId}] Взято в обробку backend-обчислення з cloud черги.`
+        );
+        await this.processRun(runId);
+      } else {
+        await this.logIdleQueueState();
       }
 
       await sleep(this.pollMs);
@@ -142,6 +158,9 @@ export class LocalBackendComputationWorker {
 
   private async runComputeContainer(runId: string, signal?: AbortSignal) {
     const backendUrl = this.resolveContainerBackendUrl();
+    console.log(
+      `[local-backend-worker][${runId}] Запускаю Docker image "${this.dockerImage}" для обчислення.`
+    );
     const runArgs: string[] = [
       'run',
       '--rm',
@@ -233,6 +252,74 @@ export class LocalBackendComputationWorker {
         reject(new Error(message));
       });
     });
+  }
+
+  private async logIdleQueueState() {
+    const now = Date.now();
+    if (now - this.lastIdleLogAt < IDLE_LOG_INTERVAL_MS) return;
+    this.lastIdleLogAt = now;
+
+    try {
+      const summary = await this.getQueueSummary();
+      const localQueued = summary.local?.queued ?? 0;
+      const cloudQueued = summary.cloud?.queued ?? 0;
+      const cloudRunning = summary.cloud?.running ?? 0;
+      console.log(
+        [
+          'Локальний backend-воркер очікує cloud queued запусків.',
+          `cloud queued=${cloudQueued}`,
+          `cloud running=${cloudRunning}`,
+          `local queued=${localQueued}`,
+        ].join(' ')
+      );
+      if (cloudQueued === 0 && localQueued > 0) {
+        console.warn(
+          'У черзі є local-запуски. Їх виконує desktop local worker; backend worker бере cloud чергу.'
+        );
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'невідома помилка читання стану черги';
+      console.warn(`Локальний backend-воркер не зміг прочитати стан черги: ${message}`);
+    }
+  }
+
+  private async getQueueSummary() {
+    type QueueSummary = Partial<Record<ComputationQueue, Partial<Record<PipelineStatus, number>>>>;
+    const rows = await WorkflowModel.aggregate<{
+      _id: { queue: ComputationQueue; status: PipelineStatus };
+      count: number;
+    }>([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: { $in: [PipelineStatus.idle, PipelineStatus.queued, PipelineStatus.running] },
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      {
+        $group: {
+          _id: { queue: '$pipeline.queue', status: '$status' },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    return rows.reduce<QueueSummary>((summary, row) => {
+      const queue = row._id.queue;
+      const status = row._id.status;
+      summary[queue] = summary[queue] ?? {};
+      summary[queue][status] = row.count;
+      return summary;
+    }, {});
   }
 
   private resolveContainerBackendUrl() {

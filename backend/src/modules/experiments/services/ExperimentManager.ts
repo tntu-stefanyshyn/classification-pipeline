@@ -15,6 +15,7 @@ import { UpdateExperimentProgressInput } from '../classes/UpdateExperimentProgre
 import { OptimizationHistoryItem } from '../classes/OptimizationHistoryItem';
 import { UpdateExperimentOptimizationResultInput } from '../classes/UpdateExperimentOptimizationResultInput';
 import { ObjectIdOrString } from '../../../types/context';
+import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 
 export class ExperimentManager {
   private readonly graphManager = new GraphManager();
@@ -86,7 +87,17 @@ export class ExperimentManager {
       workflow.status === ExperimentStatus.optimization ||
       workflow.status === ExperimentStatus.completed
     ) {
-      throw new Error('Редагування експерименту недоступне після початку обчислень.');
+      const canAttachMissingFile =
+        !existingExperiment.fileId &&
+        input.fileId !== undefined &&
+        input.name === undefined &&
+        input.description === undefined &&
+        input.graphNodes === undefined &&
+        input.graphSettings === undefined &&
+        input.graphComputationMode === undefined;
+      if (!canAttachMissingFile) {
+        throw new Error('Редагування експерименту недоступне після початку обчислень.');
+      }
     }
 
     const update: Partial<Experiment> = {};
@@ -209,6 +220,10 @@ export class ExperimentManager {
   ];
 
   async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {
+    if (status === ExperimentStatus.computing) {
+      await this.ensureExperimentFileReady(experimentId);
+    }
+
     await this.workflowManager.changeStatus({
       instanceId: experimentId,
       status,
@@ -217,6 +232,18 @@ export class ExperimentManager {
     });
 
     return true;
+  }
+
+  private async ensureExperimentFileReady(experimentId: ObjectIdOrString) {
+    const experiment = await this.getById(experimentId);
+    if (!experiment.fileId) {
+      throw new Error('Додайте CSV файл до експерименту перед запуском обчислень.');
+    }
+
+    const file = await UploadedFileModel.findById(experiment.fileId).lean();
+    if (!file?.storageKey) {
+      throw new Error('Файл експерименту не знайдено або він недоступний для обчислень.');
+    }
   }
 
   async updateExperimentProgress({

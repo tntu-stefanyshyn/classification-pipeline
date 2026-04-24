@@ -58,6 +58,11 @@ const DataTable = <TData,>({
     onRowClick(row);
   };
 
+  const getColumnClassName = (meta: unknown) =>
+    typeof meta === 'object' && meta !== null && 'className' in meta
+      ? String((meta as { className?: string }).className ?? '')
+      : undefined;
+
   return (
     <div className={containerClassName}>
       <div className="table-wrapper">
@@ -66,7 +71,7 @@ const DataTable = <TData,>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id}>
+                  <th key={header.id} className={getColumnClassName(header.column.columnDef.meta)}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -90,7 +95,7 @@ const DataTable = <TData,>({
                   onClick={(event) => handleRowClick(event, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id}>
+                    <td key={cell.id} className={getColumnClassName(cell.column.columnDef.meta)}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

@@ -102,6 +102,13 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
             pathNodeIds: ['node-1', 'node-2'],
             pathNodes: [{ label: 'Preprocess' }, { label: 'SVM' }],
             optimizationScores: [0.1234],
+            computingResult: {
+              accuracyScores: [0.9, 0.8],
+              f1Scores: [0.7, 0.6],
+              rocAucScores: [0.95, 0.85],
+              duration: 12.345,
+              sampleCount: 5,
+            },
           },
           {
             _id: 'pipe-2',
@@ -111,6 +118,13 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
             pathNodeIds: ['node-1', 'node-2'],
             pathNodes: [{ label: 'Preprocess' }, { label: 'CNN' }],
             optimizationScores: [0.5234],
+            computingResult: {
+              accuracyScores: [0.7, 0.6],
+              f1Scores: [0.5, 0.4],
+              rocAucScores: [0.75, 0.65],
+              duration: 9.5,
+              sampleCount: 10,
+            },
           },
         ],
       },
@@ -146,16 +160,55 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
     (element) => element.props.download === 'experiment-exp-1-report.pdf'
   );
 
+  assert.equal(leaderboardTable.props.className, 'path-table optimization-leaderboard-table');
+  assert.equal(leaderboardTable.props.columns[1].header, 'Інтегральне значення');
+  assert.equal(leaderboardTable.props.columns[1].meta.className, 'optimization-integral-column');
+  assert.equal(leaderboardTable.props.columns[2].header, 'Точність');
+  assert.equal(leaderboardTable.props.columns[2].meta.className, 'optimization-metric-column');
+  assert.equal(leaderboardTable.props.columns[3].header, 'F1-міра');
+  assert.equal(leaderboardTable.props.columns[4].header, 'Площа під ROC-кривою');
+  assert.equal(
+    leaderboardTable.props.columns[5].header,
+    'Нормалізований час обробки одного зразка даних'
+  );
+
   await startButton!.props.onClick();
   historyButton!.props.onClick();
 
-  leaderboardTable.props.columns[1].cell({
-    row: { original: { score: 0.1234 } },
-  });
-  leaderboardTable.props.columns[2].cell({
+  assert.equal(
+    leaderboardTable.props.columns[1].cell({
+      row: { original: { score: 0.1234 } },
+    }),
+    '0.123400'
+  );
+  assert.equal(
+    leaderboardTable.props.columns[2].cell({
+      row: { original: { averageAccuracy: 0.85 } },
+    }),
+    '0.850000'
+  );
+  assert.equal(
+    leaderboardTable.props.columns[3].cell({
+      row: { original: { averageF1: 0.65 } },
+    }),
+    '0.650000'
+  );
+  assert.equal(
+    leaderboardTable.props.columns[4].cell({
+      row: { original: { averageRocAuc: 0.9 } },
+    }),
+    '0.900000'
+  );
+  assert.equal(
+    leaderboardTable.props.columns[5].cell({
+      row: { original: { normalizedProcessingTime: 2.469 } },
+    }),
+    '2.469000 с/зразок'
+  );
+  leaderboardTable.props.columns[6].cell({
     row: { original: { queue: 'local' } },
   });
-  leaderboardTable.props.columns[3].cell({
+  leaderboardTable.props.columns[7].cell({
     row: { original: { status: 'completed' } },
   });
 

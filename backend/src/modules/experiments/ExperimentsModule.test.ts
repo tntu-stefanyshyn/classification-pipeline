@@ -34,6 +34,7 @@ import { UpdateExperimentInput } from './classes/UpdateExperimentInput';
 import { UpdateExperimentOptimizationResultInput } from './classes/UpdateExperimentOptimizationResultInput';
 import { UpdateExperimentProgressInput } from './classes/UpdateExperimentProgressInput';
 import { Experiments } from './graphql/Experiments';
+import { UploadedFileModel } from '../files/models/UploadedFileModel';
 import { ExperimentModel } from './models/ExperimentModel';
 import { GraphStructureModel } from './models/GraphStructureModel';
 import { ExperimentManager } from './services/ExperimentManager';
@@ -219,6 +220,7 @@ test('ExperimentManager handles update, generateGraph and optimization updates',
   const manager = new ExperimentManager();
   const userId = new Types.ObjectId().toHexString();
   const experimentId = new Types.ObjectId().toHexString();
+  const fileId = new Types.ObjectId();
   const graphNodes = [{ _id: 'node-1' }];
   const graphSettings = {
     metrics: { accuracy: 0.25, f1: 0.25, rocAuc: 0.25, ntps: 0.25 },
@@ -282,8 +284,12 @@ test('ExperimentManager handles update, generateGraph and optimization updates',
       graphCalls.push(['generatePipelinesFromGraphStructure', ...args]);
     },
   } as any);
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'findById', () =>
+    createLeanResult({ _id: fileId, storageKey: 'uploads/eeg.csv' })
+  );
   stub(t, manager as unknown as Record<string, unknown>, 'getById', async (id: string) => ({
     _id: id,
+    fileId,
     optimization: {},
   }));
 

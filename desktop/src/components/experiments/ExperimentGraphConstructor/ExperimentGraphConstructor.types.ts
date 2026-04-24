@@ -27,6 +27,7 @@ export type GraphFlowNodeData = {
   isCollapsed?: boolean;
   collapsedChildrenCount?: number;
   graphActionsDisabled: boolean;
+  graphInspectionDisabled: boolean;
   graphUpdating: boolean;
   onAdd: (parentId: string | null) => void;
   onEdit: (nodeId: string) => void;
@@ -60,6 +61,7 @@ export type BuildFlowElementsParams = {
   selectedNodeId: string | null;
   collapsedNodeIds: Set<string>;
   graphActionsDisabled: boolean;
+  graphInspectionDisabled: boolean;
   graphUpdating: boolean;
   onAdd: (parentId: string | null) => void;
   onEdit: (nodeId: string) => void;

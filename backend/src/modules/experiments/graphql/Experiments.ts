@@ -90,10 +90,17 @@ export class Experiments {
         type: WorkflowType.EXPERIMENT,
       });
       if (workflow.status !== ExperimentStatus.configuring) {
-        await this.experimentManager.changeStatus({
-          experimentId: input._id,
-          status: ExperimentStatus.configuring,
-        });
+        const lockedStatuses = [
+          ExperimentStatus.computing,
+          ExperimentStatus.optimization,
+          ExperimentStatus.completed,
+        ];
+        if (!lockedStatuses.some((status) => status === workflow.status)) {
+          await this.experimentManager.changeStatus({
+            experimentId: input._id,
+            status: ExperimentStatus.configuring,
+          });
+        }
       }
     }
     return experiment;

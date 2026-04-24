@@ -345,7 +345,6 @@ test('Experiments GraphQL executes mutations through the schema', async (t) => {
       userId.toHexString(),
     ],
     ['findOneWorkflow', { instanceId: experimentId, type: WorkflowType.EXPERIMENT }],
-    ['changeStatus', { experimentId, status: 'configuring' }],
     [
       'generateGraph',
       {

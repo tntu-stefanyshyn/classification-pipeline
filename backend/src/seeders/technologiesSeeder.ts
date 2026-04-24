@@ -218,12 +218,6 @@ const TECHNOLOGY_SEEDS = [
         defaultValue: 'true',
       },
       {
-        key: 'probability',
-        label: 'Probability',
-        type: TechnologySettingType.BOOLEAN,
-        defaultValue: 'false',
-      },
-      {
         key: 'tol',
         label: 'Толерантність',
         type: TechnologySettingType.NUMBER,

@@ -25,6 +25,10 @@ type LeaderboardRow = {
   queue: ComputationQueue;
   status: PipelineStatus;
   score: number | null;
+  averageAccuracy: number | null;
+  averageF1: number | null;
+  averageRocAuc: number | null;
+  normalizedProcessingTime: number | null;
   pathNodes: string[];
 };
 
@@ -32,6 +36,31 @@ const queueLabels: Record<ComputationQueue, string> = {
   [ComputationQueue.cloud]: 'Хмарна',
   [ComputationQueue.local]: 'Локальна',
 };
+
+const averageMetric = (values?: number[] | null) => {
+  const numericValues = (values ?? []).filter((value) => Number.isFinite(value));
+  if (numericValues.length === 0) return null;
+  return numericValues.reduce((total, value) => total + value, 0) / numericValues.length;
+};
+
+const formatMetric = (value: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : '—';
+
+const normalizeProcessingTime = (duration?: number | null, sampleCount?: number | null) => {
+  if (
+    typeof duration !== 'number' ||
+    !Number.isFinite(duration) ||
+    typeof sampleCount !== 'number' ||
+    !Number.isFinite(sampleCount) ||
+    sampleCount <= 0
+  ) {
+    return null;
+  }
+  return duration / sampleCount;
+};
+
+const formatNormalizedTime = (value: number | null) =>
+  typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(6)} с/зразок` : '—';
 
 const OptimizationCard: FC = () => {
   const params = useParams();
@@ -95,12 +124,20 @@ const OptimizationCard: FC = () => {
           pipeline.optimizationScores && pipeline.optimizationScores.length > 0
             ? pipeline.optimizationScores[pipeline.optimizationScores.length - 1]
             : null;
+        const computingResult = pipeline.computingResult;
         return {
           id: pipeline._id,
           label: pathLabel,
           queue: pipeline.queue,
           status: pipeline.status,
           score,
+          averageAccuracy: averageMetric(computingResult?.accuracyScores),
+          averageF1: averageMetric(computingResult?.f1Scores),
+          averageRocAuc: averageMetric(computingResult?.rocAucScores),
+          normalizedProcessingTime: normalizeProcessingTime(
+            computingResult?.duration,
+            computingResult?.sampleCount
+          ),
           pathNodes: pipeline.pathNodes?.map((node) => node.label) ?? [],
         };
       })
@@ -404,7 +441,7 @@ const OptimizationCard: FC = () => {
               </div>
               <div className="result-meta-item">
                 <span className="muted small">Оцінка</span>
-                <span>{bestDetails.score !== null ? bestDetails.score.toFixed(4) : '—'}</span>
+                <span>{bestDetails.score !== null ? bestDetails.score.toFixed(6) : '—'}</span>
               </div>
               <div className="result-meta-item">
                 <span className="muted small">Виконання</span>
@@ -437,10 +474,34 @@ const OptimizationCard: FC = () => {
                 accessorKey: 'label',
               },
               {
-                header: 'Оцінка',
+                header: 'Інтегральне значення',
                 accessorKey: 'score',
-                cell: ({ row }) =>
-                  row.original.score !== null ? row.original.score.toFixed(4) : '—',
+                cell: ({ row }) => formatMetric(row.original.score),
+                meta: { className: 'optimization-integral-column' },
+              },
+              {
+                header: 'Точність',
+                accessorKey: 'averageAccuracy',
+                cell: ({ row }) => formatMetric(row.original.averageAccuracy),
+                meta: { className: 'optimization-metric-column' },
+              },
+              {
+                header: 'F1-міра',
+                accessorKey: 'averageF1',
+                cell: ({ row }) => formatMetric(row.original.averageF1),
+                meta: { className: 'optimization-metric-column' },
+              },
+              {
+                header: 'Площа під ROC-кривою',
+                accessorKey: 'averageRocAuc',
+                cell: ({ row }) => formatMetric(row.original.averageRocAuc),
+                meta: { className: 'optimization-metric-column' },
+              },
+              {
+                header: 'Нормалізований час обробки одного зразка даних',
+                accessorKey: 'normalizedProcessingTime',
+                cell: ({ row }) => formatNormalizedTime(row.original.normalizedProcessingTime),
+                meta: { className: 'optimization-metric-column' },
               },
               {
                 header: 'Виконання',
@@ -456,7 +517,7 @@ const OptimizationCard: FC = () => {
             getRowId={(row) => row.id}
             pageSize={5}
             labels={tableLabels}
-            className="path-table"
+            className="path-table optimization-leaderboard-table"
             emptyMessage="Немає оцінених конвеєрів."
           />
         ) : (
@@ -486,7 +547,7 @@ const OptimizationCard: FC = () => {
                 <div className="bar-chart-labels">
                   <span className="bar-chart-title">{row.label}</span>
                   <span className="bar-chart-score">
-                    {row.score !== null ? row.score.toFixed(4) : '—'}
+                    {row.score !== null ? row.score.toFixed(6) : '—'}
                   </span>
                 </div>
               </div>

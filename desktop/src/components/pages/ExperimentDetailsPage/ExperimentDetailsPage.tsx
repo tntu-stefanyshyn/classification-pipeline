@@ -68,6 +68,8 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     experiment?.status === ExperimentStatus.computing ||
     experiment?.status === ExperimentStatus.optimization ||
     experiment?.status === ExperimentStatus.completed;
+  const hasDatasetFile = Boolean(experiment?.fileId);
+  const canEditExperiment = Boolean(experiment) && (!isExperimentLocked || !hasDatasetFile);
 
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
@@ -95,7 +97,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     return Math.abs(sum - 1) <= 0.0001;
   }, [graphSettings]);
   const canMoveToComputing =
-    experiment?.status === ExperimentStatus.configuring && graphSettingsReady;
+    experiment?.status === ExperimentStatus.configuring && graphSettingsReady && hasDatasetFile;
 
   const reportUrl = useMemo(() => {
     if (!experiment) return '';
@@ -109,7 +111,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   };
 
   const openSettingsModal = () => {
-    if (!experiment || isExperimentLocked) return;
+    if (!experiment) return;
     setSettingsModalOpen(true);
   };
 
@@ -118,7 +120,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   };
 
   const handleSaveGraphSettings = async (settings: GraphStructureSettingsInput) => {
-    if (!experiment) return;
+    if (!experiment || isExperimentLocked) return;
     try {
       await updateGraphSettings({
         variables: {
@@ -187,9 +189,9 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             className="btn primary"
             type="button"
             onClick={() => setEditModalOpen(true)}
-            disabled={!experiment || isExperimentLocked}
+            disabled={!canEditExperiment}
           >
-            Редагувати
+            {isExperimentLocked && !hasDatasetFile ? 'Додати файл' : 'Редагувати'}
           </button>
         </>
       }
@@ -263,14 +265,19 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 className="btn ghost small"
                 type="button"
                 onClick={openSettingsModal}
-                disabled={!experiment || isExperimentLocked}
+                disabled={!experiment}
               >
-                Змінити налаштування
+                {isExperimentLocked ? 'Переглянути налаштування' : 'Змінити налаштування'}
               </button>
             </div>
             {!graphSettingsReady && (
               <Alert variant="warning">
                 Налаштування графа ще не заповнені. Вкажіть ваги метрик та типи обчислень.
+              </Alert>
+            )}
+            {!hasDatasetFile && (
+              <Alert variant="warning">
+                Додайте CSV файл до експерименту перед запуском обчислень.
               </Alert>
             )}
             <div className="graph-summary-grid">
@@ -350,14 +357,24 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             if (!experiment) return;
             try {
               const normalizedFileId = values.fileId.trim() || null;
-              await updateExperiment({
-                variables: {
-                  input: {
+              if (isExperimentLocked && !normalizedFileId) {
+                setStatus('Додайте CSV файл до експерименту перед запуском обчислень.');
+                return;
+              }
+              const input = isExperimentLocked
+                ? {
+                    _id: experiment._id,
+                    fileId: normalizedFileId,
+                  }
+                : {
                     _id: experiment._id,
                     name: values.name.trim(),
                     description: values.description.trim() || null,
                     fileId: normalizedFileId,
-                  },
+                  };
+              await updateExperiment({
+                variables: {
+                  input,
                 },
                 refetchQueries: [refetchExperimentQuery({ _id: experiment._id })],
                 awaitRefetchQueries: true,
@@ -458,7 +475,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                     value={values.fileId}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    disabled={filesLoading || uploading || isExperimentLocked}
+                    disabled={filesLoading || uploading || (isExperimentLocked && hasDatasetFile)}
                   >
                     <option value="">Без файлу</option>
                     {uploadedFiles.map((file) => (
@@ -473,7 +490,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                       className="btn ghost small"
                       type="button"
                       onClick={handleUploadClick}
-                      disabled={uploading || isExperimentLocked}
+                      disabled={uploading || (isExperimentLocked && hasDatasetFile)}
                     >
                       {uploading ? 'Завантаження...' : 'Завантажити CSV'}
                     </button>
@@ -486,7 +503,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                   ref={fileInputRef}
                   accept=".csv,text/csv"
                   onChange={handleFileChange}
-                  disabled={isExperimentLocked}
+                  disabled={isExperimentLocked && hasDatasetFile}
                 />
                 {status && <p className="error">{status}</p>}
                 {updateError && <p className="error">Помилка: {updateError.message}</p>}
@@ -497,7 +514,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                   <button
                     className="btn primary"
                     type="submit"
-                    disabled={isSubmitting || updating || isExperimentLocked}
+                    disabled={isSubmitting || updating || (isExperimentLocked && hasDatasetFile)}
                   >
                     {isSubmitting || updating ? 'Збереження...' : 'Зберегти зміни'}
                   </button>

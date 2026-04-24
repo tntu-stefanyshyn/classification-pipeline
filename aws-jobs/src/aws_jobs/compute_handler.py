@@ -179,6 +179,8 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
             file_url = _fetch_signed_download_url(backend_url, payload.get("file_id")) # type: ignore
 
     if not file_url and not file_path:
+        if not payload.get("file_id"):
+            raise ValueError("EXPERIMENT_FILE_NOT_CONFIGURED")
         raise ValueError("FILE_URL_NOT_FOUND")
 
     try:
@@ -420,7 +422,7 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
     normalized = technology.strip().lower()
 
     if normalized == "svm":
-        classifier_kwargs: Dict[str, Any] = {}
+        classifier_kwargs: Dict[str, Any] = {"probability": True}
         c_value = _to_float(_get_setting(settings, "c"))
         if c_value is not None:
             classifier_kwargs["C"] = c_value
@@ -447,10 +449,6 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
         shrinking = _get_setting(settings, "shrinking")
         if shrinking is not None:
             classifier_kwargs["shrinking"] = _to_bool(shrinking, True)
-
-        probability = _get_setting(settings, "probability")
-        if probability is not None:
-            classifier_kwargs["probability"] = _to_bool(probability, False)
 
         tol = _to_float(_get_setting(settings, "tol"))
         if tol is not None:

@@ -45,9 +45,11 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
   const meta = stageLabel ?? getStageLabel(data.stage);
   const className = `org-node${data.isActive ? ' active' : ''}${data.isCollapsed ? ' collapsed' : ''}`;
   const addDisabled = data.graphActionsDisabled;
+  const inspectDisabled = data.graphInspectionDisabled;
   const canAddChild = data.stage !== ClassificationStage.CLASSIFICATION;
   const canToggleCollapse = Boolean(data.hasChildren || data.isCollapsed);
   const collapseLabel = data.isCollapsed ? 'Розгорнути гілку' : 'Згорнути гілку';
+  const inspectLabel = data.graphActionsDisabled ? 'Переглянути вузол' : 'Редагувати вузол';
 
   return (
     <div className={className}>
@@ -57,7 +59,7 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
         type="button"
         className="org-node-body"
         onClick={() => data.onEdit(data._id)}
-        aria-label="Редагувати вузол"
+        aria-label={inspectLabel}
       >
         <span className="org-node-title" title={title}>
           {title}
@@ -76,7 +78,7 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
             className="btn ghost small icon"
             type="button"
             onClick={() => data.onToggleCollapse(data._id)}
-            disabled={addDisabled}
+            disabled={data.graphUpdating}
             aria-label={collapseLabel}
             title={collapseLabel}
           >
@@ -127,9 +129,9 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
           className="btn ghost small icon"
           type="button"
           onClick={() => data.onEdit(data._id)}
-          disabled={data.graphActionsDisabled}
-          aria-label="Редагувати вузол"
-          title="Редагувати вузол"
+          disabled={inspectDisabled}
+          aria-label={inspectLabel}
+          title={inspectLabel}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -146,7 +148,7 @@ const GraphNode: FC<GraphNodeProps> = ({ data }) => {
           className="btn ghost small icon"
           type="button"
           onClick={() => data.onDelete(data._id)}
-          disabled={data.graphUpdating}
+          disabled={data.graphActionsDisabled}
           aria-label="Видалити вузол"
           title="Видалити вузол"
         >

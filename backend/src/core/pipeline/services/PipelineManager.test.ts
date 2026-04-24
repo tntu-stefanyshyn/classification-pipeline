@@ -7,6 +7,7 @@ import { PipelineStatus } from '../enums';
 import { PipelineModel } from '../models/PipelineModel';
 import { createExecResult, stub } from '../../../test/testUtils';
 import { PipelineManager } from './PipelineManager';
+import { config } from '../../../config/config';
 
 test('PipelineManager.generatePipelinesFromGraphStructure creates pipelines for every path and queue', async (t) => {
   const manager = new PipelineManager();
@@ -65,6 +66,65 @@ test('PipelineManager.generatePipelinesFromGraphStructure creates pipelines for 
   assert.equal(workflowCreates.length, 4);
   assert.ok(workflowCreates.every((entry) => entry.status === PipelineStatus.idle));
   assert.equal(autoQueueCalls.length, 2);
+  assert.ok(autoQueueCalls.every((entry) => entry.status === PipelineStatus.queued));
+});
+
+test('PipelineManager.generatePipelinesFromGraphStructure keeps cloud pipelines for backend docker worker', async (t) => {
+  const originalCloudWorkerEnabled = config.computations.cloudWorkerEnabled;
+  const originalLocalWorkerEnabled = config.computations.localWorkerEnabled;
+  config.computations.cloudWorkerEnabled = false;
+  config.computations.localWorkerEnabled = true;
+  t.after(() => {
+    config.computations.cloudWorkerEnabled = originalCloudWorkerEnabled;
+    config.computations.localWorkerEnabled = originalLocalWorkerEnabled;
+  });
+
+  const manager = new PipelineManager();
+  const experimentId = new Types.ObjectId().toHexString();
+  const rootId = new Types.ObjectId().toHexString();
+  const leafId = new Types.ObjectId().toHexString();
+  const autoQueueCalls: any[] = [];
+
+  stub(t, manager as unknown as Record<string, unknown>, 'graphManager', {
+    getByExperimentId: async () => ({
+      _id: new Types.ObjectId(),
+      settings: {
+        queues: [ComputationQueue.local, ComputationQueue.cloud],
+      },
+      nodes: [
+        { _id: rootId, parentId: undefined },
+        { _id: leafId, parentId: rootId },
+      ],
+    }),
+  } as any);
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'create', async (payloads: any[]) =>
+    payloads.map((payload) => ({
+      _id: new Types.ObjectId(),
+      ...payload,
+    }))
+  );
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    create: async (payload: any) => payload,
+  } as any);
+  stub(t, manager as unknown as Record<string, unknown>, 'changeStatus', async (payload: any) => {
+    autoQueueCalls.push(payload);
+    return true;
+  });
+
+  const pipelines = await manager.generatePipelinesFromGraphStructure(experimentId);
+  const cloudPipelineIds = pipelines
+    .filter((pipeline) => pipeline.queue === ComputationQueue.cloud)
+    .map((pipeline) => pipeline._id);
+
+  assert.ok(pipelines.length > 0);
+  assert.equal(
+    pipelines.some((pipeline) => pipeline.queue === ComputationQueue.cloud),
+    true
+  );
+  assert.deepEqual(
+    autoQueueCalls.map((entry) => entry.pipelineId),
+    cloudPipelineIds
+  );
   assert.ok(autoQueueCalls.every((entry) => entry.status === PipelineStatus.queued));
 });
 

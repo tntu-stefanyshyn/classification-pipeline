@@ -35,6 +35,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
 
   const settingsValidation = useMemo(() => validateGraphSettings(settingsDraft), [settingsDraft]);
   const inputsDisabled = isBusy || isLocked;
+  const isReadOnly = isLocked;
   const sumValue = Number.isFinite(settingsValidation.sum) ? settingsValidation.sum : null;
   const sumDisplay = sumValue !== null ? `${sumValue.toFixed(2)}%` : '—';
   const sumClassName =
@@ -109,6 +110,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 min={1}
                 max={20}
                 step={1}
+                disabled={inputsDisabled}
                 onChange={(e) => {
                   const nextValue = Number.parseInt(e.target.value, 10);
                   setSettingsDraft(
@@ -122,6 +124,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 label="Час гіпероптимізації для одного конвеєра (хв)"
                 min={1}
                 step={1}
+                disabled={inputsDisabled}
                 onChange={(e) => {
                   const nextValue = Number.parseInt(e.target.value, 10);
                   setSettingsDraft((prev) =>
@@ -143,6 +146,7 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
                 min={1}
                 max={99}
                 step={1}
+                disabled={inputsDisabled}
                 onChange={(e) => {
                   const nextValue = Number.parseInt(e.target.value, 10);
                   setSettingsDraft((prev) =>
@@ -187,16 +191,18 @@ const GraphSettingsModal: FC<GraphSettingsModalProps> = ({
           ) : null}
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={onClose}>
-              Скасувати
+              {isReadOnly ? 'Закрити' : 'Скасувати'}
             </button>
-            <button
-              className="btn primary"
-              type="button"
-              onClick={handleSave}
-              disabled={!settingsValidation.isValid || inputsDisabled}
-            >
-              {isBusy ? 'Збереження...' : 'Зберегти'}
-            </button>
+            {!isReadOnly ? (
+              <button
+                className="btn primary"
+                type="button"
+                onClick={handleSave}
+                disabled={!settingsValidation.isValid || inputsDisabled}
+              >
+                {isBusy ? 'Збереження...' : 'Зберегти'}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

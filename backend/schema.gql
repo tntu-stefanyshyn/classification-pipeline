@@ -351,6 +351,7 @@ input StopExperimentRunInput {
 
 type Technology {
   _id: ID!
+  displayName: String
   name: String!
   settings: [TechnologySetting!]!
   stage: ClassificationStage!

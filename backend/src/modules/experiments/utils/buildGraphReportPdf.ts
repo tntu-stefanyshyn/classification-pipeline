@@ -72,6 +72,7 @@ type GraphReportInput = {
 };
 
 const UK_LOCALE = 'uk-UA';
+const DISPLAY_NAME_SEPARATOR = ' / ';
 
 const queueLabels: Record<string, string> = {
   local: 'Локальна черга',
@@ -151,6 +152,18 @@ const formatQueue = (queue?: string | null) => {
   return queueLabels[queue] ?? queue;
 };
 
+const getReportTechnologyLabel = (value?: string | null) => {
+  const normalizedValue = value?.trim() ?? '';
+  if (!normalizedValue) return '';
+
+  const parts = normalizedValue.split(DISPLAY_NAME_SEPARATOR).map((part) => part.trim());
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return normalizedValue;
+  }
+
+  return parts[1];
+};
+
 export const buildGraphReportPdf = async (input: GraphReportInput): Promise<Buffer> =>
   (async () => {
     const nodes = input.nodes ?? [];
@@ -164,7 +177,12 @@ export const buildGraphReportPdf = async (input: GraphReportInput): Promise<Buff
       path
         .map((nodeId) => {
           const node = nodeById.get(nodeId);
-          return node?.technology || node?.label || nodeId;
+          return (
+            getReportTechnologyLabel(node?.label || node?.technology) ||
+            node?.label ||
+            node?.technology ||
+            nodeId
+          );
         })
         .join(' -> ');
 
@@ -362,7 +380,12 @@ export const buildGraphReportPdf = async (input: GraphReportInput): Promise<Buff
           return `
             <tr>
               <td>${escapeHtml(stageLabel)}</td>
-              <td>${escapeHtml(node.technology || node.label || '—')}</td>
+              <td>${escapeHtml(
+                getReportTechnologyLabel(node.label || node.technology) ||
+                  node.label ||
+                  node.technology ||
+                  '—'
+              )}</td>
               <td>${escapeHtml(paramsLabel)}</td>
             </tr>
           `;
@@ -484,7 +507,7 @@ export const buildGraphReportPdf = async (input: GraphReportInput): Promise<Buff
             <div class="matrix">
               <table class="table matrix-table">
                 <thead>
-                  <tr><th>Крок ${matrixIndex + 1}</th>${header}</tr>
+                  <tr><th></th>${header}</tr>
                 </thead>
                 <tbody>${body}</tbody>
               </table>

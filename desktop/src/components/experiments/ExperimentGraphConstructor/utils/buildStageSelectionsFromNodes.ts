@@ -4,6 +4,7 @@ import type {
   StageSelection,
   TechnologyIndex,
 } from '../ExperimentGraphConstructor.types';
+import { resolveTechnology } from './technology';
 
 export const buildStageSelectionsFromNodes = (
   nodes: FlatGraphNode[],
@@ -13,9 +14,7 @@ export const buildStageSelectionsFromNodes = (
 
   nodes.forEach((node) => {
     if (!node.stage) return;
-    const technologyName = node.technology || node.label;
-    if (!technologyName) return;
-    const technology = technologyIndex.byStageName.get(`${node.stage}:${technologyName}`);
+    const technology = resolveTechnology(technologyIndex, node.stage, node.technology, node.label);
     if (!technology) return;
     const stageKey = node.stage;
     const set = selections.get(stageKey) ?? new Set<string>();

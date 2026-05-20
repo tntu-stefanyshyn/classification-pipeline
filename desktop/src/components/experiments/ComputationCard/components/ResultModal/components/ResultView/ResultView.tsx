@@ -1,9 +1,10 @@
-import { FC, type CSSProperties, useMemo } from 'react';
+import { type CSSProperties, useMemo, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { ResultViewProps } from './ResultView.types';
 import { HistoryTable } from './components';
-import uk from '../../../../../../../i18n/uk';
 import { DataTable } from '../../../../../../ui/DataTable';
+import { useI18n } from '../../../../../../../i18n';
+import { getLocalizedTechnologyLabel } from '../../../../../../../utils/technologyLabel';
 
 type MetricRow = {
   metric: string;
@@ -23,9 +24,8 @@ const calculateMatrixPercent = (value: unknown, rowTotal: number) => {
   return (numeric / rowTotal) * 100;
 };
 
-const formatMatrixPercent = (value: unknown, rowTotal: number) => {
-  return `${calculateMatrixPercent(value, rowTotal).toFixed(2)}%`;
-};
+const formatMatrixPercent = (value: unknown, rowTotal: number) =>
+  `${calculateMatrixPercent(value, rowTotal).toFixed(2)}%`;
 
 const getConfusionCellStyle = (percent: number): CSSProperties => {
   const ratio = Math.max(0, Math.min(percent, 100)) / 100;
@@ -41,19 +41,27 @@ const getConfusionCellStyle = (percent: number): CSSProperties => {
   };
 };
 
-const formatDuration = (value?: number) =>
-  Number.isFinite(value) ? `${value?.toFixed(2)} с` : 'Немає даних';
-
 const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
+  const { locale, messages } = useI18n();
   const { history, pathNodes, queue, status, progress, machineInfo } = pipeline;
-  const title = pathNodes?.map((pathNode) => pathNode.label).join('->');
+  const title = pathNodes
+    ?.map(
+      (pathNode) =>
+        getLocalizedTechnologyLabel(pathNode.label || pathNode.technology, locale) ||
+        getLocalizedTechnologyLabel(pathNode.technology, locale) ||
+        pathNode.label ||
+        pathNode.technology
+    )
+    .join('->');
   const [latestLog] = history?.toReversed() ?? [];
   const [firstLog] = history ?? [];
   const payload = pipeline.computingResult;
   const channelNames = payload?.channelNames ?? [];
   const channelCount = payload?.channelNames.length;
   const eegRows = payload?.sampleCount;
-  const durationLabel = formatDuration(payload?.duration);
+  const durationLabel = Number.isFinite(payload?.duration)
+    ? `${payload?.duration?.toFixed(2)} ${messages.resultView.durationSeconds}`
+    : messages.resultView.noData;
   const hasResults = Boolean(payload);
   const predictionSampleCounts = payload?.predictionSampleCounts ?? [];
   const predictionDataPercent = payload?.predictionDataPercent;
@@ -82,19 +90,14 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
     );
     return firstMatrixTotal > 0 ? firstMatrixTotal : null;
   }, [confusionMatrixes, payload?.predictionSampleCount, predictionSampleCounts]);
-  const machineQueue = machineInfo?.queue ? uk.computationQueue[machineInfo.queue] : null;
-  const machineRamLabel =
-    typeof machineInfo?.memoryGb === 'number' ? `${machineInfo.memoryGb} ГБ` : 'Немає даних';
-  const platformDetails = [machineInfo?.platform, machineInfo?.release, machineInfo?.arch]
-    .filter(Boolean)
-    .join(' ');
+
   const metricRows = useMemo<MetricRow[]>(
     () => [
-      { metric: 'Точність', values: payload?.accuracyScores?.map(String) ?? [] },
-      { metric: 'F1', values: payload?.f1Scores?.map(String) ?? [] },
-      { metric: 'ROC AUC', values: payload?.rocAucScores?.map(String) ?? [] },
+      { metric: messages.metrics.accuracy, values: payload?.accuracyScores?.map(String) ?? [] },
+      { metric: messages.metrics.f1, values: payload?.f1Scores?.map(String) ?? [] },
+      { metric: messages.metrics.rocAuc, values: payload?.rocAucScores?.map(String) ?? [] },
     ],
-    [payload?.accuracyScores, payload?.f1Scores, payload?.rocAucScores]
+    [messages.metrics, payload?.accuracyScores, payload?.f1Scores, payload?.rocAucScores]
   );
   const maxFoldCount = useMemo(
     () => Math.max(0, ...metricRows.map((row) => row.values.length)),
@@ -103,44 +106,49 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
   const metricColumns = useMemo<ColumnDef<MetricRow>[]>(() => {
     const base: ColumnDef<MetricRow>[] = [
       {
-        header: 'Метрика',
+        header: messages.resultView.metric,
         accessorKey: 'metric',
         cell: ({ row }) => <span className="item-title">{row.original.metric}</span>,
       },
     ];
     const foldColumns = Array.from({ length: maxFoldCount }, (_, index) => ({
       id: `fold-${index + 1}`,
-      header: `Крок ${index + 1}`,
+      header: `${messages.resultView.fold} ${index + 1}`,
       cell: ({ row }: { row: { original: MetricRow } }) => (
         <span className="result-snippet">{row.original.values[index] ?? '—'}</span>
       ),
     }));
     return [...base, ...foldColumns];
-  }, [maxFoldCount]);
+  }, [maxFoldCount, messages.resultView.fold, messages.resultView.metric]);
 
   return (
     <div className="node-modal">
       <p className="item-title">{title}</p>
-      <p className="muted small">Етапів у конвеєрі: {pathNodes?.length}</p>
+      <p className="muted small">
+        {messages.experimentDetails.pipelineCount}: {pathNodes?.length}
+      </p>
       {latestLog ? (
         <div className="result-details">
           <div className="result-section">
             <div className="result-section-head">
               <div>
-                <h4 className="result-section-title">Поточний стан</h4>
+                <h4 className="result-section-title">{messages.resultView.currentState}</h4>
                 <p className="muted small">
-                  Останнє оновлення: {new Date(latestLog.createdAt).toLocaleString()}
+                  {messages.resultView.latestUpdate}:{' '}
+                  {new Date(latestLog.createdAt).toLocaleString()}
                 </p>
               </div>
-              <span className={`status-pill status-${status}`}>{uk.computationStatus[status]}</span>
+              <span className={`status-pill status-${status}`}>
+                {messages.statuses.computationStatus[status]}
+              </span>
             </div>
             <div className="result-meta-grid">
               <div className="result-meta-item">
-                <span className="muted small">Черга</span>
-                <span>{uk.computationQueue[queue]}</span>
+                <span className="muted small">{messages.resultView.queue}</span>
+                <span>{messages.statuses.computationQueue[queue]}</span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Останній запуск</span>
+                <span className="muted small">{messages.resultView.latestRun}</span>
                 <span>{new Date(firstLog.createdAt).toLocaleString()}</span>
               </div>
             </div>
@@ -152,18 +160,16 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
                 <span className="result-progress-value">{progress}%</span>
               </div>
             ) : null}
-            {latestLog ? (
-              <div className="result-message">
-                <span className="muted small">Поточне повідомлення</span>
-                <span>{latestLog.message}</span>
-              </div>
-            ) : null}
+            <div className="result-message">
+              <span className="muted small">{messages.resultView.currentMessage}</span>
+              <span>{latestLog.message}</span>
+            </div>
           </div>
           <div className="result-section">
             <div className="result-section-head">
               <div>
-                <h4 className="result-section-title">Результати обчислення</h4>
-                <p className="muted small">Перехресна валідація та параметри EEG.</p>
+                <h4 className="result-section-title">{messages.resultView.computingResults}</h4>
+                <p className="muted small">{messages.resultView.computingSubtitle}</p>
               </div>
               <span className="result-count">{payload?.accuracyScores?.length ?? 0}</span>
             </div>
@@ -172,137 +178,147 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
                 <DataTable
                   data={metricRows}
                   columns={metricColumns}
-                  emptyMessage="Немає метрик для відображення."
+                  emptyMessage={messages.resultView.noMetrics}
                 />
                 {confusionMatrixes.length > 0 ? (
                   <div className="result-details">
-                    <span className="muted small">
-                      Матриці неточностей по кроках перехресної валідації
-                    </span>
+                    <span className="muted small">{messages.resultView.confusionTitle}</span>
                     <div className="muted small">
-                      {`База: ${
+                      {`${messages.resultView.confusionBase}: ${
                         Number.isFinite(predictionSampleCount ?? Number.NaN)
                           ? predictionSampleCount
-                          : 'Немає даних'
-                      } рядків предікту${
+                          : messages.resultView.noData
+                      } ${messages.resultView.confusionPredictionRows}${
                         Number.isFinite(predictionDataPercent ?? Number.NaN)
-                          ? ` (${predictionDataPercent}% даних)`
+                          ? ` (${predictionDataPercent}% ${messages.resultView.confusionDataPart})`
                           : ''
                       }`}
                     </div>
-                    {confusionMatrixes.map((matrix, matrixIndex) => {
-                      return (
-                        <div
-                          className="result-confusion"
-                          key={`confusion-matrix-${matrixIndex + 1}`}
-                        >
-                          <table className="confusion-table">
-                            <thead>
-                              <tr>
-                                <th>{`Крок ${matrixIndex + 1}`}</th>
-                                {matrix[0]?.map((_, columnIndex) => (
-                                  <th key={`matrix-head-${matrixIndex + 1}-${columnIndex}`}>
-                                    {channelNames[columnIndex] ?? `Клас ${columnIndex + 1}`}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {matrix.map((row, rowIndex) => (
-                                <tr key={`matrix-row-${matrixIndex + 1}-${rowIndex}`}>
-                                  <th>{channelNames[rowIndex] ?? `Клас ${rowIndex + 1}`}</th>
-                                  {row.map((cell, columnIndex) => {
-                                    const rowTotal = row.reduce(
-                                      (rowTotal, nextCell) =>
-                                        rowTotal + formatMatrixValue(nextCell),
-                                      0
-                                    );
-                                    const cellPercent = calculateMatrixPercent(cell, rowTotal);
-
-                                    return (
-                                      <td
-                                        key={`matrix-cell-${matrixIndex + 1}-${rowIndex}-${columnIndex}`}
-                                        style={getConfusionCellStyle(cellPercent)}
-                                      >
-                                        {formatMatrixPercent(cell, rowTotal)}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
+                    {confusionMatrixes.map((matrix, matrixIndex) => (
+                      <div className="result-confusion" key={`confusion-matrix-${matrixIndex + 1}`}>
+                        <table className="confusion-table">
+                          <thead>
+                            <tr>
+                              <th>{`${messages.resultView.fold} ${matrixIndex + 1}`}</th>
+                              {matrix[0]?.map((_, columnIndex) => (
+                                <th key={`matrix-head-${matrixIndex + 1}-${columnIndex}`}>
+                                  {channelNames[columnIndex] ??
+                                    `${messages.resultView.classLabel} ${columnIndex + 1}`}
+                                </th>
                               ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      );
-                    })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {matrix.map((row, rowIndex) => (
+                              <tr key={`matrix-row-${matrixIndex + 1}-${rowIndex}`}>
+                                <th>
+                                  {channelNames[rowIndex] ??
+                                    `${messages.resultView.classLabel} ${rowIndex + 1}`}
+                                </th>
+                                {row.map((cell, columnIndex) => {
+                                  const rowTotal = row.reduce(
+                                    (rowTotal, nextCell) => rowTotal + formatMatrixValue(nextCell),
+                                    0
+                                  );
+                                  const cellPercent = calculateMatrixPercent(cell, rowTotal);
+                                  return (
+                                    <td
+                                      key={`matrix-cell-${matrixIndex + 1}-${rowIndex}-${columnIndex}`}
+                                      style={getConfusionCellStyle(cellPercent)}
+                                    >
+                                      {formatMatrixPercent(cell, rowTotal)}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <p className="muted small">Матриці неточностей відсутні.</p>
+                  <p className="muted small">{messages.resultView.confusionMissing}</p>
                 )}
                 <div className="result-meta-grid">
                   <div className="result-meta-item">
-                    <span className="muted small">Час виконання</span>
+                    <span className="muted small">{messages.resultView.duration}</span>
                     <span>{durationLabel}</span>
                   </div>
                   <div className="result-meta-item">
-                    <span className="muted small">Рядків EEG</span>
-                    <span>{Number.isFinite(eegRows) ? eegRows : 'Немає даних'}</span>
+                    <span className="muted small">{messages.resultView.eegRows}</span>
+                    <span>{Number.isFinite(eegRows) ? eegRows : messages.resultView.noData}</span>
                   </div>
                   <div className="result-meta-item">
-                    <span className="muted small">Кількість каналів</span>
-                    <span>{channelCount ?? 'Немає даних'}</span>
+                    <span className="muted small">{messages.resultView.channelCount}</span>
+                    <span>{channelCount ?? messages.resultView.noData}</span>
                   </div>
                   <div className="result-meta-item">
-                    <span className="muted small">Назви каналів</span>
-                    <span>{channelNames.length ? channelNames.join(', ') : 'Немає даних'}</span>
+                    <span className="muted small">{messages.resultView.channelNames}</span>
+                    <span>
+                      {channelNames.length ? channelNames.join(', ') : messages.resultView.noData}
+                    </span>
                   </div>
                 </div>
               </>
             ) : (
-              <p className="muted">Результати обчислення ще не доступні.</p>
+              <p className="muted">{messages.resultView.resultsMissing}</p>
             )}
           </div>
           <div className="result-section">
             <div className="result-section-head">
               <div>
-                <h4 className="result-section-title">Вузол обчислення</h4>
-                <p className="muted small">Пристрій, на якому виконано запуск.</p>
+                <h4 className="result-section-title">{messages.resultView.nodeTitle}</h4>
+                <p className="muted small">{messages.resultView.nodeSubtitle}</p>
               </div>
             </div>
             <div className="result-meta-grid">
               <div className="result-meta-item">
-                <span className="muted small">Пристрій</span>
-                <span>{machineInfo?.hostname || 'Немає даних'}</span>
+                <span className="muted small">{messages.resultView.device}</span>
+                <span>{machineInfo?.hostname || messages.resultView.noData}</span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">CPU</span>
+                <span className="muted small">{messages.resultView.cpu}</span>
                 <span>
-                  {machineInfo?.cpuModel || 'Немає даних'} ({machineInfo?.cores ?? '—'} ядер)
+                  {machineInfo?.cpuModel || messages.resultView.noData} ({machineInfo?.cores ?? '—'}{' '}
+                  {messages.resultView.cores})
                 </span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">GPU</span>
-                <span>{machineInfo?.gpuModel || 'Немає даних'}</span>
+                <span className="muted small">{messages.resultView.gpu}</span>
+                <span>{machineInfo?.gpuModel || messages.resultView.noData}</span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">RAM</span>
-                <span>{machineRamLabel}</span>
+                <span className="muted small">{messages.resultView.ram}</span>
+                <span>
+                  {typeof machineInfo?.memoryGb === 'number'
+                    ? `${machineInfo.memoryGb} GB`
+                    : messages.resultView.noData}
+                </span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Платформа</span>
-                <span>{platformDetails || 'Немає даних'}</span>
+                <span className="muted small">{messages.resultView.platform}</span>
+                <span>
+                  {[machineInfo?.platform, machineInfo?.release, machineInfo?.arch]
+                    .filter(Boolean)
+                    .join(' ') || messages.resultView.noData}
+                </span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Черга вузла</span>
-                <span>{machineQueue || 'Немає даних'}</span>
+                <span className="muted small">{messages.resultView.nodeQueue}</span>
+                <span>
+                  {machineInfo?.queue
+                    ? messages.statuses.computationQueue[machineInfo.queue]
+                    : messages.resultView.noData}
+                </span>
               </div>
             </div>
           </div>
           <div className="result-section">
             <div className="result-section-head">
               <div>
-                <h4 className="result-section-title">Історія виконання</h4>
-                <p className="muted small">Кроки, події та метрики процесу.</p>
+                <h4 className="result-section-title">{messages.resultView.executionHistory}</h4>
+                <p className="muted small">{messages.resultView.historySubtitle}</p>
               </div>
               <span className="result-count">{history.length + 1}</span>
             </div>
@@ -310,7 +326,7 @@ const ResultView: FC<ResultViewProps> = ({ pipeline }) => {
           </div>
         </div>
       ) : (
-        <p className="muted">Запуски для цього конвеєра ще не виконувались.</p>
+        <p className="muted">{messages.resultView.runsMissing}</p>
       )}
     </div>
   );

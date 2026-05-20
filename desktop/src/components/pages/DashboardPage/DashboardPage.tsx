@@ -5,6 +5,7 @@ import { useDashboardDataQuery, useServerInfoQuery } from './graphql';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import type { DashboardPageProps } from './DashboardPage.types';
 import { ExperimentStatus } from '../../../graphql/types.generated';
+import { useI18n } from '../../../i18n';
 
 const toTimestamp = (value: unknown): number => {
   if (!value) return 0;
@@ -22,6 +23,7 @@ const experimentStatusLabel = (status?: ExperimentStatus | null) => {
 };
 
 const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
+  const { locale, messages } = useI18n();
   const { data, loading, error, refetch } = useDashboardDataQuery({
     fetchPolicy: 'cache-and-network',
   });
@@ -62,33 +64,47 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
   const summary = useMemo(
     () => [
       {
-        label: 'Завантаження',
+        label: messages.dashboard.summary.uploadsLabel,
         value: files.length,
-        hint: 'файлів у черзі та обробці',
+        hint: messages.dashboard.summary.uploadsHint,
       },
       {
-        label: 'Експерименти',
+        label: messages.dashboard.summary.experimentsLabel,
         value: experiments.length,
-        hint: 'активні, завершені або заплановані',
+        hint: messages.dashboard.summary.experimentsHint,
       },
       {
-        label: 'GraphQL',
-        value: serverLoading ? '—' : (serverData?.serverInfo.version ?? 'немає'),
+        label: messages.dashboard.summary.graphqlLabel,
+        value: serverLoading ? '—' : (serverData?.serverInfo.version ?? messages.common.none),
         hint:
           serverError?.message ??
           (serverData?.serverInfo
-            ? `Статус: ${serverData.serverInfo.status}`
-            : 'Немає підключення'),
+            ? `${messages.dashboard.summary.statusPrefix}: ${serverData.serverInfo.status}`
+            : messages.dashboard.summary.noConnection),
       },
     ],
-    [experiments.length, files.length, serverData?.serverInfo, serverError?.message, serverLoading]
+    [
+      experiments.length,
+      files.length,
+      messages.common.none,
+      messages.dashboard.summary.experimentsHint,
+      messages.dashboard.summary.experimentsLabel,
+      messages.dashboard.summary.graphqlLabel,
+      messages.dashboard.summary.noConnection,
+      messages.dashboard.summary.statusPrefix,
+      messages.dashboard.summary.uploadsHint,
+      messages.dashboard.summary.uploadsLabel,
+      serverData?.serverInfo,
+      serverError?.message,
+      serverLoading,
+    ]
   );
 
   return (
     <AuthLayout
-      badge="Авторизований доступ"
-      title="Огляд досліджень"
-      subtitle="Контролюйте завантажені файли, запуски експериментів та статус GraphQL."
+      badge={messages.dashboard.badge}
+      title={messages.dashboard.title}
+      subtitle={messages.dashboard.subtitle}
       onLogout={onLogout}
       actions={
         <div className="actions">
@@ -101,7 +117,7 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
             }}
             disabled={loading}
           >
-            Оновити дані
+            {messages.dashboard.refresh}
           </button>
         </div>
       }
@@ -120,15 +136,21 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
         <section className="card data-card">
           <header className="card-head">
             <div>
-              <h3>Завантажені файли</h3>
-              <p className="muted">Слідкуйте за статусом обробки та останніми завантаженнями.</p>
+              <h3>{messages.dashboard.files.title}</h3>
+              <p className="muted">{messages.dashboard.files.subtitle}</p>
             </div>
           </header>
           <div className="item-list">
-            {loading && !files.length && <p className="muted">Завантаження даних...</p>}
-            {error && <p className="error">Помилка: {error.message}</p>}
+            {loading && !files.length && (
+              <p className="muted">{messages.dashboard.files.loading}</p>
+            )}
+            {error && (
+              <p className="error">
+                {messages.common.errorPrefix}: {error.message}
+              </p>
+            )}
             {!loading && !error && files.length === 0 && (
-              <p className="muted">Файлів поки немає — додайте перші дані для аналізу.</p>
+              <p className="muted">{messages.dashboard.files.empty}</p>
             )}
 
             {files.map((file) => (
@@ -136,13 +158,14 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
                 <div className="item-meta">
                   <p className="item-title">{file.filename}</p>
                   <p className="muted">
-                    {file.sizeMb} МБ • {formatTimeAgo(file.uploadedAt)}
+                    {file.sizeMb} {messages.dashboard.files.mb} •{' '}
+                    {formatTimeAgo(file.uploadedAt, locale)}
                   </p>
                 </div>
                 <span className={`status-pill status-${file.status}`}>
-                  {file.status === 'processed' ? 'Оброблено' : null}
-                  {file.status === 'queued' ? 'В черзі' : null}
-                  {file.status === 'ready' ? 'Готово' : null}
+                  {messages.statuses.fileStatus[
+                    file.status as keyof typeof messages.statuses.fileStatus
+                  ] ?? file.status}
                 </span>
               </div>
             ))}
@@ -152,17 +175,21 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
         <section className="card data-card">
           <header className="card-head">
             <div>
-              <h3>Запуски та результати</h3>
-              <p className="muted">
-                Контроль прогресу експериментів і кількість виконаних прогонів.
-              </p>
+              <h3>{messages.dashboard.experiments.title}</h3>
+              <p className="muted">{messages.dashboard.experiments.subtitle}</p>
             </div>
           </header>
           <div className="item-list">
-            {loading && !experiments.length && <p className="muted">Завантаження даних...</p>}
-            {error && <p className="error">Помилка: {error.message}</p>}
+            {loading && !experiments.length && (
+              <p className="muted">{messages.dashboard.experiments.loading}</p>
+            )}
+            {error && (
+              <p className="error">
+                {messages.common.errorPrefix}: {error.message}
+              </p>
+            )}
             {!loading && !error && experiments.length === 0 && (
-              <p className="muted">Експерименти ще не створені. Розпочніть перший запуск.</p>
+              <p className="muted">{messages.dashboard.experiments.empty}</p>
             )}
 
             {experimentsByLastActivity.map((experiment) => (
@@ -171,17 +198,18 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
                   <div className="item-meta">
                     <p className="item-title">{experiment.name}</p>
                     <p className="muted">
-                      Остання активність{' '}
-                      {formatTimeAgo(new Date(experiment.latestTimestamp).toISOString())}
+                      {messages.dashboard.experiments.latestActivity}{' '}
+                      {formatTimeAgo(new Date(experiment.latestTimestamp).toISOString(), locale)}
                     </p>
                   </div>
                 </Link>
                 <div className="experiment-meta">
                   <span className={`status-pill status-${experiment.status}`}>
-                    {experimentStatusLabel(experiment.status)}
+                    {messages.statuses.experimentStatus[experiment.status!] ??
+                      experimentStatusLabel(experiment.status)}
                   </span>
                   <Link className="table-link small" to={`/app/experiments/${experiment._id}`}>
-                    Відкрити експеримент
+                    {messages.dashboard.experiments.open}
                   </Link>
                 </div>
               </div>
@@ -192,25 +220,31 @@ const DashboardPage: FC<DashboardPageProps> = ({ onLogout }) => {
         <section className="card data-card">
           <header className="card-head">
             <div>
-              <h3>GraphQL підключення</h3>
-              <p className="muted">Стан API та версія бекенду.</p>
+              <h3>{messages.dashboard.server.title}</h3>
+              <p className="muted">{messages.dashboard.server.subtitle}</p>
             </div>
           </header>
-          {serverLoading && <p className="muted">Перевіряємо з&apos;єднання...</p>}
-          {serverError && <p className="error">Помилка підключення: {serverError.message}</p>}
+          {serverLoading && <p className="muted">{messages.dashboard.server.checking}</p>}
+          {serverError && (
+            <p className="error">
+              {messages.dashboard.server.connectionError}: {serverError.message}
+            </p>
+          )}
           {!serverLoading && !serverError && serverData?.serverInfo && (
             <div className="server-info">
               <p>
-                Версія: <strong>{serverData.serverInfo.version}</strong>
+                {messages.dashboard.server.version}:{' '}
+                <strong>{serverData.serverInfo.version}</strong>
               </p>
               <p>
-                Статус:{' '}
+                {messages.dashboard.server.status}:{' '}
                 <span className={`status-pill status-${serverData.serverInfo.status}`}>
                   API {serverData.serverInfo.status}
                 </span>
               </p>
               <p>
-                Аптайм: <strong>{serverData.serverInfo.uptimeSeconds}s</strong>
+                {messages.dashboard.server.uptime}:{' '}
+                <strong>{serverData.serverInfo.uptimeSeconds}s</strong>
               </p>
             </div>
           )}

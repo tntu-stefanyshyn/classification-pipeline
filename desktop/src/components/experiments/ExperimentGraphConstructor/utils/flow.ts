@@ -5,18 +5,27 @@ import type {
   GraphFlowEdge,
   GraphFlowNode,
 } from '../ExperimentGraphConstructor.types';
-import {
-  FLOW_HORIZONTAL_GAP,
-  FLOW_VERTICAL_GAP,
-  ROOT_NODE_ID,
-  ROOT_NODE_LABEL,
-} from '../constants/graph';
+import { ROOT_NODE_ID, ROOT_NODE_LABEL } from '../constants/graph';
 import { getStageLabel } from './stage';
 
 const TITLE_CHARS_PER_LINE = 28;
 const TITLE_LINE_HEIGHT = 18;
 const NODE_BASE_HEIGHT = 86;
 const COLLAPSED_META_HEIGHT = 18;
+const NODE_WIDTH = 220;
+const HORIZONTAL_SIBLING_GAP = 40;
+const VERTICAL_LEVEL_GAP = 180;
+
+export const applyFlowNodePositionOverrides = (
+  nodes: GraphFlowNode[],
+  overrides: Record<string, { x: number; y: number }>,
+  isDraggable: boolean
+): GraphFlowNode[] =>
+  nodes.map((node) => ({
+    ...node,
+    position: overrides[node.id] ?? node.position,
+    draggable: node.id === ROOT_NODE_ID ? false : isDraggable,
+  }));
 
 export const buildFlowElements = ({
   nodes,
@@ -77,8 +86,9 @@ export const buildFlowElements = ({
   });
 
   const positions = new Map<string, { x: number; y: number }>();
-  const subtreeHeights = new Map<string, number>();
+  const subtreeWidths = new Map<string, number>();
   const nodeHeights = new Map<string, number>();
+  const nodeWidths = new Map<string, number>();
 
   const estimateNodeHeight = (nodeId: string) => {
     const hasChildren = (childrenByParentAll.get(nodeId)?.length ?? 0) > 0;
@@ -92,44 +102,48 @@ export const buildFlowElements = ({
     return NODE_BASE_HEIGHT + (lineCount - 1) * TITLE_LINE_HEIGHT + collapsedMetaHeight;
   };
 
+  const estimateNodeWidth = () => NODE_WIDTH;
+
   const measure = (nodeId: string): number => {
     const children = childrenByParent.get(nodeId) ?? [];
     const nodeHeight = estimateNodeHeight(nodeId);
+    const nodeWidth = estimateNodeWidth();
     nodeHeights.set(nodeId, nodeHeight);
+    nodeWidths.set(nodeId, nodeWidth);
 
     if (children.length === 0) {
-      subtreeHeights.set(nodeId, nodeHeight);
-      return nodeHeight;
+      subtreeWidths.set(nodeId, nodeWidth);
+      return nodeWidth;
     }
 
-    const childrenHeight = children.reduce((total, childId, index) => {
-      const childHeight = measure(childId);
-      return total + childHeight + (index > 0 ? FLOW_VERTICAL_GAP : 0);
+    const childrenWidth = children.reduce((total, childId, index) => {
+      const childWidth = measure(childId);
+      return total + childWidth + (index > 0 ? HORIZONTAL_SIBLING_GAP : 0);
     }, 0);
 
-    const subtreeHeight = Math.max(nodeHeight, childrenHeight);
-    subtreeHeights.set(nodeId, subtreeHeight);
-    return subtreeHeight;
+    const subtreeWidth = Math.max(nodeWidth, childrenWidth);
+    subtreeWidths.set(nodeId, subtreeWidth);
+    return subtreeWidth;
   };
 
-  const layout = (nodeId: string, depth: number, topY: number) => {
+  const layout = (nodeId: string, depth: number, leftX: number) => {
     const children = childrenByParent.get(nodeId) ?? [];
-    const subtreeHeight = subtreeHeights.get(nodeId) ?? estimateNodeHeight(nodeId);
-    const nodeHeight = nodeHeights.get(nodeId) ?? estimateNodeHeight(nodeId);
-    const nodeTop = topY + (subtreeHeight - nodeHeight) / 2;
-    positions.set(nodeId, { x: depth * FLOW_HORIZONTAL_GAP, y: nodeTop });
+    const subtreeWidth = subtreeWidths.get(nodeId) ?? estimateNodeWidth();
+    const nodeWidth = nodeWidths.get(nodeId) ?? estimateNodeWidth();
+    const nodeLeft = leftX + (subtreeWidth - nodeWidth) / 2;
+    positions.set(nodeId, { x: nodeLeft, y: depth * VERTICAL_LEVEL_GAP });
 
     if (children.length === 0) return;
 
-    const childrenTotalHeight = children.reduce((total, childId, index) => {
-      const childSubtreeHeight = subtreeHeights.get(childId) ?? measure(childId);
-      return total + childSubtreeHeight + (index > 0 ? FLOW_VERTICAL_GAP : 0);
+    const childrenTotalWidth = children.reduce((total, childId, index) => {
+      const childSubtreeWidth = subtreeWidths.get(childId) ?? measure(childId);
+      return total + childSubtreeWidth + (index > 0 ? HORIZONTAL_SIBLING_GAP : 0);
     }, 0);
 
-    let childTop = topY + (subtreeHeight - childrenTotalHeight) / 2;
+    let childLeft = leftX + (subtreeWidth - childrenTotalWidth) / 2;
     children.forEach((childId) => {
-      layout(childId, depth + 1, childTop);
-      childTop += (subtreeHeights.get(childId) ?? 0) + FLOW_VERTICAL_GAP;
+      layout(childId, depth + 1, childLeft);
+      childLeft += (subtreeWidths.get(childId) ?? 0) + HORIZONTAL_SIBLING_GAP;
     });
   };
 
@@ -157,15 +171,15 @@ export const buildFlowElements = ({
         onToggleCollapse,
       },
       draggable: false,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
     },
   ];
 
   visibleNodes.forEach((node) => {
     const hasChildren = (childrenByParentAll.get(node._id)?.length ?? 0) > 0;
     const isCollapsed = hasChildren && collapsedNodeIds.has(node._id);
-    const position = positions.get(node._id) ?? { x: FLOW_HORIZONTAL_GAP, y: 0 };
+    const position = positions.get(node._id) ?? { x: 0, y: VERTICAL_LEVEL_GAP };
     flowNodes.push({
       id: node._id,
       type: 'graphNode',
@@ -188,8 +202,8 @@ export const buildFlowElements = ({
         onToggleCollapse,
       },
       draggable: false,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
     });
   });
 

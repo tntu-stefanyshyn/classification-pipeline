@@ -1,8 +1,11 @@
 import { useEffect, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModalProps } from './Modal.types';
+import { useI18n } from '../../../i18n';
 
 const Modal: FC<ModalProps> = ({ open, title, children, footer, className, onClose }) => {
+  const { messages } = useI18n();
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -39,7 +42,12 @@ const Modal: FC<ModalProps> = ({ open, title, children, footer, className, onClo
       >
         <header className="modal-header">
           <div>{title ? <h3 className="modal-title">{title}</h3> : null}</div>
-          <button className="modal-close" type="button" onClick={onClose} aria-label="Закрити">
+          <button
+            className="modal-close"
+            type="button"
+            onClick={onClose}
+            aria-label={messages.common.close}
+          >
             ×
           </button>
         </header>

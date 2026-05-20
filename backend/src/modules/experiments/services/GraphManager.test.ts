@@ -471,6 +471,13 @@ test('GraphManager.normalizeGraphNodes infers stages, remaps ids and validates n
       },
       {
         _id: new Types.ObjectId(),
+        name: 'artifact_suppression',
+        displayName: 'Transient Artifact Suppression / Приглушення короткочасних артефактів',
+        stage: ClassificationStage.CLASSIFICATION,
+        settings: [{ key: 'kernel' }, { key: 'gamma' }],
+      },
+      {
+        _id: new Types.ObjectId(),
         name: 'SVM',
         stage: ClassificationStage.CLASSIFICATION,
         settings: [{ key: 'kernel' }, { key: 'gamma' }],
@@ -513,6 +520,16 @@ test('GraphManager.normalizeGraphNodes infers stages, remaps ids and validates n
   assert.equal(normalized[1].parentId?.toHexString(), normalized[0]._id.toHexString());
   assert.equal(normalized[1].type, 'custom');
   assert.deepEqual(normalized[1].settings, [{ key: 'kernel', value: 'rbf' }]);
+
+  const bilingual = await (manager as any).normalizeGraphNodes([
+    {
+      _id: 'node-bilingual',
+      stage: ClassificationStage.CLASSIFICATION,
+      technology: 'Transient Artifact Suppression / Приглушення короткочасних артефактів',
+      type: 'technology',
+    },
+  ]);
+  assert.equal(bilingual[0].technology, 'artifact_suppression');
 
   await assert.rejects(
     () => (manager as any).normalizeGraphNodes([{ _id: ' ', label: 'A' }]),

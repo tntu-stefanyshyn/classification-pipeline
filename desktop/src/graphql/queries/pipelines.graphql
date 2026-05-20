@@ -29,6 +29,7 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
     pathNodes {
       _id
       label
+      technology
     }
     pathNodeIds
     createdAt

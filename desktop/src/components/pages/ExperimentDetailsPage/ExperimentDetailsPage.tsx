@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { Form, Formik } from 'formik';
-import { useMemo, useRef, useState, type FC, ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type FC, type ChangeEvent } from 'react';
 import { AuthLayout } from '../../layout/AuthLayout';
 import { Alert } from '../../ui/Alert';
 import { Modal } from '../../ui/Modal';
@@ -11,8 +11,7 @@ import { GraphSettingsModal } from '../../experiments/GraphSettingsModal';
 import { config } from '../../../config/config';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { formatWeightPercent } from '../../../utils/metricWeights';
-import { validationSchema } from './constants/validationSchema';
-import { graphMetricLabels } from './constants/statusConfig';
+import { createValidationSchema } from './constants/validationSchema';
 import {
   ExperimentStatus,
   ComputationQueue,
@@ -29,10 +28,11 @@ import { buildGraphPaths } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import ComputationCard from '../../experiments/ComputationCard/ComputationCard';
 import OptimizationCard from '../../experiments/OptimizationCard/OptimizationCard';
-import uk from '../../../i18n/uk';
 import ChangeExperimentStatusButton from '../../experiments/ChangeExperimentStatusButton/ChangeExperimentStatusButton';
+import { useI18n } from '../../../i18n';
 
 const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => {
+  const { locale, messages } = useI18n();
   const params = useParams();
   const id = params.id ?? '';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -59,11 +59,13 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const [createFile] = useCreateUploadedFileMutation();
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const validationSchema = useMemo(() => createValidationSchema(), [messages.experimentsPage]);
+
   const experiment = data?.experiment;
   const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
   const graph = experiment?.graph;
   const graphSettings = graph?.settings ?? null;
-  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
+  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? [], locale), [graph, locale]);
   const isExperimentLocked =
     experiment?.status === ExperimentStatus.computing ||
     experiment?.status === ExperimentStatus.optimization ||
@@ -110,15 +112,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     setUploadError(null);
   };
 
-  const openSettingsModal = () => {
-    if (!experiment) return;
-    setSettingsModalOpen(true);
-  };
-
-  const closeSettingsModal = () => {
-    setSettingsModalOpen(false);
-  };
-
   const handleSaveGraphSettings = async (settings: GraphStructureSettingsInput) => {
     if (!experiment || isExperimentLocked) return;
     try {
@@ -132,25 +125,21 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
         refetchQueries: [refetchExperimentQuery({ _id: experiment._id })],
         awaitRefetchQueries: true,
       });
-      closeSettingsModal();
+      setSettingsModalOpen(false);
     } catch (_err) {
       // Error state is handled by settingsUpdateError.
     }
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const localQueueLabel = 'Локальна черга';
-  const cloudQueueLabel = 'Хмарна черга';
+  const localQueueLabel = messages.statuses.computationQueue.local;
+  const cloudQueueLabel = messages.statuses.computationQueue.cloud;
   const settingsQueueLabel = graphSettings?.queues?.length
     ? graphSettings.queues
         .map((queueType) =>
           queueType === ComputationQueue.cloud ? cloudQueueLabel : localQueueLabel
         )
         .join(', ')
-    : 'Не налаштовано';
+    : messages.common.notConfigured;
   const metricsSummary = graphSettings?.metrics
     ? [
         { key: 'accuracy', value: graphSettings.metrics.accuracy },
@@ -165,16 +154,20 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
     return uploadedFiles.find((file) => file._id === experiment.fileId) ?? null;
   }, [experiment?.fileId, uploadedFiles]);
 
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <AuthLayout
-      badge="Експеримент"
-      title={experiment?.name ?? 'Експеримент'}
-      subtitle={experiment?.description || 'Опис не додано.'}
+      badge={messages.experimentDetails.badge}
+      title={experiment?.name ?? messages.experimentDetails.fallbackTitle}
+      subtitle={experiment?.description || messages.experimentDetails.descriptionMissing}
       onLogout={onLogout}
       actions={
         <>
           <button className="btn ghost" type="button" onClick={() => refetch()} disabled={loading}>
-            Оновити
+            {messages.experimentDetails.refresh}
           </button>
           {experiment?.status === ExperimentStatus.completed ? (
             <a
@@ -182,7 +175,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               href={reportUrl}
               download={`experiment-${experiment._id}-report.pdf`}
             >
-              Завантажити PDF
+              {messages.common.downloadPdf}
             </a>
           ) : null}
           <button
@@ -191,53 +184,69 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             onClick={() => setEditModalOpen(true)}
             disabled={!canEditExperiment}
           >
-            {isExperimentLocked && !hasDatasetFile ? 'Додати файл' : 'Редагувати'}
+            {isExperimentLocked && !hasDatasetFile
+              ? messages.experimentDetails.addFile
+              : messages.experimentDetails.edit}
           </button>
         </>
       }
     >
-      {!id && <p className="error">Не вказано ідентифікатор експерименту.</p>}
-      {loading && !experiment && <p className="muted">Завантаження експерименту...</p>}
-      {error && <p className="error">Помилка: {error.message}</p>}
-      {!loading && !error && !experiment && <p className="error">Експеримент не знайдено.</p>}
+      {!id && <p className="error">{messages.experimentDetails.missingId}</p>}
+      {loading && !experiment && <p className="muted">{messages.experimentDetails.loading}</p>}
+      {error && (
+        <p className="error">
+          {messages.common.errorPrefix}: {error.message}
+        </p>
+      )}
+      {!loading && !error && !experiment && (
+        <p className="error">{messages.experimentDetails.notFound}</p>
+      )}
 
       {experiment && (
         <div className="dashboard">
           <section className="card data-card">
             <header className="card-head" style={{ alignItems: 'flex-start' }}>
-              <h3>Деталі експерименту</h3>
+              <h3>{messages.experimentDetails.detailsTitle}</h3>
               <span className={`status-pill status-${experiment.status}`}>
-                {uk.experimentStatus[experiment.status!] ?? experiment.status}
+                {messages.statuses.experimentStatus[experiment.status!] ?? experiment.status}
               </span>
             </header>
             <div className="experiment-detail-list">
               <div className="experiment-detail-row">
-                <span className="experiment-detail-label">Створено</span>
+                <span className="experiment-detail-label">
+                  {messages.experimentDetails.created}
+                </span>
                 <div className="experiment-detail-value-block">
                   <span className="experiment-detail-value">
-                    {formatTimeAgo(String(experiment.createdAt))}
+                    {formatTimeAgo(String(experiment.createdAt), locale)}
                   </span>
                   <span className="muted small">
-                    Дата: {new Date(experiment.createdAt).toLocaleString()}
+                    {messages.experimentDetails.date}:{' '}
+                    {new Date(experiment.createdAt).toLocaleString()}
                   </span>
                 </div>
               </div>
               <div className="experiment-detail-row">
-                <span className="experiment-detail-label">Файл ЕЕГ</span>
+                <span className="experiment-detail-label">
+                  {messages.experimentDetails.eegFile}
+                </span>
                 <div className="experiment-detail-value-block">
                   {filesLoading ? (
-                    <span className="muted small">Завантаження інформації про файл...</span>
+                    <span className="muted small">{messages.experimentDetails.fileLoading}</span>
                   ) : filesError ? (
-                    <span className="error small">Помилка файлів: {filesError.message}</span>
+                    <span className="error small">
+                      {messages.experimentDetails.fileError}: {filesError.message}
+                    </span>
                   ) : datasetFile ? (
                     <>
                       <span className="experiment-detail-value">{datasetFile.filename}</span>
-                      <span className="muted small">Розмір: {datasetFile.sizeMb} МБ</span>
+                      <span className="muted small">
+                        {messages.experimentDetails.fileSize}: {datasetFile.sizeMb}{' '}
+                        {messages.filesPage.mb}
+                      </span>
                     </>
                   ) : (
-                    <span className="muted small">
-                      Файл ще не додано. Додайте CSV з ЕЕГ-записами під час редагування.
-                    </span>
+                    <span className="muted small">{messages.experimentDetails.fileMissing}</span>
                   )}
                 </div>
               </div>
@@ -246,84 +255,83 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
           <section className="card data-card">
             <header className="card-head">
               <div>
-                <h3>Налаштування графової структури</h3>
-                <p className="muted">Параметри ваг метрик та обрані способи виконання обчислень.</p>
+                <h3>{messages.experimentDetails.graphSettingsTitle}</h3>
+                <p className="muted">{messages.experimentDetails.graphSettingsSubtitle}</p>
               </div>
             </header>
             <div style={{ display: 'flex', justifyContent: 'end', gap: '0.75rem' }}>
               <ChangeExperimentStatusButton
-                label="Перейти до обчислень"
+                label={messages.experimentDetails.toComputing}
                 status={ExperimentStatus.computing}
                 disabled={!canMoveToComputing}
               />
               {experiment ? (
                 <Link className="btn ghost" to={`/app/experiments/${experiment._id}/constructor`}>
-                  Конструктор
+                  {messages.experimentDetails.constructor}
                 </Link>
               ) : null}
               <button
                 className="btn ghost small"
                 type="button"
-                onClick={openSettingsModal}
+                onClick={() => setSettingsModalOpen(true)}
                 disabled={!experiment}
               >
-                {isExperimentLocked ? 'Переглянути налаштування' : 'Змінити налаштування'}
+                {isExperimentLocked
+                  ? messages.experimentDetails.viewSettings
+                  : messages.experimentDetails.editSettings}
               </button>
             </div>
             {!graphSettingsReady && (
-              <Alert variant="warning">
-                Налаштування графа ще не заповнені. Вкажіть ваги метрик та типи обчислень.
-              </Alert>
+              <Alert variant="warning">{messages.experimentDetails.graphSettingsMissing}</Alert>
             )}
             {!hasDatasetFile && (
-              <Alert variant="warning">
-                Додайте CSV файл до експерименту перед запуском обчислень.
-              </Alert>
+              <Alert variant="warning">{messages.experimentDetails.datasetMissing}</Alert>
             )}
             <div className="graph-summary-grid">
               <div className="graph-summary-item">
-                <span className="muted small">Кількість конвеєрів</span>
+                <span className="muted small">{messages.experimentDetails.pipelineCount}</span>
                 <span className="graph-summary-value">{graphPaths.length}</span>
               </div>
               <div className="graph-summary-item">
-                <span className="muted small">Обрані режими виконання</span>
+                <span className="muted small">{messages.experimentDetails.selectedQueues}</span>
                 <span className="graph-settings-value">{settingsQueueLabel}</span>
               </div>
             </div>
             <div className="graph-summary-item">
-              <span className="muted small">Кількість кроків перехресної валідації</span>
+              <span className="muted small">{messages.experimentDetails.folds}</span>
               <span className="graph-settings-value">{graphSettings?.folds}</span>
             </div>
             <div className="graph-summary-item">
-              <span className="muted small">Час гіпероптимізації на 1 конвеєр</span>
+              <span className="muted small">{messages.experimentDetails.optimizationMinutes}</span>
               <span className="graph-settings-value">
                 {graphSettings?.hyperOptimizationMinutesPerPipeline
-                  ? `${graphSettings.hyperOptimizationMinutesPerPipeline} хв`
+                  ? `${graphSettings.hyperOptimizationMinutesPerPipeline} ${messages.experimentDetails.minutesShort}`
                   : '—'}
               </span>
             </div>
             <div className="graph-summary-item">
-              <span className="muted small">Дані для предікту</span>
+              <span className="muted small">{messages.experimentDetails.predictPercent}</span>
               <span className="graph-settings-value">
                 {`${graphSettings?.predictDataPercent ?? 20}%`}
               </span>
             </div>
             <div>
-              <div className="form-divider">Ваги метрик (%)</div>
+              <div className="form-divider">{messages.experimentDetails.metricWeights}</div>
               {metricsSummary.length > 0 ? (
                 <ul className="graph-list">
                   {metricsSummary.map((metric) => {
                     const formatted = formatWeightPercent(metric.value);
                     return (
                       <li key={metric.key}>
-                        {graphMetricLabels[metric.key] ?? metric.key}:{' '}
-                        {formatted ? `${formatted}%` : '—'}
+                        {messages.metrics[metric.key as keyof typeof messages.metrics] ??
+                          metric.key}
+                        : {formatted ? `${formatted}%` : '—'}
                       </li>
                     );
                   })}
                 </ul>
               ) : (
-                <p className="muted small">Налаштування метрик ще не задані.</p>
+                <p className="muted small">{messages.experimentDetails.metricsMissing}</p>
               )}
             </div>
           </section>
@@ -336,14 +344,18 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
       <GraphSettingsModal
         open={settingsModalOpen}
         settings={graphSettings}
-        onClose={closeSettingsModal}
+        onClose={() => setSettingsModalOpen(false)}
         onSave={handleSaveGraphSettings}
         isBusy={settingsUpdating}
         isLocked={isExperimentLocked}
         errorMessage={settingsUpdateError?.message ?? null}
       />
 
-      <Modal open={isEditModalOpen} title="Редагувати експеримент" onClose={handleCloseModal}>
+      <Modal
+        open={isEditModalOpen}
+        title={messages.experimentDetails.editTitle}
+        onClose={handleCloseModal}
+      >
         <Formik
           enableReinitialize
           initialValues={{
@@ -358,7 +370,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             try {
               const normalizedFileId = values.fileId.trim() || null;
               if (isExperimentLocked && !normalizedFileId) {
-                setStatus('Додайте CSV файл до експерименту перед запуском обчислень.');
+                setStatus(messages.experimentDetails.datasetMissing);
                 return;
               }
               const input = isExperimentLocked
@@ -373,15 +385,13 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                     fileId: normalizedFileId,
                   };
               await updateExperiment({
-                variables: {
-                  input,
-                },
+                variables: { input },
                 refetchQueries: [refetchExperimentQuery({ _id: experiment._id })],
                 awaitRefetchQueries: true,
               });
               handleCloseModal();
             } catch (_err) {
-              setStatus('Не вдалося оновити експеримент.');
+              setStatus(messages.experimentDetails.updateFailed);
             } finally {
               setSubmitting(false);
             }
@@ -393,7 +403,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
               if (!file) return;
 
               if (!isCsvFile(file)) {
-                setUploadError('Підтримуються лише CSV файли.');
+                setUploadError(messages.filesPage.onlyCsv);
                 if (fileInputRef.current) {
                   fileInputRef.current.value = '';
                 }
@@ -416,7 +426,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 const signedUrl = signedData?.signedUploadUrl?.url;
                 const storageKey = signedData?.signedUploadUrl?.key;
                 if (!signedUrl || !storageKey) {
-                  throw new Error('Не вдалося отримати дані для завантаження.');
+                  throw new Error(messages.filesPage.uploadDataFailed);
                 }
 
                 const uploadResponse = await fetch(signedUrl, {
@@ -426,7 +436,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 });
 
                 if (!uploadResponse.ok) {
-                  throw new Error('Помилка завантаження файла.');
+                  throw new Error(messages.filesPage.uploadFailed);
                 }
 
                 const sizeMb = Math.max(1, Math.round(file.size / (1024 * 1024)));
@@ -448,7 +458,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                 await refetchFiles();
               } catch (uploadErr) {
                 setUploadError(
-                  uploadErr instanceof Error ? uploadErr.message : 'Не вдалося завантажити файл.'
+                  uploadErr instanceof Error ? uploadErr.message : messages.filesPage.uploadUnknown
                 );
               } finally {
                 setUploading(false);
@@ -460,15 +470,19 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
 
             return (
               <Form className="experiment-form" noValidate>
-                <InputField name="name" label="Назва" disabled={isExperimentLocked} />
+                <InputField
+                  name="name"
+                  label={messages.experimentDetails.nameLabel}
+                  disabled={isExperimentLocked}
+                />
                 <TextAreaField
                   name="description"
-                  label="Опис"
-                  placeholder="Опис експерименту"
+                  label={messages.experimentDetails.descriptionLabel}
+                  placeholder={messages.experimentDetails.descriptionPlaceholder}
                   disabled={isExperimentLocked}
                 />
                 <div className="form-group">
-                  <label htmlFor="fileId">Файл</label>
+                  <label htmlFor="fileId">{messages.experimentDetails.fileLabel}</label>
                   <select
                     id="fileId"
                     name="fileId"
@@ -477,14 +491,14 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                     onBlur={handleBlur}
                     disabled={filesLoading || uploading || (isExperimentLocked && hasDatasetFile)}
                   >
-                    <option value="">Без файлу</option>
+                    <option value="">{messages.experimentDetails.noFile}</option>
                     {uploadedFiles.map((file) => (
                       <option key={file._id} value={file._id}>
                         {file.filename}
                       </option>
                     ))}
                   </select>
-                  <p className="muted small">Оберіть існуючий або завантажте новий CSV.</p>
+                  <p className="muted small">{messages.experimentDetails.fileHint}</p>
                   <div className="file-actions">
                     <button
                       className="btn ghost small"
@@ -492,11 +506,17 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                       onClick={handleUploadClick}
                       disabled={uploading || (isExperimentLocked && hasDatasetFile)}
                     >
-                      {uploading ? 'Завантаження...' : 'Завантажити CSV'}
+                      {uploading ? messages.common.loading : messages.experimentDetails.upload}
                     </button>
-                    {filesLoading && <span className="muted small">Завантаження файлів...</span>}
+                    {filesLoading && (
+                      <span className="muted small">{messages.experimentDetails.filesLoading}</span>
+                    )}
                   </div>
-                  {filesError && <p className="error">Помилка файлів: {filesError.message}</p>}
+                  {filesError && (
+                    <p className="error">
+                      {messages.experimentDetails.fileError}: {filesError.message}
+                    </p>
+                  )}
                   {uploadError && <p className="error">{uploadError}</p>}
                 </div>
                 <FileInput
@@ -506,17 +526,23 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
                   disabled={isExperimentLocked && hasDatasetFile}
                 />
                 {status && <p className="error">{status}</p>}
-                {updateError && <p className="error">Помилка: {updateError.message}</p>}
+                {updateError && (
+                  <p className="error">
+                    {messages.common.errorPrefix}: {updateError.message}
+                  </p>
+                )}
                 <div className="actions">
                   <button className="btn ghost" type="button" onClick={handleCloseModal}>
-                    Скасувати
+                    {messages.common.cancel}
                   </button>
                   <button
                     className="btn primary"
                     type="submit"
                     disabled={isSubmitting || updating || (isExperimentLocked && hasDatasetFile)}
                   >
-                    {isSubmitting || updating ? 'Збереження...' : 'Зберегти зміни'}
+                    {isSubmitting || updating
+                      ? messages.experimentDetails.saving
+                      : messages.experimentDetails.saveChanges}
                   </button>
                 </div>
               </Form>

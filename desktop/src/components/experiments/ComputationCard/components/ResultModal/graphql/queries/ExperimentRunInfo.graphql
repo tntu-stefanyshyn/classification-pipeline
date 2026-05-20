@@ -35,6 +35,7 @@ query PipelineInfo($pipelineId: ID!) {
     pathNodes {
       _id
       label
+      technology
     }
     history {
       createdAt

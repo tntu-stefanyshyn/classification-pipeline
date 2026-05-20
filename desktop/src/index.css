@@ -2225,6 +2225,48 @@ body.theme-dark .graph-settings-sum.warn {
   gap: 0.75rem;
 }
 
+.sidebar-locale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar-locale-label {
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-locale-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.sidebar-locale-button {
+  padding: 0.75rem 0.8rem;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sidebar-locale-button:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.sidebar-locale-button.active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.34);
+  background: linear-gradient(120deg, rgba(37, 99, 235, 0.22), rgba(6, 182, 212, 0.18));
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.28);
+}
+
 .sidebar-theme {
   width: 100%;
   padding: 0.9rem 1rem;

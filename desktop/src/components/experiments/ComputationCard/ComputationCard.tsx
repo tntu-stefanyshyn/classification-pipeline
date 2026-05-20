@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useApolloClient } from '@apollo/client';
 import ReactFlow from 'reactflow';
-import { DataTable, tableLabels } from '../../ui/DataTable';
+import { DataTable } from '../../ui/DataTable';
 import {
   GraphNode,
   buildFlowElements,
@@ -33,11 +33,13 @@ import {
   type PipelinesQuery,
   type PipelinesQueryVariables,
 } from '../../../graphql/queries/generated/pipelines';
-import uk from '../../../i18n/uk';
 import { ChangePipelineStatusButton } from './components';
 import { useChangePipelineStatusMutation } from './components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus';
+import { useI18n } from '../../../i18n';
+import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
 
 const ComputationCard: FC = () => {
+  const { locale, messages } = useI18n();
   const params = useParams();
   const id = params.id ?? '';
   const { data, refetch } = useExperimentQuery({
@@ -49,7 +51,7 @@ const ComputationCard: FC = () => {
   const experiment = data?.experiment;
   const graph = experiment?.graph;
   const graphSettings = graph?.settings ?? null;
-  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph]);
+  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? [], locale), [graph, locale]);
   const allowedQueues = graphSettings?.queues ?? [];
   const defaultQueue = useMemo(() => {
     if (allowedQueues.includes(ComputationQueue.local)) {
@@ -85,9 +87,9 @@ const ComputationCard: FC = () => {
   const [changePipelineStatus] = useChangePipelineStatusMutation();
   const apolloClient = useApolloClient();
   const [movingToWaiting, setMovingToWaiting] = useState(false);
-
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const runs = runsData?.pipelines ?? [];
+
   const runsByPath = useMemo(() => {
     const map = new Map<string, typeof runs>();
     runs.forEach((run) => {
@@ -101,6 +103,7 @@ const ComputationCard: FC = () => {
     );
     return map;
   }, [runs]);
+
   const localMachineInfo = useMemo(() => {
     const runsWithMachine = runs.filter((run) => {
       const machine = run.machineInfo;
@@ -117,6 +120,7 @@ const ComputationCard: FC = () => {
     );
     return latestRun?.machineInfo ?? null;
   }, [runs]);
+
   const graphSettingsReady = useMemo(() => {
     if (!graphSettings?.metrics) return false;
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) return false;
@@ -153,21 +157,30 @@ const ComputationCard: FC = () => {
     graphSettingsReady &&
     queueAllowed &&
     allPathsHaveClassification;
+
   const runBlocker = useMemo(() => {
     if (!graph || graphPaths.length === 0) {
-      return 'Граф ще не створений для запуску обчислень.';
+      return messages.computationCard.graphMissing;
     }
     if (!graphSettingsReady) {
-      return 'Заповніть налаштування графа, щоб запускати обчислення.';
+      return messages.computationCard.settingsMissing;
     }
     if (!queueAllowed) {
-      return 'Тип обчислень не дозволений у налаштуваннях графа.';
+      return messages.computationCard.queueMissing;
     }
     if (!allPathsHaveClassification) {
-      return 'Усі конвеєри мають містити етап класифікації.';
+      return messages.computationCard.classificationMissing;
     }
     return null;
-  }, [allPathsHaveClassification, graph, graphPaths.length, graphSettingsReady, queueAllowed]);
+  }, [
+    allPathsHaveClassification,
+    graph,
+    graphPaths.length,
+    graphSettingsReady,
+    messages,
+    queueAllowed,
+  ]);
+
   const pathStatusMap = useMemo(() => {
     const map = new Map<string, PipelineStatus>();
     graphPaths.forEach((path) => {
@@ -180,6 +193,7 @@ const ComputationCard: FC = () => {
     });
     return map;
   }, [graphPaths, runsByPath]);
+
   const handleMoveAllLocalToWaiting = async () => {
     if (!id) return;
 
@@ -195,7 +209,7 @@ const ComputationCard: FC = () => {
       );
 
       if (localRunsToMove.length === 0) {
-        setActionStatus('Немає локальних обчислень для переведення в очікування.');
+        setActionStatus(messages.computationCard.noLocalRuns);
         return;
       }
 
@@ -206,94 +220,79 @@ const ComputationCard: FC = () => {
               input: {
                 pipelineId: run._id,
                 status: PipelineStatus.queued,
-                message: 'Переведено у статус очікування',
+                message: messages.computationCard.movedToWaiting,
               },
             },
           })
         )
       );
 
-      setActionStatus(`Локальні обчислення переведено в очікування: ${localRunsToMove.length}.`);
+      setActionStatus(`${messages.computationCard.waitingResult}: ${localRunsToMove.length}.`);
       await Promise.all([refetchRuns(), refetch()]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Невідома помилка';
-      setActionStatus(`Помилка переведення в очікування: ${message}`);
+      const message =
+        error instanceof Error ? error.message : messages.computationCard.unknownError;
+      setActionStatus(`${messages.computationCard.waitingError}: ${message}`);
     } finally {
       setMovingToWaiting(false);
-    }
-  };
-  const handleStartPath = async (pipelineId: string, isRecompute = false) => {
-    if (!experiment || !canStartComputations) {
-      setActionStatus(runBlocker ?? 'Спочатку налаштуйте обчислення.');
-      return;
-    }
-    try {
-      await enqueueRuns({
-        variables: {
-          input: {
-            experimentId: experiment._id,
-            queue: activeQueue,
-            pipelineId,
-            rerun: true,
-          },
-        },
-      });
-      const queueLabel = activeQueue === ComputationQueue.cloud ? 'хмарну' : 'локальну';
-      setActionStatus(`${isRecompute ? 'Перезапуск' : 'Запуск'} додано в ${queueLabel} чергу.`);
-      await Promise.all([refetchRuns(), refetch()]);
-    } catch (_err) {
-      // Error state is handled by enqueueError.
-    }
-  };
-
-  const handleStopPath = async (runId: string) => {
-    if (!experiment) return;
-    try {
-      await stopRun({ variables: { input: { runId } } });
-      setActionStatus(`Зупинено: ${runId}.`);
-      await Promise.all([refetchRuns(), refetch()]);
-    } catch (_err) {
-      // Error state is handled by stopError.
     }
   };
 
   const pathTableColumns = [
     {
-      header: 'Конвеєр',
+      header: messages.computationCard.columns.pipeline,
       id: 'path',
-      cell: ({ row }) => (
+      cell: ({
+        row,
+      }: {
+        row: { index: number; original: PipelinesQuery['pipelines'][number] };
+      }) => (
         <div className="table-stack">
-          <span className="item-title">{`Конвеєр ${row.index + 1}`}</span>
+          <span className="item-title">{messages.computationCard.pipelineName(row.index + 1)}</span>
           <span className="muted small">
-            {row.original.pathNodes.map((e) => e.label).join('->')}
+            {row.original.pathNodes
+              .map(
+                (node) =>
+                  getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+                  getLocalizedTechnologyLabel(node.technology, locale) ||
+                  node.label ||
+                  node.technology
+              )
+              .join('->')}
           </span>
         </div>
       ),
     },
     {
-      header: 'Статус',
+      header: messages.computationCard.columns.status,
       id: 'status',
-      cell: ({ row }) => {
+      cell: ({ row }: { row: { original: PipelinesQuery['pipelines'][number] } }) => {
         const status = row.original.status;
         return status === PipelineStatus.idle ? (
-          <span className="muted small">{uk.computationStatus[PipelineStatus.idle]}</span>
+          <span className="muted small">
+            {messages.statuses.computationStatus[PipelineStatus.idle]}
+          </span>
         ) : (
           <span className={`status-pill status-${status}`}>
-            {uk.computationStatus[status] ?? status}
+            {messages.statuses.computationStatus[status] ?? status}
           </span>
         );
       },
     },
     {
-      header: 'Результати',
+      header: messages.computationCard.columns.results,
       id: 'results',
-      cell: ({ row }) => (
+      cell: ({
+        row,
+      }: {
+        row: { index: number; original: PipelinesQuery['pipelines'][number] };
+      }) => (
         <button
           className="btn ghost small icon"
           type="button"
           onClick={() => setResultsPathId(row.original._id)}
-          aria-label={`Результати: конвеєр ${row.index + 1}`}
-          title="Результати"
+          aria-label={messages.computationCard.resultAria(row.index + 1)}
+          title={messages.computationCard.results}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
@@ -310,17 +309,17 @@ const ComputationCard: FC = () => {
       ),
     },
     {
-      header: 'Остання активність',
+      header: messages.computationCard.columns.latestActivity,
       id: 'last-activity',
-      cell: ({ row }) => {
+      cell: ({ row }: { row: { original: PipelinesQuery['pipelines'][number] } }) => {
         const [latestResult] = row.original.history.toReversed() ?? [];
         return <span>{latestResult?.message}</span>;
       },
     },
     {
-      header: 'Дії',
+      header: messages.computationCard.columns.actions,
       id: 'actions',
-      cell: ({ row }) => {
+      cell: ({ row }: { row: { original: PipelinesQuery['pipelines'][number] } }) => {
         const { status, _id } = row.original;
         const actionBusy = enqueueing || stopping;
         const canRun = canStartComputations && status === PipelineStatus.idle && !actionBusy;
@@ -348,7 +347,9 @@ const ComputationCard: FC = () => {
     },
   ] satisfies ColumnDef<PipelinesQuery['pipelines'][number]>[];
 
-  const activeQueueLabel = queueAllowed ? uk.computationQueue[activeQueue] : 'Не налаштовано';
+  const activeQueueLabel = queueAllowed
+    ? messages.statuses.computationQueue[activeQueue]
+    : messages.common.notConfigured;
 
   const edgeColorMap = useMemo(() => {
     const map = new Map<string, { color: string; priority: number }>();
@@ -367,17 +368,21 @@ const ComputationCard: FC = () => {
     });
     return new Map(Array.from(map.entries()).map(([key, value]) => [key, value.color]));
   }, [graphPaths, pathStatusMap]);
+
   const flowInputNodes = useMemo(
     () =>
       graph?.nodes?.map((node) => ({
         _id: node._id,
-        label: node.label || node.technology || 'Невідомий вузол',
+        label:
+          getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+          messages.common.unknown,
         stage: node.stage ?? null,
         type: node.type ?? 'technology',
         parentId: node.parentId ?? null,
       })) ?? [],
-    [graph]
+    [graph, locale, messages.common.unknown]
   );
+
   const { flowNodes, flowEdges } = useMemo(() => {
     if (flowInputNodes.length === 0) {
       return { flowNodes: [], flowEdges: [] };
@@ -395,6 +400,7 @@ const ComputationCard: FC = () => {
       onToggleCollapse: () => undefined,
     });
   }, [flowInputNodes]);
+
   const previewEdges = useMemo(() => {
     return flowEdges.map((edge) => {
       const color = edgeColorMap.get(edge.id);
@@ -410,6 +416,7 @@ const ComputationCard: FC = () => {
       };
     });
   }, [edgeColorMap, flowEdges]);
+
   const nodeTypes = useMemo(() => ({ graphNode: GraphNode }), []);
   const hasGraphNodes = flowInputNodes.length > 0;
 
@@ -421,25 +428,31 @@ const ComputationCard: FC = () => {
   return (
     <section className="card data-card">
       <header className="card-head">
-        <h3>Конвеєри класифікації</h3>
+        <h3>{messages.computationCard.pipelinesTitle}</h3>
         <button
           className="btn ghost small"
           type="button"
           onClick={handleMoveAllLocalToWaiting}
           disabled={movingToWaiting || !id}
         >
-          {movingToWaiting ? 'Оновлюю...' : 'Перекинути все в очікування'}
+          {movingToWaiting
+            ? messages.computationCard.moving
+            : messages.computationCard.moveToWaiting}
         </button>
       </header>
-      {!graph && <p className="muted">Граф ще не створений для запуску обчислень.</p>}
+      {!graph && <p className="muted">{messages.computationCard.graphMissing}</p>}
       {graph && (
         <>
           <div className="path-meta">
             <p className="muted small">
-              Тип обчислень для запуску: <strong>{activeQueueLabel}</strong>
+              {messages.computationCard.currentQueue}: <strong>{activeQueueLabel}</strong>
             </p>
             {allowedQueues.length > 1 && (
-              <div className="path-queue-switch" role="group" aria-label="Режими виконання">
+              <div
+                className="path-queue-switch"
+                role="group"
+                aria-label={messages.computationCard.executionModes}
+              >
                 {allowedQueues.map((queueType) => (
                   <button
                     key={queueType}
@@ -447,45 +460,62 @@ const ComputationCard: FC = () => {
                     type="button"
                     onClick={() => setSelectedQueue(queueType)}
                   >
-                    {uk.computationQueue[queueType]}
+                    {messages.statuses.computationQueue[queueType]}
                   </button>
                 ))}
               </div>
             )}
             <p className="muted small">
-              Локальний пристрій: <strong>{localMachineInfo?.hostname || 'Ще немає даних'}</strong>
+              {messages.computationCard.localDevice}:{' '}
+              <strong>
+                {localMachineInfo?.hostname || messages.computationCard.noMachineData}
+              </strong>
             </p>
             {localMachineInfo && (
               <p className="muted small">
-                CPU: {localMachineInfo.cpuModel || 'Немає даних'} ({localMachineInfo.cores ?? '—'}{' '}
-                ядер), GPU: {localMachineInfo.gpuModel || 'Немає даних'}, RAM:{' '}
+                CPU: {localMachineInfo.cpuModel || messages.resultView.noData} (
+                {localMachineInfo.cores ?? '—'} {messages.resultView.cores}), GPU:{' '}
+                {localMachineInfo.gpuModel || messages.resultView.noData}, RAM:{' '}
                 {typeof localMachineInfo.memoryGb === 'number'
-                  ? `${localMachineInfo.memoryGb} ГБ`
-                  : 'Немає даних'}
+                  ? `${localMachineInfo.memoryGb} GB`
+                  : messages.resultView.noData}
               </p>
             )}
             {runBlocker && <p className="error small">{runBlocker}</p>}
-            {runsLoading && <p className="muted small">Оновлення статусів запусків...</p>}
+            {runsLoading && (
+              <p className="muted small">{messages.computationCard.refreshStatuses}</p>
+            )}
           </div>
           <DataTable
             data={runsData?.pipelines ?? []}
             columns={pathTableColumns}
-            emptyMessage="Немає доступних конвеєрів у графі."
-            labels={tableLabels}
+            emptyMessage={messages.computationCard.noPipelines}
             pageSize={6}
             pageSizeOptions={[6, 12, 24]}
             getRowId={(row) => row._id}
             className="path-table"
           />
-          {enqueueError && <p className="error">Помилка запуску: {enqueueError.message}</p>}
-          {stopError && <p className="error">Помилка зупинки: {stopError.message}</p>}
-          {runsError && <p className="error">Помилка запусків: {runsError.message}</p>}
+          {enqueueError && (
+            <p className="error">
+              {messages.computationCard.startError}: {enqueueError.message}
+            </p>
+          )}
+          {stopError && (
+            <p className="error">
+              {messages.computationCard.stopError}: {stopError.message}
+            </p>
+          )}
+          {runsError && (
+            <p className="error">
+              {messages.computationCard.runsError}: {runsError.message}
+            </p>
+          )}
           {actionStatus && <p className="muted small">{actionStatus}</p>}
 
           {shouldShowGraphPreview && (
             <div className="graph-preview">
-              <div className="form-divider">Графова структура обчислення</div>
-              <p className="muted small">Колір конвеєра відповідає поточному статусу.</p>
+              <div className="form-divider">{messages.computationCard.previewTitle}</div>
+              <p className="muted small">{messages.computationCard.previewSubtitle}</p>
               <div className="graph-legend status-legend">
                 {statusLegendOrder.map((statusKey) => (
                   <div key={statusKey} className="graph-legend-item">
@@ -494,7 +524,7 @@ const ComputationCard: FC = () => {
                       style={{ background: runStatusColors[statusKey] }}
                     />
                     <span className="graph-legend-label">
-                      {uk.computationStatus[statusKey] ?? statusKey}
+                      {messages.statuses.computationStatus[statusKey] ?? statusKey}
                     </span>
                   </div>
                 ))}
@@ -514,7 +544,7 @@ const ComputationCard: FC = () => {
                     proOptions={{ hideAttribution: true }}
                   />
                 ) : (
-                  <p className="muted small">Граф поки порожній.</p>
+                  <p className="muted small">{messages.computationCard.graphEmpty}</p>
                 )}
               </div>
             </div>

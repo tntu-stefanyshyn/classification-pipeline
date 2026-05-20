@@ -1,5 +1,6 @@
 import { ComputationQueue } from '../../../../graphql/types.generated';
 import { formatWeightPercent } from '../../../../utils/metricWeights';
+import { getMessages, localeService } from '../../../../i18n';
 import type {
   GraphSettingsDraft,
   GraphSettingsValidation,
@@ -55,6 +56,7 @@ export const normalizeMetricInput = (value: string, fallback: string): string =>
 export const validateGraphSettings = (
   settingsDraft: GraphSettingsDraft | null
 ): GraphSettingsValidation => {
+  const { validation } = getMessages(localeService.getLocale()).graphSettings;
   if (!settingsDraft) {
     return { isValid: false, errors: [], sum: 0, normalized: null };
   }
@@ -76,30 +78,30 @@ export const validateGraphSettings = (
     return !Number.isFinite(value) || value < 0 || value > 100;
   });
   if (hasInvalidMetric) {
-    errors.push('Заповніть усі ваги метрик значеннями від 0 до 100.');
+    errors.push(validation.metricsRange);
   }
 
   const sum = metricKeys.reduce((total, key) => total + (parsedMetrics[key] ?? 0), 0);
   if (!hasInvalidMetric && Math.abs(sum - 100) > 0.01) {
-    errors.push('Сума ваг має дорівнювати 100%.');
+    errors.push(validation.metricsSum);
   }
 
   if (settingsDraft.queues.length === 0) {
-    errors.push('Оберіть хоча б один тип обчислень.');
+    errors.push(validation.queues);
   }
 
   if (!Number.isInteger(settingsDraft.folds) || settingsDraft.folds < 1) {
-    errors.push('Кількість кроків перехресної валідації має бути цілим числом більше 0.');
+    errors.push(validation.folds);
   }
   if (Number.isInteger(settingsDraft.folds) && settingsDraft.folds > MAX_FOLDS) {
-    errors.push(`Кількість кроків перехресної валідації має бути не більшою за ${MAX_FOLDS}.`);
+    errors.push(`${validation.folds} ${MAX_FOLDS}.`);
   }
 
   if (
     !Number.isInteger(settingsDraft.hyperOptimizationMinutesPerPipeline) ||
     settingsDraft.hyperOptimizationMinutesPerPipeline < 1
   ) {
-    errors.push('Час гіпероптимізації для одного конвеєра має бути цілим числом більше 0.');
+    errors.push(validation.optimizationMinutes);
   }
 
   if (
@@ -107,7 +109,7 @@ export const validateGraphSettings = (
     settingsDraft.predictDataPercent < 1 ||
     settingsDraft.predictDataPercent > 99
   ) {
-    errors.push('Відсоток даних для предікту має бути цілим числом від 1 до 99.');
+    errors.push(validation.predictPercent);
   }
 
   const normalizedMetrics: Record<MetricKey, number> = {

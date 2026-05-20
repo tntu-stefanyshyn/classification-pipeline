@@ -22,6 +22,7 @@ test('Technologies GraphQL executes the technologies query through the schema', 
         {
           _id: technologyId,
           name: 'SVM',
+          displayName: 'Support Vector Machine / Метод опорних векторів',
           stage: 'CLASSIFICATION',
           settings: [
             {
@@ -43,6 +44,7 @@ test('Technologies GraphQL executes the technologies query through the schema', 
         technologies {
           _id
           name
+          displayName
           stage
           settings {
             key
@@ -61,6 +63,7 @@ test('Technologies GraphQL executes the technologies query through the schema', 
       {
         _id: technologyId.toHexString(),
         name: 'SVM',
+        displayName: 'Support Vector Machine / Метод опорних векторів',
         stage: 'CLASSIFICATION',
         settings: [
           {

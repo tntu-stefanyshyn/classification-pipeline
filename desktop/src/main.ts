@@ -22,9 +22,6 @@ if (config.main.isDev) {
   require('electron-reloader')(module, { ignore: [/\.vite/] });
 }
 
-// Force UI locale to Ukrainian so Chromium uses correct input/IME defaults.
-app.commandLine.appendSwitch('lang', 'uk');
-
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();

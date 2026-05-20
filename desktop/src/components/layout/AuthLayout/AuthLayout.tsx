@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FC } from 'react';
 import { AppSidebar } from '../AppSidebar';
 import { getIsMobile } from './utils/getIsMobile';
 import type { AuthLayoutProps, ThemeMode } from './AuthLayout.types';
+import { useI18n } from '../../../i18n';
 
 const AuthLayout: FC<AuthLayoutProps> = ({
   badge,
@@ -11,6 +12,7 @@ const AuthLayout: FC<AuthLayoutProps> = ({
   children,
   onLogout,
 }) => {
+  const { messages } = useI18n();
   const [theme, setTheme] = useState<ThemeMode>(() =>
     localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
   );
@@ -52,7 +54,7 @@ const AuthLayout: FC<AuthLayoutProps> = ({
           className="sidebar-scrim"
           type="button"
           onClick={() => setSidebarOpen(false)}
-          aria-label="Закрити меню"
+          aria-label={messages.sidebar.closeMenu}
         />
       ) : null}
       <main className="page authed">

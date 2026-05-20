@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { FC } from 'react';
+import { useI18n } from '../../../../../i18n';
 import {
   getStageLabel,
   type ClassificationStage,
@@ -16,13 +17,14 @@ export type StatusGraphNodeData = {
 };
 
 const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
+  const { messages } = useI18n();
+
   if (data.isRoot) {
     return (
       <div className={`org-node root status-node`}>
-        <Handle type="source" position={Position.Right} className="graph-node-handle" />
+        <Handle type="source" position={Position.Bottom} className="graph-node-handle" />
         <div className="org-node-body">
           <span className="org-node-title">{data.label}</span>
-          <span className="org-node-meta">старт</span>
         </div>
       </div>
     );
@@ -33,8 +35,8 @@ const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
 
   return (
     <div className={`org-node status-node`}>
-      <Handle type="target" position={Position.Left} className="graph-node-handle" />
-      <Handle type="source" position={Position.Right} className="graph-node-handle" />
+      <Handle type="target" position={Position.Top} className="graph-node-handle" />
+      <Handle type="source" position={Position.Bottom} className="graph-node-handle" />
       <div className="org-node-body">
         <span className="org-node-title" title={title}>
           {title}
@@ -46,8 +48,8 @@ const StatusGraphNode: FC<NodeProps<StatusGraphNodeData>> = ({ data }) => {
           className="btn ghost small icon"
           type="button"
           onClick={() => data.onInfo(data._id)}
-          aria-label="Переглянути стан вузла"
-          title="Переглянути стан вузла"
+          aria-label={messages.graph.node.viewNode}
+          title={messages.graph.node.viewNode}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />

@@ -559,9 +559,11 @@ test('Graph settings helpers and modal normalize, validate, and save settings', 
   findElements(tree, (element) => getElementName(element) === 'InputControl')[0].props.onChange({
     target: { value: '7' },
   });
-  const saveButton = findElements(tree, (element) => element.type === 'button').find(
-    (element) => element.props.children === 'Зберегти'
-  );
+  const modalButtons = findElements(tree, (element) => element.type === 'button');
+  const saveButton =
+    modalButtons.find((element) => element.props.children === 'Зберегти') ??
+    modalButtons.find((element) => element.props.children === 'Save') ??
+    modalButtons[modalButtons.length - 1];
   saveButton!.props.onClick();
 
   assert.ok(state.calls.length >= 3);
@@ -634,10 +636,16 @@ test('Graph settings modal becomes read-only when experiment is locked', (t) => 
 
   const buttons = findElements(tree, (element) => element.type === 'button');
   assert.equal(
-    buttons.some((element) => element.props.children === 'Зберегти'),
+    buttons.some(
+      (element) => element.props.children === 'Зберегти' || element.props.children === 'Save'
+    ),
     false
   );
-  buttons.find((element) => element.props.children === 'Закрити')!.props.onClick();
+  const closeButton =
+    buttons.find(
+      (element) => element.props.children === 'Закрити' || element.props.children === 'Close'
+    ) ?? buttons[buttons.length - 1];
+  closeButton!.props.onClick();
 
   assert.deepEqual(onCloseCalls, ['close']);
   assert.deepEqual(onSaveCalls, []);

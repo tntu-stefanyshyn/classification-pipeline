@@ -4,17 +4,20 @@ import { InputField } from '../../inputs/InputField';
 import { SubmitButton } from '../../inputs/SubmitButton';
 import { FormError } from '../../inputs/FormError';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
-import { registerSchema } from './constants/registerSchema';
+import { createRegisterSchema } from './constants/registerSchema';
 import { useRegisterMutation } from './graphql';
 import type { RegisterFormProps } from './RegisterForm.types';
+import { useI18n } from '../../../i18n';
 
 const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
+  const { messages } = useI18n();
   const [registerMutation] = useRegisterMutation();
+  const validationSchema = createRegisterSchema();
 
   return (
     <Formik
       initialValues={{ name: '', email: '', password: '' }}
-      validationSchema={registerSchema}
+      validationSchema={validationSchema}
       validateOnMount
       onSubmit={async (values, { setFieldError }) => {
         const result = await registerMutation({
@@ -29,13 +32,13 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
       <Form className="auth-form" noValidate>
         <InputField
           name="name"
-          label="Повне імʼя"
+          label={messages.auth.registerForm.name}
           placeholder="Ivan Petrenko"
           autoComplete="name"
         />
         <InputField
           name="email"
-          label="Електронна пошта"
+          label={messages.auth.registerForm.email}
           type="email"
           placeholder="novykorystuvach@example.com"
           autoComplete="email"
@@ -43,14 +46,17 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
         />
         <InputField
           name="password"
-          label="Пароль"
+          label={messages.auth.registerForm.password}
           type="password"
           placeholder="••••••••"
           autoComplete="new-password"
           id="register-password"
         />
         <FormError />
-        <SubmitButton label="Створити обліковий запис" loadingLabel="Реєстрація..." />
+        <SubmitButton
+          label={messages.auth.registerForm.submit}
+          loadingLabel={messages.auth.registerForm.loading}
+        />
       </Form>
     </Formik>
   );

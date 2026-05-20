@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import ReactFlow from 'reactflow';
+import ReactFlow, { type Node, type NodeDragHandler, type ReactFlowInstance } from 'reactflow';
 import { Modal } from '../../ui/Modal';
 import { Alert } from '../../ui/Alert';
 import { CheckboxField } from '../../inputs/CheckboxField';
 import { InputControl } from '../../inputs/InputControl';
 import { GraphSettingsModal } from '../GraphSettingsModal';
 import { GraphNode } from './components/GraphNode';
-import { classificationStages, stageLabels } from './constants/stages';
+import { useI18n } from '../../../i18n';
+import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
+import { classificationStages, getStageLabels } from './constants/stages';
 import { DEFAULT_NODE_TYPE, DEFAULT_STAGE } from './constants/graph';
 import {
   ClassificationStage,
@@ -20,7 +22,7 @@ import {
   useTechnologiesQuery,
   useUpdateExperimentMutation,
 } from './graphql';
-import { buildFlowElements } from './utils/flow';
+import { applyFlowNodePositionOverrides, buildFlowElements } from './utils/flow';
 import { collectDescendantIds, getGraphSignature } from './utils/graph';
 import { buildStageSelectionsFromNodes } from './utils/buildStageSelectionsFromNodes';
 import { normalizeGraphNodes } from './utils/normalizeGraphNodes';
@@ -28,6 +30,8 @@ import { buildSettingsMap, settingsMapToInput, settingsRecordToList } from './ut
 import { isClassificationStage } from './utils/stage';
 import {
   buildTechnologyIndex,
+  getTechnologyDisplayName,
+  getTechnologyStorageLabel,
   getDefaultTechnologyForStage,
   resolveTechnology,
 } from './utils/technology';
@@ -41,6 +45,7 @@ import type {
 } from './ExperimentGraphConstructor.types';
 
 const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ experimentId }) => {
+  const { locale, messages } = useI18n();
   const location = useLocation();
   const { data, loading, error } = useExperimentQuery({
     variables: { _id: experimentId },
@@ -71,12 +76,15 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               }:${options}`;
             })
             .join('|');
-          return `${technology._id}:${technology.stage}:${technology.name}:${settingsKey}`;
+          return `${technology._id}:${technology.stage}:${technology.name}:${technology.displayName ?? ''}:${locale}:${settingsKey}`;
         })
         .join('||'),
-    [technologies]
+    [locale, technologies]
   );
-  const technologyIndex = useMemo(() => buildTechnologyIndex(technologies), [technologiesKey]);
+  const technologyIndex = useMemo(
+    () => buildTechnologyIndex(technologies, locale),
+    [locale, technologiesKey]
+  );
   const techReady = !technologiesLoading && !technologiesError && technologies.length > 0;
   const isGraphBusy = graphUpdating || graphGenerating;
   const isExperimentLocked =
@@ -97,6 +105,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const [autoModalOpen, setAutoModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [nodePositionOverrides, setNodePositionOverrides] = useState<
+    Record<string, { x: number; y: number }>
+  >({});
   const graphSignatureRef = useRef<string>('');
   const openedSettingsRef = useRef(false);
 
@@ -106,12 +117,12 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
       graphSignatureRef.current = '';
       return;
     }
-    const nextNodes = normalizeGraphNodes(graph.nodes ?? [], technologyIndex);
+    const nextNodes = normalizeGraphNodes(graph.nodes ?? [], technologyIndex, locale);
     const signature = getGraphSignature(nextNodes);
     if (signature === graphSignatureRef.current) return;
     graphSignatureRef.current = signature;
     setGraphNodes(nextNodes);
-  }, [graph, technologyIndex]);
+  }, [graph, locale, technologyIndex]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -133,6 +144,17 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
         if (existingNodeIds.has(nodeId) && parentNodeIds.has(nodeId)) next.add(nodeId);
       });
       return next.size === prev.size ? prev : next;
+    });
+  }, [graphNodes]);
+
+  useEffect(() => {
+    setNodePositionOverrides((prev) => {
+      const existingNodeIds = new Set(graphNodes.map((node) => node._id));
+      const nextEntries = Object.entries(prev).filter(([nodeId]) => existingNodeIds.has(nodeId));
+      if (nextEntries.length === Object.keys(prev).length) {
+        return prev;
+      }
+      return Object.fromEntries(nextEntries);
     });
   }, [graphNodes]);
 
@@ -292,7 +314,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
 
   const applyGraphUpdate = (nodes?: GraphNodeData[], nextActiveId?: string | null) => {
     if (!nodes) return;
-    const normalized = normalizeGraphNodes(nodes, technologyIndex);
+    const normalized = normalizeGraphNodes(nodes, technologyIndex, locale);
     const signature = getGraphSignature(normalized);
     graphSignatureRef.current = signature;
     setGraphNodes(normalized);
@@ -312,10 +334,12 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
       node.label
     );
     const technologyName = resolvedTechnology?.name ?? node.technology ?? node.label ?? '';
+    const label =
+      getTechnologyStorageLabel(resolvedTechnology) || node.label || node.technology || '';
     const settings = settingsMapToInput(resolvedTechnology, node.settings);
     return {
       _id: node._id,
-      label: technologyName,
+      label,
       technology: technologyName,
       stage,
       type: node.type ?? DEFAULT_NODE_TYPE,
@@ -369,7 +393,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     if (!draftNode || modalState?.type !== 'add' || isExperimentLocked) return;
     const newNode: FlatGraphNode = {
       _id: createObjectId(),
-      label: draftNode.technologyName,
+      label: getTechnologyStorageLabel(draftTechnology),
       technology: draftNode.technologyName,
       stage: draftNode.stage,
       type: DEFAULT_NODE_TYPE,
@@ -388,7 +412,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
             ...node,
             stage: draftNode.stage,
             technology: draftNode.technologyName,
-            label: draftNode.technologyName,
+            label: getTechnologyStorageLabel(draftTechnology),
             settings: draftNode.settings,
           }
         : node
@@ -474,7 +498,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
   const draftTechnology = draftNode
     ? (technologyIndex.byStageName.get(`${draftNode.stage}:${draftNode.technologyName}`) ?? null)
     : null;
-  const { flowNodes, flowEdges } = buildFlowElements({
+  const { flowNodes: baseFlowNodes, flowEdges } = buildFlowElements({
     nodes: graphNodes,
     selectedNodeId,
     collapsedNodeIds,
@@ -486,10 +510,27 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     onDelete: openDeleteModal,
     onToggleCollapse: handleToggleCollapse,
   });
+  const flowNodes = useMemo(
+    () =>
+      applyFlowNodePositionOverrides(baseFlowNodes, nodePositionOverrides, !graphActionsDisabled),
+    [baseFlowNodes, graphActionsDisabled, nodePositionOverrides]
+  );
   const nodeTypes = useMemo(() => ({ graphNode: GraphNode }), []);
   const classificationSelection = autoSelections[ClassificationStage.CLASSIFICATION] ?? [];
   const canGenerateGraph =
     classificationSelection.length > 0 && !graphActionsDisabled && Boolean(experiment);
+
+  const handleFlowInit = (instance: ReactFlowInstance) => {
+    instance.fitView({ padding: 0.2 });
+  };
+
+  const handleNodeDragStop: NodeDragHandler = (_event, node: Node) => {
+    if (graphActionsDisabled || node.id === 'graph-root') return;
+    setNodePositionOverrides((prev) => ({
+      ...prev,
+      [node.id]: { x: node.position.x, y: node.position.y },
+    }));
+  };
 
   const backHref = experiment?._id
     ? `/app/experiments/${experiment._id}`
@@ -501,7 +542,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
     <div className="constructor-page">
       <header className="constructor-topbar">
         <Link className="btn ghost" to={backHref}>
-          Назад
+          {messages.graph.constructor.back}
         </Link>
         <button
           className="btn primary"
@@ -509,7 +550,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
           onClick={openAutoModal}
           disabled={!techReady || graphActionsDisabled}
         >
-          Автозаповнення
+          {messages.graph.constructor.autoFill}
         </button>
         <button
           className="btn ghost"
@@ -517,7 +558,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
           onClick={openSettingsModal}
           disabled={!experiment}
         >
-          {isExperimentLocked ? 'Переглянути налаштування' : 'Змінити налаштування'}
+          {isExperimentLocked
+            ? messages.graph.constructor.viewSettings
+            : messages.graph.constructor.editSettings}
         </button>
         <button
           className="btn danger"
@@ -525,14 +568,18 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
           onClick={openResetModal}
           disabled={graphActionsDisabled || graphNodes.length === 0}
         >
-          Скинути граф
+          {messages.graph.constructor.resetGraph}
         </button>
       </header>
       <div className="constructor-canvas">
-        {!experimentId && <p className="error">Не вказано ідентифікатор експерименту.</p>}
-        {loading && !experiment && <p className="muted">Завантаження експерименту...</p>}
+        {!experimentId && <p className="error">{messages.graph.constructor.missingExperimentId}</p>}
+        {loading && !experiment && (
+          <p className="muted">{messages.graph.constructor.loadingExperiment}</p>
+        )}
         {error && <p className="error">Помилка: {error.message}</p>}
-        {!loading && !error && !experiment && <p className="error">Експеримент не знайдено.</p>}
+        {!loading && !error && !experiment && (
+          <p className="error">{messages.graph.constructor.experimentNotFound}</p>
+        )}
 
         {experiment && (
           <div className="constructor-chart">
@@ -540,23 +587,31 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               nodes={flowNodes}
               edges={flowEdges}
               nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.2 }}
-              nodesDraggable={false}
+              onInit={handleFlowInit}
+              onNodeDragStop={handleNodeDragStop}
+              nodesDraggable={!graphActionsDisabled}
               nodesConnectable={false}
               zoomOnDoubleClick={false}
               className="constructor-flow"
               proOptions={{ hideAttribution: true }}
             />
-            {technologiesLoading && <p className="muted small">Завантаження технологій...</p>}
+            {technologiesLoading && (
+              <p className="muted small">{messages.graph.constructor.loadingTechnologies}</p>
+            )}
             {technologiesError && (
-              <p className="error small">Помилка технологій: {technologiesError.message}</p>
+              <p className="error small">
+                {messages.graph.constructor.technologiesError}: {technologiesError.message}
+              </p>
             )}
             {graphUpdateError && (
-              <p className="error small">Помилка оновлення графа: {graphUpdateError.message}</p>
+              <p className="error small">
+                {messages.graph.constructor.updateError}: {graphUpdateError.message}
+              </p>
             )}
             {graphGenerateError && (
-              <p className="error small">Помилка автозаповнення: {graphGenerateError.message}</p>
+              <p className="error small">
+                {messages.graph.constructor.autoFillError}: {graphGenerateError.message}
+              </p>
             )}
           </div>
         )}
@@ -567,9 +622,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
         title={
           modalState?.type === 'edit'
             ? isExperimentLocked
-              ? 'Переглянути вузол'
-              : 'Редагувати вузол'
-            : 'Додати вузол'
+              ? messages.graph.constructor.viewNodeTitle
+              : messages.graph.constructor.editNodeTitle
+            : messages.graph.constructor.addNodeTitle
         }
         onClose={closeModal}
       >
@@ -586,7 +641,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
             }}
           >
             <div className="form-group">
-              <label htmlFor="node-stage">Етап класифікації</label>
+              <label htmlFor="node-stage">{messages.graph.constructor.classificationStage}</label>
               <select
                 id="node-stage"
                 value={draftNode.stage}
@@ -599,7 +654,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                 disabled={graphActionsDisabled || selectableStages.length === 0}
               >
                 <option value="" disabled>
-                  Оберіть етап
+                  {messages.graph.constructor.selectStage}
                 </option>
                 {selectableStages.map((stage) => (
                   <option
@@ -607,13 +662,13 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                     value={stage}
                     disabled={(technologyIndex.byStage.get(stage)?.length ?? 0) === 0}
                   >
-                    {stageLabels[stage]}
+                    {getStageLabels()[stage]}
                   </option>
                 ))}
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="node-technology">Технологія</label>
+              <label htmlFor="node-technology">{messages.graph.constructor.technology}</label>
               <select
                 id="node-technology"
                 value={draftNode.technologyName}
@@ -621,18 +676,18 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                 disabled={graphActionsDisabled || draftTechnologies.length === 0}
               >
                 <option value="" disabled>
-                  Оберіть технологію
+                  {messages.graph.constructor.selectTechnology}
                 </option>
                 {draftTechnologies.map((technology) => (
                   <option key={technology._id} value={technology.name}>
-                    {technology.name}
+                    {getTechnologyDisplayName(technology, locale)}
                   </option>
                 ))}
               </select>
             </div>
             {draftTechnology && draftTechnology.settings.length > 0 && (
               <>
-                <div className="form-divider">Налаштування</div>
+                <div className="form-divider">{messages.graph.constructor.settings}</div>
                 <div className="node-settings">
                   {draftTechnology.settings.map((setting) => {
                     const settingId = `draft-${setting.key}`;
@@ -642,7 +697,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                         <CheckboxField
                           key={setting.key}
                           id={settingId}
-                          label={`${setting.label}${setting.required ? ' *' : ''}`}
+                          label={`${
+                            getLocalizedTechnologyLabel(setting.label, locale) || setting.label
+                          }${setting.required ? ' *' : ''}`}
                           checked={value === 'true'}
                           onChange={(event) =>
                             handleDraftSettingChange(
@@ -659,7 +716,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                       return (
                         <div className="form-group" key={setting.key}>
                           <label htmlFor={settingId}>
-                            {setting.label}
+                            {getLocalizedTechnologyLabel(setting.label, locale) || setting.label}
                             {setting.required ? ' *' : ''}
                           </label>
                           <select
@@ -672,7 +729,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                             required={Boolean(setting.required)}
                           >
                             <option value="" disabled>
-                              Оберіть значення
+                              {messages.graph.constructor.selectValue}
                             </option>
                             {options.map((option) => (
                               <option key={option} value={option}>
@@ -689,13 +746,19 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                       <InputControl
                         key={setting.key}
                         id={settingId}
-                        label={`${setting.label}${setting.required ? ' *' : ''}`}
+                        label={`${
+                          getLocalizedTechnologyLabel(setting.label, locale) || setting.label
+                        }${setting.required ? ' *' : ''}`}
                         type={inputType}
                         value={value}
                         onChange={(event) =>
                           handleDraftSettingChange(setting.key, event.target.value)
                         }
-                        placeholder={setting.placeholder ?? undefined}
+                        placeholder={
+                          setting.placeholder
+                            ? getLocalizedTechnologyLabel(setting.placeholder, locale)
+                            : undefined
+                        }
                         required={Boolean(setting.required)}
                         disabled={isGraphBusy || isExperimentLocked}
                       />
@@ -706,7 +769,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
             )}
             <div className="graph-panel-actions">
               <button className="btn ghost" type="button" onClick={closeModal}>
-                {isExperimentLocked ? 'Закрити' : 'Скасувати'}
+                {isExperimentLocked
+                  ? messages.graph.constructor.close
+                  : messages.graph.constructor.cancel}
               </button>
               {!isExperimentLocked ? (
                 <button
@@ -714,7 +779,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                   type="submit"
                   disabled={isGraphBusy || graphActionsDisabled}
                 >
-                  {modalState?.type === 'edit' ? 'Зберегти' : 'Створити'}
+                  {modalState?.type === 'edit'
+                    ? messages.graph.constructor.save
+                    : messages.graph.constructor.create}
                 </button>
               ) : null}
             </div>
@@ -722,12 +789,16 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
         ) : null}
       </Modal>
 
-      <Modal open={modalState?.type === 'delete'} title="Видалити вузол" onClose={closeModal}>
+      <Modal
+        open={modalState?.type === 'delete'}
+        title={messages.graph.constructor.deleteNodeTitle}
+        onClose={closeModal}
+      >
         <div className="node-modal">
-          <p>Видалити вузол та всі дочірні вузли? Дія незворотна.</p>
+          <p>{messages.graph.constructor.deleteNodeConfirm}</p>
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={closeModal}>
-              Скасувати
+              {messages.graph.constructor.cancel}
             </button>
             <button
               className="btn danger"
@@ -735,25 +806,27 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               onClick={() => void handleDeleteNode()}
               disabled={isGraphBusy || isExperimentLocked}
             >
-              Видалити
+              {messages.graph.constructor.delete}
             </button>
           </div>
         </div>
       </Modal>
 
-      <Modal open={autoModalOpen} title="Автозаповнення графа" onClose={closeAutoModal}>
+      <Modal
+        open={autoModalOpen}
+        title={messages.graph.constructor.autoFillTitle}
+        onClose={closeAutoModal}
+      >
         <div className="node-modal">
-          <Alert variant="info">
-            Оберіть хоча б одну технологію етапу класифікації (інші етапи опціональні).
-          </Alert>
+          <Alert variant="info">{messages.graph.constructor.autoFillHint}</Alert>
           {classificationStages.map((stage) => {
             const stageTechnologies = technologyIndex.byStage.get(stage) ?? [];
             const selectedIds = autoSelections[stage] ?? [];
             return (
               <div key={stage}>
-                <div className="form-divider auto-stage-divider">{stageLabels[stage]}</div>
+                <div className="form-divider auto-stage-divider">{getStageLabels()[stage]}</div>
                 {stageTechnologies.length === 0 ? (
-                  <p className="muted small">Немає доступних технологій для цього етапу.</p>
+                  <p className="muted small">{messages.graph.constructor.noStageTechnologies}</p>
                 ) : (
                   stageTechnologies.map((technology) => {
                     const inputId = `auto-${stage}-${technology._id}`;
@@ -761,7 +834,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
                       <CheckboxField
                         key={technology._id}
                         id={inputId}
-                        label={technology.name}
+                        label={getTechnologyDisplayName(technology, locale)}
                         checked={selectedIds.includes(technology._id)}
                         onChange={() => toggleAutoSelection(stage, technology._id)}
                         disabled={graphGenerating || isExperimentLocked}
@@ -773,12 +846,14 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
             );
           })}
           {graphGenerateError && (
-            <p className="error">Помилка автозаповнення: {graphGenerateError.message}</p>
+            <p className="error">
+              {messages.graph.constructor.autoFillError}: {graphGenerateError.message}
+            </p>
           )}
 
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={closeAutoModal}>
-              Скасувати
+              {messages.graph.constructor.cancel}
             </button>
             <button
               className="btn primary"
@@ -786,7 +861,9 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               onClick={() => void handleGenerateGraph()}
               disabled={!canGenerateGraph}
             >
-              {graphGenerating ? 'Автозаповнення...' : 'Згенерувати'}
+              {graphGenerating
+                ? messages.graph.constructor.autoFillLoading
+                : messages.graph.constructor.generate}
             </button>
           </div>
         </div>
@@ -802,12 +879,16 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
         errorMessage={graphUpdateError?.message ?? null}
       />
 
-      <Modal open={resetModalOpen} title="Скинути граф" onClose={closeResetModal}>
+      <Modal
+        open={resetModalOpen}
+        title={messages.graph.constructor.resetGraphTitle}
+        onClose={closeResetModal}
+      >
         <div className="node-modal">
-          <p>Скинути граф до початкового стану? Це видалить усі вузли.</p>
+          <p>{messages.graph.constructor.resetGraphConfirm}</p>
           <div className="graph-panel-actions">
             <button className="btn ghost" type="button" onClick={closeResetModal}>
-              Скасувати
+              {messages.graph.constructor.cancel}
             </button>
             <button
               className="btn danger"
@@ -815,7 +896,7 @@ const ExperimentGraphConstructor: FC<ExperimentGraphConstructorProps> = ({ exper
               onClick={() => void handleResetGraph()}
               disabled={isGraphBusy || isExperimentLocked}
             >
-              Скинути
+              {messages.graph.constructor.resetGraph}
             </button>
           </div>
         </div>

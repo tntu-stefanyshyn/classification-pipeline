@@ -1,7 +1,7 @@
 import { useMemo, useState, type FC } from 'react';
 import { useParams } from 'react-router-dom';
 import { Alert } from '../../ui/Alert';
-import { DataTable, tableLabels } from '../../ui/DataTable';
+import { DataTable } from '../../ui/DataTable';
 import { Modal } from '../../ui/Modal';
 import {
   useExperimentQuery,
@@ -17,7 +17,8 @@ import {
   PipelineStatus,
 } from '../../../graphql/types.generated';
 import { config } from '../../../config/config';
-import uk from '../../../i18n/uk';
+import { useI18n } from '../../../i18n';
+import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
 
 type LeaderboardRow = {
   id: string;
@@ -30,11 +31,6 @@ type LeaderboardRow = {
   averageRocAuc: number | null;
   normalizedProcessingTime: number | null;
   pathNodes: string[];
-};
-
-const queueLabels: Record<ComputationQueue, string> = {
-  [ComputationQueue.cloud]: 'Хмарна',
-  [ComputationQueue.local]: 'Локальна',
 };
 
 const averageMetric = (values?: number[] | null) => {
@@ -59,10 +55,8 @@ const normalizeProcessingTime = (duration?: number | null, sampleCount?: number 
   return duration / sampleCount;
 };
 
-const formatNormalizedTime = (value: number | null) =>
-  typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(6)} с/зразок` : '—';
-
 const OptimizationCard: FC = () => {
+  const { locale, messages } = useI18n();
   const params = useParams();
   const id = params.id ?? '';
   const {
@@ -93,7 +87,10 @@ const OptimizationCard: FC = () => {
   const optimization = experiment?.optimization;
   const graph = experiment?.graph;
   const graphSettings = graph?.settings ?? null;
-  const graphPaths = useMemo(() => buildGraphPaths(graph?.nodes ?? []), [graph?.nodes]);
+  const graphPaths = useMemo(
+    () => buildGraphPaths(graph?.nodes ?? [], locale),
+    [graph?.nodes, locale]
+  );
   const pipelines = pipelinesData?.pipelines ?? [];
   const allowedQueues = graphSettings?.queues ?? [];
 
@@ -118,8 +115,15 @@ const OptimizationCard: FC = () => {
     return pipelines
       .map((pipeline) => {
         const pathLabel =
-          pipeline.pathNodes?.map((node) => node.label).join(' → ') ||
-          pipeline.pathNodeIds.join(' → ');
+          pipeline.pathNodes
+            ?.map(
+              (node) =>
+                getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+                getLocalizedTechnologyLabel(node.technology, locale) ||
+                node.label ||
+                node.technology
+            )
+            .join(' → ') || pipeline.pathNodeIds.join(' → ');
         const score =
           pipeline.optimizationScores && pipeline.optimizationScores.length > 0
             ? pipeline.optimizationScores[pipeline.optimizationScores.length - 1]
@@ -138,11 +142,18 @@ const OptimizationCard: FC = () => {
             computingResult?.duration,
             computingResult?.sampleCount
           ),
-          pathNodes: pipeline.pathNodes?.map((node) => node.label) ?? [],
+          pathNodes:
+            pipeline.pathNodes?.map(
+              (node) =>
+                getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+                getLocalizedTechnologyLabel(node.technology, locale) ||
+                node.label ||
+                node.technology
+            ) ?? [],
         };
       })
       .filter((row) => row.score !== null) as LeaderboardRow[];
-  }, [pipelines]);
+  }, [locale, pipelines]);
 
   const sortedLeaderboard = useMemo(
     () => [...leaderboard].sort((a, b) => (a.score ?? Infinity) - (b.score ?? Infinity)),
@@ -153,16 +164,13 @@ const OptimizationCard: FC = () => {
     sortedLeaderboard.find((row) => row.id === optimization?.bestPipelineId) ||
     sortedLeaderboard[0] ||
     null;
-
   const bestPipelineData = optimization?.bestPipelineId
     ? (pipelines.find((pipeline) => pipeline._id === optimization.bestPipelineId) ?? null)
     : null;
-
   const pipelineBestScore =
     bestPipelineData?.optimizationScores && bestPipelineData.optimizationScores.length > 0
       ? bestPipelineData.optimizationScores[bestPipelineData.optimizationScores.length - 1]
       : null;
-
   const bestScore =
     optimization?.bestScore ??
     pipelineBestScore ??
@@ -175,10 +183,24 @@ const OptimizationCard: FC = () => {
     bestPipelineData && bestScore !== null
       ? {
           label:
-            bestPipelineData.pathNodes?.map((node) => node.label).join(' → ') ||
-            bestPipelineData.pathNodeIds.join(' → '),
+            bestPipelineData.pathNodes
+              ?.map(
+                (node) =>
+                  getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+                  getLocalizedTechnologyLabel(node.technology, locale) ||
+                  node.label ||
+                  node.technology
+              )
+              .join(' → ') || bestPipelineData.pathNodeIds.join(' → '),
           queue: bestPipelineData.queue,
-          pathNodes: bestPipelineData.pathNodes?.map((node) => node.label) ?? [],
+          pathNodes:
+            bestPipelineData.pathNodes?.map(
+              (node) =>
+                getLocalizedTechnologyLabel(node.label || node.technology, locale) ||
+                getLocalizedTechnologyLabel(node.technology, locale) ||
+                node.label ||
+                node.technology
+            ) ?? [],
           score: bestScore,
         }
       : best
@@ -269,26 +291,26 @@ const OptimizationCard: FC = () => {
 
   const optimizeBlocker = useMemo(() => {
     if (experiment?.status === ExperimentStatus.optimization && isOptimizationRunning) {
-      return 'Оптимізація вже виконується.';
+      return messages.optimizationCard.alreadyRunning;
     }
     if (
       experiment?.status !== ExperimentStatus.computing &&
       experiment?.status !== ExperimentStatus.completed &&
       experiment?.status !== ExperimentStatus.optimization
     ) {
-      return 'Оптимізація доступна лише зі статусів експерименту "Обчислення" або "Завершено".';
+      return messages.optimizationCard.statusBlocked;
     }
     if (!graphSettingsReady) {
-      return 'Заповніть налаштування графа, щоб запускати оптимізацію.';
+      return messages.optimizationCard.settingsMissing;
     }
     if (!allPathsHaveClassification) {
-      return 'Усі конвеєри мають містити етап класифікації.';
+      return messages.optimizationCard.classificationMissing;
     }
     if (!allPathsCompleted) {
-      return 'Оптимізація доступна після завершення всіх конвеєрів.';
+      return messages.optimizationCard.pipelinesIncomplete;
     }
     if (allowedQueues.length === 0) {
-      return 'Тип обчислень не налаштовано.';
+      return messages.optimizationCard.queueMissing;
     }
     return null;
   }, [
@@ -298,13 +320,14 @@ const OptimizationCard: FC = () => {
     experiment?.status,
     graphSettingsReady,
     isOptimizationRunning,
+    messages.optimizationCard,
   ]);
 
   const optimizationButtonLabel = optimizing
-    ? 'Оптимізація...'
+    ? messages.optimizationCard.optimizing
     : optimization
-      ? 'Перезапустити оптимізацію'
-      : 'Запустити оптимізацію';
+      ? messages.optimizationCard.restart
+      : messages.optimizationCard.start;
 
   const handleStartOptimization = async () => {
     if (!experiment) return;
@@ -350,11 +373,13 @@ const OptimizationCard: FC = () => {
   if (!experiment || experimentError) {
     return (
       <section className="card data-card">
-        <h3>Оптимізація</h3>
+        <h3>{messages.optimizationCard.title}</h3>
         {experimentError ? (
-          <Alert variant="error">Помилка завантаження оптимізації: {experimentError.message}</Alert>
+          <Alert variant="error">
+            {messages.optimizationCard.loadingError}: {experimentError.message}
+          </Alert>
         ) : (
-          <p className="muted">Експеримент не знайдено.</p>
+          <p className="muted">{messages.optimizationCard.experimentNotFound}</p>
         )}
       </section>
     );
@@ -363,14 +388,14 @@ const OptimizationCard: FC = () => {
   return (
     <section className="card data-card">
       <header className="card-head">
-        <h3>Оптимізація</h3>
+        <h3>{messages.optimizationCard.title}</h3>
         <div className="card-actions">
           <button
             className="btn ghost small"
             type="button"
             onClick={handleStartOptimization}
             disabled={!canOptimize || optimizing}
-            title={optimizeBlocker ?? 'Запустити оптимізацію'}
+            title={optimizeBlocker ?? messages.optimizationCard.start}
           >
             {optimizationButtonLabel}
           </button>
@@ -379,25 +404,31 @@ const OptimizationCard: FC = () => {
             href={reportUrl}
             download={`experiment-${experiment._id}-report.pdf`}
           >
-            Завантажити PDF
+            {messages.common.downloadPdf}
           </a>
           <button className="btn ghost small" type="button" onClick={() => setHistoryOpen(true)}>
-            Історія
+            {messages.optimizationCard.history}
           </button>
         </div>
       </header>
 
       {optimizeError && (
-        <Alert variant="error">Помилка запуску оптимізації: {optimizeError.message}</Alert>
+        <Alert variant="error">
+          {messages.optimizationCard.startError}: {optimizeError.message}
+        </Alert>
       )}
-      {pipelinesError && <Alert variant="error">Помилка конвеєрів: {pipelinesError.message}</Alert>}
+      {pipelinesError && (
+        <Alert variant="error">
+          {messages.optimizationCard.pipelinesError}: {pipelinesError.message}
+        </Alert>
+      )}
 
       <div className="result-section">
         <div className="result-section-head">
           <div>
-            <h4 className="result-section-title">Прогрес</h4>
+            <h4 className="result-section-title">{messages.optimizationCard.progressTitle}</h4>
             <p className="muted small">
-              {latestHistory?.message ?? 'Очікування запуску оптимізації.'}
+              {latestHistory?.message ?? messages.optimizationCard.progressFallback}
             </p>
           </div>
           <span className="result-count">{historyItems.length}</span>
@@ -410,16 +441,16 @@ const OptimizationCard: FC = () => {
             <span className="result-progress-value">{progress}%</span>
           </div>
         ) : (
-          <p className="muted small">Оптимізація ще не запускалась.</p>
+          <p className="muted small">{messages.optimizationCard.notStarted}</p>
         )}
         {!canOptimize && optimizeBlocker ? <p className="muted small">{optimizeBlocker}</p> : null}
         <div className="result-meta-grid">
           <div className="result-meta-item">
-            <span className="muted small">Статус</span>
+            <span className="muted small">{messages.optimizationCard.status}</span>
             <span className="status-pill">{optimization?.status ?? '—'}</span>
           </div>
           <div className="result-meta-item">
-            <span className="muted small">Останнє повідомлення</span>
+            <span className="muted small">{messages.optimizationCard.latestMessage}</span>
             <span>{latestHistory?.message ?? '—'}</span>
           </div>
         </div>
@@ -429,31 +460,33 @@ const OptimizationCard: FC = () => {
         <div className="result-section">
           <div className="result-section-head">
             <div>
-              <h4 className="result-section-title">Найкращий конвеєр</h4>
-              <p className="muted small">Результат та склад конвеєра.</p>
+              <h4 className="result-section-title">{messages.optimizationCard.bestTitle}</h4>
+              <p className="muted small">{messages.optimizationCard.bestSubtitle}</p>
             </div>
           </div>
           {bestDetails ? (
             <div className="result-meta-grid">
               <div className="result-meta-item">
-                <span className="muted small">Конвеєр</span>
+                <span className="muted small">{messages.optimizationCard.pipeline}</span>
                 <span>{bestDetails.label}</span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Оцінка</span>
+                <span className="muted small">{messages.optimizationCard.score}</span>
                 <span>{bestDetails.score !== null ? bestDetails.score.toFixed(6) : '—'}</span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Виконання</span>
-                <span>{queueLabels[bestDetails.queue] ?? bestDetails.queue}</span>
+                <span className="muted small">{messages.optimizationCard.execution}</span>
+                <span>
+                  {messages.statuses.computationQueue[bestDetails.queue] ?? bestDetails.queue}
+                </span>
               </div>
               <div className="result-meta-item">
-                <span className="muted small">Склад</span>
+                <span className="muted small">{messages.optimizationCard.composition}</span>
                 <span>{bestPathNodes.join(', ') || '—'}</span>
               </div>
             </div>
           ) : (
-            <Alert variant="warning">Немає даних про оптимізацію.</Alert>
+            <Alert variant="warning">{messages.optimizationCard.noOptimizationData}</Alert>
           )}
         </div>
       </div>
@@ -461,75 +494,74 @@ const OptimizationCard: FC = () => {
       <div className="result-section">
         <div className="result-section-head">
           <div>
-            <h4 className="result-section-title">Таблиця лідерів</h4>
-            <p className="muted small">Останні оцінки оптимізації для кожного конвеєра.</p>
+            <h4 className="result-section-title">{messages.optimizationCard.leaderboardTitle}</h4>
+            <p className="muted small">{messages.optimizationCard.leaderboardSubtitle}</p>
           </div>
         </div>
         {sortedLeaderboard.length > 0 ? (
           <DataTable
             data={sortedLeaderboard}
             columns={[
+              { header: messages.optimizationCard.columns.pipeline, accessorKey: 'label' },
               {
-                header: 'Конвеєр',
-                accessorKey: 'label',
-              },
-              {
-                header: 'Інтегральне значення',
+                header: messages.optimizationCard.columns.integral,
                 accessorKey: 'score',
                 cell: ({ row }) => formatMetric(row.original.score),
                 meta: { className: 'optimization-integral-column' },
               },
               {
-                header: 'Точність',
+                header: messages.optimizationCard.columns.accuracy,
                 accessorKey: 'averageAccuracy',
                 cell: ({ row }) => formatMetric(row.original.averageAccuracy),
                 meta: { className: 'optimization-metric-column' },
               },
               {
-                header: 'F1-міра',
+                header: messages.optimizationCard.columns.f1,
                 accessorKey: 'averageF1',
                 cell: ({ row }) => formatMetric(row.original.averageF1),
                 meta: { className: 'optimization-metric-column' },
               },
               {
-                header: 'Площа під ROC-кривою',
+                header: messages.optimizationCard.columns.rocAuc,
                 accessorKey: 'averageRocAuc',
                 cell: ({ row }) => formatMetric(row.original.averageRocAuc),
                 meta: { className: 'optimization-metric-column' },
               },
               {
-                header: 'Нормалізований час обробки одного зразка даних',
+                header: messages.optimizationCard.columns.normalizedTime,
                 accessorKey: 'normalizedProcessingTime',
-                cell: ({ row }) => formatNormalizedTime(row.original.normalizedProcessingTime),
+                cell: ({ row }) =>
+                  row.original.normalizedProcessingTime !== null
+                    ? `${row.original.normalizedProcessingTime.toFixed(6)} ${messages.optimizationCard.secondsPerSample}`
+                    : '—',
                 meta: { className: 'optimization-metric-column' },
               },
               {
-                header: 'Виконання',
+                header: messages.optimizationCard.columns.execution,
                 accessorKey: 'queue',
-                cell: ({ row }) => queueLabels[row.original.queue],
+                cell: ({ row }) => messages.statuses.computationQueue[row.original.queue],
               },
               {
-                header: 'Статус',
+                header: messages.optimizationCard.columns.status,
                 accessorKey: 'status',
-                cell: ({ row }) => uk.computationStatus[row.original.status],
+                cell: ({ row }) => messages.statuses.computationStatus[row.original.status],
               },
             ]}
             getRowId={(row) => row.id}
             pageSize={5}
-            labels={tableLabels}
             className="path-table optimization-leaderboard-table"
-            emptyMessage="Немає оцінених конвеєрів."
+            emptyMessage={messages.optimizationCard.noRatedPipelines}
           />
         ) : (
-          <p className="muted small">Немає оцінених конвеєрів.</p>
+          <p className="muted small">{messages.optimizationCard.noRatedPipelines}</p>
         )}
       </div>
 
       <div className="result-section">
         <div className="result-section-head">
           <div>
-            <h4 className="result-section-title">Графік результатів</h4>
-            <p className="muted small">Порівняння конвеєрів за значенням оптимізації.</p>
+            <h4 className="result-section-title">{messages.optimizationCard.chartTitle}</h4>
+            <p className="muted small">{messages.optimizationCard.chartSubtitle}</p>
           </div>
         </div>
         {sortedLeaderboard.length > 0 ? (
@@ -541,7 +573,10 @@ const OptimizationCard: FC = () => {
                   <div
                     className="bar-chart-fill"
                     style={{ width: renderBarWidth(row.score) }}
-                    aria-label={`Конвеєр ${row.label} зі значенням ${row.score ?? '—'}`}
+                    aria-label={messages.optimizationCard.chartAria(
+                      row.label,
+                      row.score?.toString() ?? '—'
+                    )}
                   />
                 </div>
                 <div className="bar-chart-labels">
@@ -554,17 +589,17 @@ const OptimizationCard: FC = () => {
             ))}
           </div>
         ) : (
-          <p className="muted small">Немає даних для побудови графіка.</p>
+          <p className="muted small">{messages.optimizationCard.noChartData}</p>
         )}
       </div>
 
       <Modal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        title="Журнал оптимізації"
+        title={messages.optimizationCard.historyTitle}
         footer={
           <button className="btn primary" type="button" onClick={() => setHistoryOpen(false)}>
-            Закрити
+            {messages.common.close}
           </button>
         }
       >
@@ -573,27 +608,26 @@ const OptimizationCard: FC = () => {
             data={historyItems}
             columns={[
               {
-                header: 'Час',
+                header: messages.optimizationCard.columns.time,
                 accessorKey: 'createdAt',
                 cell: ({ row }) => new Date(row.original.createdAt).toLocaleString(),
               },
               {
-                header: 'Статус',
+                header: messages.optimizationCard.columns.status,
                 accessorKey: 'status',
               },
               {
-                header: 'Повідомлення',
+                header: messages.optimizationCard.columns.message,
                 accessorKey: 'message',
               },
             ]}
             getRowId={(_, index) => `${index}`}
             pageSize={10}
-            labels={tableLabels}
             className="path-table"
-            emptyMessage="Історія порожня."
+            emptyMessage={messages.optimizationCard.historyEmpty}
           />
         ) : (
-          <p className="muted">Журнал оптимізації порожній.</p>
+          <p className="muted">{messages.optimizationCard.historyLogEmpty}</p>
         )}
       </Modal>
     </section>

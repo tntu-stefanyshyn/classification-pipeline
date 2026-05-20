@@ -54,6 +54,7 @@ export type FlatGraphNode = {
 export type TechnologyIndex = {
   byStage: Map<ClassificationStage, Technology[]>;
   byStageName: Map<string, Technology>;
+  byStageAlias: Map<string, Technology>;
 };
 
 export type BuildFlowElementsParams = {

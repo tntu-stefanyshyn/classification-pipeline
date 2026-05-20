@@ -1,4 +1,6 @@
 import type { GraphNode } from '../graphql';
+import type { AppLocale } from '../../../../i18n';
+import { getLocalizedTechnologyLabel } from '../../../../utils/technologyLabel';
 
 export type GraphPath = {
   id: string;
@@ -6,7 +8,7 @@ export type GraphPath = {
   label: string;
 };
 
-export const buildGraphPaths = (nodes: GraphNode[]): GraphPath[] => {
+export const buildGraphPaths = (nodes: GraphNode[], locale: AppLocale = 'uk'): GraphPath[] => {
   if (!nodes || nodes.length === 0) return [];
   const ids = new Set(nodes.map((node) => node._id));
   const childrenByParent = new Map<string, string[]>();
@@ -36,7 +38,9 @@ export const buildGraphPaths = (nodes: GraphNode[]): GraphPath[] => {
     nodeIds
       .map((id) => {
         const node = nodeById.get(id);
-        return node?.technology || node?.label || 'Unknown node';
+        return (
+          getLocalizedTechnologyLabel(node?.label || node?.technology, locale) || 'Unknown node'
+        );
       })
       .join(' -> ');
 

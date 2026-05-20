@@ -7,6 +7,10 @@ import {
   getGraphSignature,
 } from '../src/components/experiments/ExperimentGraphConstructor/utils/graph';
 import {
+  applyFlowNodePositionOverrides,
+  buildFlowElements,
+} from '../src/components/experiments/ExperimentGraphConstructor/utils/flow';
+import {
   getDefaultTechnologyForStage,
   resolveTechnology,
   buildTechnologyIndex,
@@ -27,6 +31,7 @@ type FlatNodeInput = {
 };
 
 type TechnologyInput = {
+  displayName?: string | null;
   name: string;
   stage: ClassificationStage;
 };
@@ -72,8 +77,117 @@ test('getGraphSignature normalizes optional fields and sorts settings keys', () 
 
   assert.equal(
     signature,
-    'node-1:root:CLASSIFICATION:SVM:classifier:c:1,gamma:0.1|node-2::::preprocess:'
+    'node-1:root:CLASSIFICATION:SVM:classifier:Node 1:c:1,gamma:0.1|node-2::::preprocess:Node 2:'
   );
+});
+
+test('getGraphSignature changes when only the visible label changes', () => {
+  const ukrainian = getGraphSignature(
+    asFlatNodes([
+      {
+        _id: 'node-1',
+        parentId: 'root',
+        stage: ClassificationStage.DATA_ENHANCEMENT,
+        technology: 'Приглушення короткочасних артефактів',
+        type: 'technology',
+        label: 'Приглушення короткочасних артефактів',
+      },
+    ])
+  );
+
+  const english = getGraphSignature(
+    asFlatNodes([
+      {
+        _id: 'node-1',
+        parentId: 'root',
+        stage: ClassificationStage.DATA_ENHANCEMENT,
+        technology: 'Приглушення короткочасних артефактів',
+        type: 'technology',
+        label: 'Transient Artifact Suppression',
+      },
+    ])
+  );
+
+  assert.notEqual(ukrainian, english);
+});
+
+test('buildFlowElements places graph levels from top to bottom', () => {
+  const { flowNodes } = buildFlowElements({
+    nodes: asFlatNodes([
+      {
+        _id: 'parent',
+        label: 'Parent',
+        stage: ClassificationStage.PREPROCESSING,
+        type: 'technology',
+      },
+      {
+        _id: 'child-a',
+        label: 'Child A',
+        stage: ClassificationStage.FEATURE_EXTRACTION,
+        type: 'technology',
+        parentId: 'parent',
+      },
+      {
+        _id: 'child-b',
+        label: 'Child B',
+        stage: ClassificationStage.CLASSIFICATION,
+        type: 'technology',
+        parentId: 'parent',
+      },
+    ]),
+    selectedNodeId: null,
+    collapsedNodeIds: new Set(),
+    graphActionsDisabled: false,
+    graphInspectionDisabled: false,
+    graphUpdating: false,
+    onAdd: () => undefined,
+    onEdit: () => undefined,
+    onDelete: () => undefined,
+    onToggleCollapse: () => undefined,
+  });
+
+  const rootNode = flowNodes.find((node) => node.id === 'graph-root');
+  const parentNode = flowNodes.find((node) => node.id === 'parent');
+  const firstChildNode = flowNodes.find((node) => node.id === 'child-a');
+
+  assert.ok(rootNode);
+  assert.ok(parentNode);
+  assert.ok(firstChildNode);
+  assert.equal(rootNode.sourcePosition, 'bottom');
+  assert.equal(parentNode?.targetPosition, 'top');
+  assert.equal(parentNode?.sourcePosition, 'bottom');
+  assert.ok((parentNode?.position.y ?? 0) > (rootNode.position.y ?? 0));
+  assert.ok((firstChildNode?.position.y ?? 0) > (parentNode?.position.y ?? 0));
+});
+
+test('applyFlowNodePositionOverrides enables dragging and applies local positions', () => {
+  const { flowNodes } = buildFlowElements({
+    nodes: asFlatNodes([
+      {
+        _id: 'node-1',
+        label: 'Node 1',
+        stage: ClassificationStage.PREPROCESSING,
+        type: 'technology',
+      },
+    ]),
+    selectedNodeId: null,
+    collapsedNodeIds: new Set(),
+    graphActionsDisabled: false,
+    graphInspectionDisabled: false,
+    graphUpdating: false,
+    onAdd: () => undefined,
+    onEdit: () => undefined,
+    onDelete: () => undefined,
+    onToggleCollapse: () => undefined,
+  });
+
+  const updated = applyFlowNodePositionOverrides(flowNodes, { 'node-1': { x: 123, y: 456 } }, true);
+  const rootNode = updated.find((node) => node.id === 'graph-root');
+  const movedNode = updated.find((node) => node.id === 'node-1');
+
+  assert.equal(rootNode?.draggable, false);
+  assert.equal(movedNode?.draggable, true);
+  assert.deepEqual(movedNode?.position, { x: 123, y: 456 });
 });
 
 test('getStageLabel and isClassificationStage handle known and unknown values', () => {
@@ -86,7 +200,11 @@ test('getStageLabel and isClassificationStage handle known and unknown values', 
 test('buildTechnologyIndex sorts technologies per stage and maps by stage:name', () => {
   const index = buildTechnologyIndex(
     asTechnologies([
-      { stage: ClassificationStage.CLASSIFICATION, name: 'XGBoost' },
+      {
+        stage: ClassificationStage.CLASSIFICATION,
+        name: 'XGBoost',
+        displayName: 'Extreme Gradient Boosting / Екстремальний градієнтний бустинг',
+      },
       { stage: ClassificationStage.CLASSIFICATION, name: 'AdaBoost' },
       { stage: ClassificationStage.PREPROCESSING, name: 'Normalization' },
     ])
@@ -105,10 +223,15 @@ test('buildTechnologyIndex sorts technologies per stage and maps by stage:name',
 test('technology helpers resolve explicit, label-based, and default selections', () => {
   const index = buildTechnologyIndex(
     asTechnologies([
-      { stage: ClassificationStage.CLASSIFICATION, name: 'AdaBoost' },
+      {
+        stage: ClassificationStage.CLASSIFICATION,
+        name: 'AdaBoost',
+        displayName: 'Adaptive Boosting / Адаптивний бустинг',
+      },
       { stage: ClassificationStage.CLASSIFICATION, name: 'SVM' },
       { stage: ClassificationStage.FEATURE_EXTRACTION, name: 'PCA' },
-    ])
+    ]),
+    'en'
   );
 
   assert.equal(
@@ -121,6 +244,24 @@ test('technology helpers resolve explicit, label-based, and default selections',
   );
   assert.equal(
     resolveTechnology(index, ClassificationStage.CLASSIFICATION, '', ' AdaBoost ')?.name,
+    'AdaBoost'
+  );
+  assert.equal(
+    resolveTechnology(
+      index,
+      ClassificationStage.CLASSIFICATION,
+      ' Adaptive Boosting / Адаптивний бустинг ',
+      null
+    )?.name,
+    'AdaBoost'
+  );
+  assert.equal(
+    resolveTechnology(index, ClassificationStage.CLASSIFICATION, ' Adaptive Boosting ', null)?.name,
+    'AdaBoost'
+  );
+  assert.equal(
+    resolveTechnology(index, ClassificationStage.CLASSIFICATION, ' Адаптивний бустинг ', null)
+      ?.name,
     'AdaBoost'
   );
   assert.equal(

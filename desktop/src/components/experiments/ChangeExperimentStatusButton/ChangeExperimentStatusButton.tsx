@@ -4,17 +4,21 @@ import { useChangeExperimentStatusMutation } from './graphql/mutations/generated
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { ChangeExperimentStatusButtonProps } from './ChangeExperimentStatusButton.types';
+import { useI18n } from '../../../i18n';
 
 const ChangeExperimentStatusButton: FC<ChangeExperimentStatusButtonProps> = ({
   label,
   status,
   disabled,
 }) => {
+  const { messages } = useI18n();
   const { id: experimentId } = useParams() as { id: string };
   const [changeExperimentStatus, { loading }] = useChangeExperimentStatusMutation({
     variables: { input: { experimentId, status } },
     onError: (error) => {
-      toast.error(error.message || 'Помилка при зміні статусу експерименту');
+      toast.error(
+        error.message || `${messages.common.errorPrefix}: ${messages.experimentDetails.edit}`
+      );
     },
   });
 

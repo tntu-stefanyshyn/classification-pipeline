@@ -13,6 +13,10 @@ export class Technology {
   @prop({ required: true, unique: true, trim: true })
   name!: string;
 
+  @Field({ nullable: true })
+  @prop({ trim: true })
+  displayName?: string;
+
   @Field(() => ClassificationStage)
   @prop({ required: true, enum: ClassificationStage, type: () => String })
   stage!: ClassificationStage;

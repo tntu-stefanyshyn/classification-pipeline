@@ -7,26 +7,31 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import type { DataTableProps } from './DataTable.types';
-import { defaultLabels } from './constants/defaultLabels';
 import { isInteractiveTarget } from './utils/isInteractiveTarget';
+import { useI18n } from '../../../i18n';
 
 const DataTable = <TData,>({
   data,
   columns,
   pageSize = 6,
   pageSizeOptions,
-  emptyMessage = 'Немає даних.',
+  emptyMessage,
   labels,
   className,
   getRowId,
   onRowClick,
 }: DataTableProps<TData>) => {
+  const { messages } = useI18n();
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
   });
 
-  const resolvedLabels = useMemo(() => ({ ...defaultLabels, ...labels }), [labels]);
+  const resolvedEmptyMessage = emptyMessage ?? messages.common.noData;
+  const resolvedLabels = useMemo(
+    () => ({ ...messages.table, ...labels }),
+    [labels, messages.table]
+  );
   const resolvedPageSizes = useMemo(() => {
     const fallback = [pageSize, pageSize * 2, pageSize * 3];
     const options = pageSizeOptions?.length ? pageSizeOptions : fallback;
@@ -84,7 +89,7 @@ const DataTable = <TData,>({
             {data.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="table-empty">
-                  {emptyMessage}
+                  {resolvedEmptyMessage}
                 </td>
               </tr>
             ) : (

@@ -24,6 +24,7 @@ test('technology classes and model metadata are available', () => {
 
   technology._id = new Types.ObjectId();
   technology.name = 'SVM';
+  technology.displayName = 'Support Vector Machine / Метод опорних векторів';
   technology.stage = ClassificationStage.CLASSIFICATION;
   technology.settings = [setting];
 

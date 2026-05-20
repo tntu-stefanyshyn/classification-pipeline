@@ -38,6 +38,30 @@ test('buildGraphPaths returns labeled root to leaf paths', () => {
   ]);
 });
 
+test('buildGraphPaths localizes bilingual labels by locale', () => {
+  const [englishPath] = buildGraphPaths(
+    asGraphNodes([
+      {
+        _id: 'node-1',
+        label: 'Transient Artifact Suppression / Приглушення короткочасних артефактів',
+      },
+    ]),
+    'en'
+  );
+  const [ukrainianPath] = buildGraphPaths(
+    asGraphNodes([
+      {
+        _id: 'node-1',
+        label: 'Transient Artifact Suppression / Приглушення короткочасних артефактів',
+      },
+    ]),
+    'uk'
+  );
+
+  assert.equal(englishPath.label, 'Transient Artifact Suppression');
+  assert.equal(ukrainianPath.label, 'Приглушення короткочасних артефактів');
+});
+
 test('buildGraphPaths falls back to Unknown node when label data is missing', () => {
   const [path] = buildGraphPaths(asGraphNodes([{ _id: 'root' }]));
 

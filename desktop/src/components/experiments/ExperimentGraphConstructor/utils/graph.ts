@@ -38,7 +38,8 @@ export const getGraphSignature = (nodes: FlatGraphNode[]): string => {
       const parent = node.parentId ?? '';
       const tech = node.technology ?? '';
       const type = node.type ?? '';
-      return `${node._id}:${parent}:${stage}:${tech}:${type}:${normalizeSettings(node.settings)}`;
+      const label = node.label ?? '';
+      return `${node._id}:${parent}:${stage}:${tech}:${type}:${label}:${normalizeSettings(node.settings)}`;
     })
     .join('|');
 };

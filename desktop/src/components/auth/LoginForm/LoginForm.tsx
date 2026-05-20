@@ -4,17 +4,20 @@ import { InputField } from '../../inputs/InputField';
 import { SubmitButton } from '../../inputs/SubmitButton';
 import { FormError } from '../../inputs/FormError';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
-import { loginSchema } from './constants/loginSchema';
+import { createLoginSchema } from './constants/loginSchema';
 import { useLoginMutation } from './graphql';
 import type { LoginFormProps } from './LoginForm.types';
+import { useI18n } from '../../../i18n';
 
 const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
+  const { messages } = useI18n();
   const [loginMutation] = useLoginMutation();
+  const validationSchema = createLoginSchema();
 
   return (
     <Formik
       initialValues={{ email: '', password: '' }}
-      validationSchema={loginSchema}
+      validationSchema={validationSchema}
       onSubmit={async (values, { setFieldError }) => {
         const result = await loginMutation({
           variables: values,
@@ -28,20 +31,23 @@ const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
       <Form className="auth-form" noValidate>
         <InputField
           name="email"
-          label="Електронна пошта"
+          label={messages.auth.loginForm.email}
           type="email"
           placeholder="korystuvach@example.com"
           autoComplete="email"
         />
         <InputField
           name="password"
-          label="Пароль"
+          label={messages.auth.loginForm.password}
           type="password"
           placeholder="••••••••"
           autoComplete="current-password"
         />
         <FormError />
-        <SubmitButton label="Увійти" loadingLabel="Вхід..." />
+        <SubmitButton
+          label={messages.auth.loginForm.submit}
+          loadingLabel={messages.auth.loginForm.loading}
+        />
       </Form>
     </Formik>
   );

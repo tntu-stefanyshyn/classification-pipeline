@@ -5,13 +5,12 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../../layout/AuthLayout';
 import { FileInput } from '../../inputs/FileInput';
-import { DataTable, tableLabels } from '../../ui/DataTable';
+import { DataTable } from '../../ui/DataTable';
 import { Modal } from '../../ui/Modal';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { InputField } from '../../inputs/InputField';
 import { TextAreaField } from '../../inputs/TextAreaField';
-import { experimentSchema } from './constants/experimentSchema';
-import { statusLabels } from './constants/statusLabels';
+import { createExperimentSchema } from './constants/experimentSchema';
 import {
   refetchDashboardDataQuery,
   refetchExperimentsQuery,
@@ -27,8 +26,10 @@ import type {
   ExperimentsPageProps,
 } from './ExperimentsPage.types';
 import { formatTimeAgo } from './utils/formatTimeAgo';
+import { useI18n } from '../../../i18n';
 
 const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
+  const { locale, messages } = useI18n();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -50,7 +51,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
   const [createFile] = useCreateUploadedFileMutation();
   const [isModalOpen, setModalOpen] = useState(false);
 
-  // Keep dashboard stats fresh when a new experiment is created.
+  const validationSchema = useMemo(() => createExperimentSchema(), [messages.experimentsPage]);
   const refetchQueries = useMemo(
     () => [refetchExperimentsQuery(), refetchDashboardDataQuery()],
     []
@@ -58,37 +59,43 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
 
   const experiments = data?.experiments ?? [];
   const uploadedFiles = uploadedFilesData?.uploadedFiles ?? [];
-  const emptyMessage = loading ? 'Завантаження експериментів...' : 'Експерименти ще не додані.';
+  const emptyMessage = loading ? messages.experimentsPage.loading : messages.experimentsPage.empty;
 
   const columns = useMemo<ColumnDef<ExperimentRow>[]>(
     () => [
       {
-        header: 'Експеримент',
+        header: messages.experimentsPage.columns.experiment,
         accessorKey: 'name',
         cell: ({ row, getValue }) => (
           <div className="table-stack">
             <Link to={`/app/experiments/${row.original._id}`} className="table-link item-title">
               {getValue<string>()}
             </Link>
-            <span className="muted small">{row.original.description || 'Опис не додано'}</span>
+            <span className="muted small">
+              {row.original.description || messages.experimentsPage.descriptionMissing}
+            </span>
           </div>
         ),
       },
       {
-        header: 'Статус',
+        header: messages.experimentsPage.columns.status,
         accessorKey: 'status',
         cell: (info) => {
           const status = info.getValue<string>();
           return (
-            <span className={`status-pill status-${status}`}>{statusLabels[status] ?? status}</span>
+            <span className={`status-pill status-${status}`}>
+              {messages.statuses.experimentStatus[
+                status as keyof typeof messages.statuses.experimentStatus
+              ] ?? status}
+            </span>
           );
         },
       },
       {
-        header: 'Створено',
+        header: messages.experimentsPage.columns.created,
         accessorKey: 'createdAt',
         cell: (info) => (
-          <span className="muted">{formatTimeAgo(info.getValue<string | Date>())}</span>
+          <span className="muted">{formatTimeAgo(info.getValue<string | Date>(), locale)}</span>
         ),
       },
       {
@@ -99,8 +106,8 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
             <Link
               to={`/app/experiments/${row.original._id}`}
               className="btn ghost small icon"
-              aria-label="Відкрити"
-              title="Відкрити"
+              aria-label={messages.experimentsPage.columns.open}
+              title={messages.experimentsPage.columns.open}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path
@@ -123,7 +130,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
         ),
       },
     ],
-    []
+    [locale, messages.experimentsPage, messages.statuses.experimentStatus]
   );
 
   const handleRowClick = useCallback(
@@ -144,17 +151,17 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
 
   return (
     <AuthLayout
-      badge="Авторизований доступ"
-      title="Експерименти"
-      subtitle="Переглядайте статуси та створюйте нові експерименти."
+      badge={messages.experimentsPage.badge}
+      title={messages.experimentsPage.title}
+      subtitle={messages.experimentsPage.subtitle}
       onLogout={onLogout}
       actions={
         <>
           <button className="btn ghost" type="button" onClick={() => refetch()} disabled={loading}>
-            Оновити
+            {messages.experimentsPage.refresh}
           </button>
           <button className="btn primary" type="button" onClick={() => setModalOpen(true)}>
-            Створити експеримент
+            {messages.experimentsPage.create}
           </button>
         </>
       }
@@ -163,18 +170,21 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
         <section className="card data-card">
           <header className="card-head">
             <div>
-              <h3>Активні експерименти</h3>
-              <p className="muted">Статуси та час створення.</p>
+              <h3>{messages.experimentsPage.activeTitle}</h3>
+              <p className="muted">{messages.experimentsPage.activeSubtitle}</p>
             </div>
           </header>
           <div className="table-status">
-            {error && <p className="error">Помилка: {error.message}</p>}
+            {error && (
+              <p className="error">
+                {messages.common.errorPrefix}: {error.message}
+              </p>
+            )}
           </div>
           <DataTable
             data={experiments}
             columns={columns}
             emptyMessage={emptyMessage}
-            labels={tableLabels}
             pageSize={6}
             pageSizeOptions={[6, 12, 24]}
             getRowId={(row) => row._id}
@@ -183,10 +193,14 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
         </section>
       </div>
 
-      <Modal open={isModalOpen} title="Створити експеримент" onClose={handleCloseModal}>
+      <Modal
+        open={isModalOpen}
+        title={messages.experimentsPage.createTitle}
+        onClose={handleCloseModal}
+      >
         <Formik<ExperimentFormValues>
           initialValues={{ name: '', description: '', fileId: '' }}
-          validationSchema={experimentSchema}
+          validationSchema={validationSchema}
           onSubmit={async (values, { resetForm, setStatus, setSubmitting }) => {
             setStatus(undefined);
             const trimmedName = values.name.trim();
@@ -208,7 +222,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
               resetForm();
               handleCloseModal();
             } catch (_error) {
-              setStatus('Не вдалося створити експеримент. Спробуйте ще раз.');
+              setStatus(messages.experimentsPage.createFailed);
             } finally {
               setSubmitting(false);
             }
@@ -220,7 +234,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
               if (!file) return;
 
               if (!isCsvFile(file)) {
-                setUploadError('Підтримуються лише CSV файли.');
+                setUploadError(messages.experimentsPage.onlyCsv);
                 if (fileInputRef.current) {
                   fileInputRef.current.value = '';
                 }
@@ -243,7 +257,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                 const signedUrl = signedData?.signedUploadUrl?.url;
                 const storageKey = signedData?.signedUploadUrl?.key;
                 if (!signedUrl || !storageKey) {
-                  throw new Error('Не вдалося отримати дані для завантаження.');
+                  throw new Error(messages.experimentsPage.uploadDataFailed);
                 }
 
                 const uploadResponse = await fetch(signedUrl, {
@@ -253,7 +267,7 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                 });
 
                 if (!uploadResponse.ok) {
-                  throw new Error('Помилка завантаження файла.');
+                  throw new Error(messages.experimentsPage.uploadFailed);
                 }
 
                 const sizeMb = Math.max(1, Math.round(file.size / (1024 * 1024)));
@@ -276,7 +290,9 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                 await refetchFiles();
               } catch (uploadErr) {
                 setUploadError(
-                  uploadErr instanceof Error ? uploadErr.message : 'Не вдалося завантажити файл.'
+                  uploadErr instanceof Error
+                    ? uploadErr.message
+                    : messages.experimentsPage.uploadUnknown
                 );
               } finally {
                 setUploading(false);
@@ -290,16 +306,16 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
               <Form className="experiment-form" noValidate>
                 <InputField
                   name="name"
-                  label="Назва експерименту"
-                  placeholder="Наприклад, Protein baseline"
+                  label={messages.experimentsPage.form.name}
+                  placeholder={messages.experimentsPage.form.namePlaceholder}
                 />
                 <TextAreaField
                   name="description"
-                  label="Опис"
-                  placeholder="Коротко опишіть цілі експерименту"
+                  label={messages.experimentsPage.form.description}
+                  placeholder={messages.experimentsPage.form.descriptionPlaceholder}
                 />
                 <div className="form-group">
-                  <label htmlFor="fileId">Файл</label>
+                  <label htmlFor="fileId">{messages.experimentDetails.fileLabel}</label>
                   <select
                     id="fileId"
                     name="fileId"
@@ -308,14 +324,14 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                     onBlur={handleBlur}
                     disabled={filesLoading || uploading}
                   >
-                    <option value="">Без файлу</option>
+                    <option value="">{messages.experimentDetails.noFile}</option>
                     {uploadedFiles.map((file) => (
                       <option key={file._id} value={file._id}>
                         {file.filename}
                       </option>
                     ))}
                   </select>
-                  <p className="muted small">Оберіть існуючий або завантажте новий CSV.</p>
+                  <p className="muted small">{messages.experimentDetails.fileHint}</p>
                   <div className="file-actions">
                     <button
                       className="btn ghost small"
@@ -323,24 +339,36 @@ const ExperimentsPage: FC<ExperimentsPageProps> = ({ onLogout }) => {
                       onClick={handleUploadClick}
                       disabled={uploading}
                     >
-                      {uploading ? 'Завантаження...' : 'Завантажити CSV'}
+                      {uploading ? messages.common.loading : messages.experimentsPage.form.upload}
                     </button>
-                    {filesLoading && <span className="muted small">Завантаження файлів...</span>}
+                    {filesLoading && (
+                      <span className="muted small">{messages.experimentDetails.filesLoading}</span>
+                    )}
                   </div>
-                  {filesError && <p className="error">Помилка файлів: {filesError.message}</p>}
+                  {filesError && (
+                    <p className="error">
+                      {messages.experimentDetails.fileError}: {filesError.message}
+                    </p>
+                  )}
                   {uploadError && <p className="error">{uploadError}</p>}
                 </div>
                 <FileInput ref={fileInputRef} accept=".csv,text/csv" onChange={handleFileChange} />
 
                 {status && <p className="error">{status}</p>}
-                {creationError && <p className="error">Помилка: {creationError.message}</p>}
+                {creationError && (
+                  <p className="error">
+                    {messages.common.errorPrefix}: {creationError.message}
+                  </p>
+                )}
 
                 <div className="actions">
                   <button className="btn ghost" type="button" onClick={handleCloseModal}>
-                    Скасувати
+                    {messages.common.cancel}
                   </button>
                   <button className="btn primary" type="submit" disabled={creating || isSubmitting}>
-                    {creating || isSubmitting ? 'Створення...' : 'Створити експеримент'}
+                    {creating || isSubmitting
+                      ? messages.experimentsPage.form.creating
+                      : messages.experimentsPage.form.submit}
                   </button>
                 </div>
               </Form>

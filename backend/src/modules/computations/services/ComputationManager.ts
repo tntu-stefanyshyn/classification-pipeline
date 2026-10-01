@@ -6,116 +6,127 @@ import {
   PipelineMachineInfo,
   PipelineMachineInfoInput,
 } from '../../../core/pipeline/classes/PipelineMachineInfo';
-import { ComputationResultModel } from '../models/ComputationResultModel';
-import { OptimizationResult } from '../classes/OptimizationResult';
-import {
-  ClassificationMetric,
-  ComputationResult,
-  ComputationResultPayload,
-} from '../classes/ComputationResult';
 import { GraphManager } from '../../experiments/services/GraphManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
+import { OptimizationStatus } from '../../experiments/classes/OptimizationStatus';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
-import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
-import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
-import { Pipeline, PipelineBaseService, PipelineModel } from '../../../core/pipeline';
+import {
+  Pipeline,
+  PipelineBaseService,
+  PipelineModel,
+  pipelinesCollectionName,
+} from '../../../core/pipeline';
 import { PipelineStatus } from '../../../core/pipeline/enums';
-import { PipelineHistoryItem } from '../../../core/pipeline/classes/PipelineHistoryItem';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowType } from '../../../core/workflow/enums';
+import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
+import { stringIdToObjectId } from '../../../utils';
+import { WorkflowModel, workflowsCollectionName } from '../../../core/workflow/model/WorkflowModel';
+import { ObjectIdOrString } from '../../../types/context';
+import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
+import { ExperimentManager } from '../../experiments/services/ExperimentManager';
+import { OptimizationResult } from '../classes/OptimizationResult';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
   private readonly optimizationRunner = new OptimizationRunner();
-  async listResultsByExperiment(experimentId: string): Promise<ComputationResult[]> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
+  private readonly workflowManager = new WorkflowManager();
+  private readonly pipelineManager = new PipelineManager();
+  private readonly experimentManager = new ExperimentManager();
 
-    return ComputationResultModel.find({ experimentId: trimmedId }).sort({ createdAt: -1 }).lean();
-  }
+  async optimize(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
+    const experiment = await ExperimentModel.findById(experimentId).lean();
+    if (!experiment) {
+      throw new Error('Experiment not found');
+    }
 
-  async optimizeExperimentRuns(experimentId: string): Promise<OptimizationResult> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    });
+    const optimizationStatus = experiment.optimization?.status;
+    const isOptimizationInProgress = optimizationStatus === OptimizationStatus.optimizing;
+    const canEnterOptimization =
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.completed;
 
-    const graph = await GraphStructureModel.findOne({ experimentId: trimmedId }).lean();
+    if (workflow.status === ExperimentStatus.optimization && isOptimizationInProgress) {
+      throw new Error('Оптимізація вже виконується.');
+    }
+
+    if (!canEnterOptimization && workflow.status !== ExperimentStatus.optimization) {
+      throw new Error('Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".');
+    }
+
+    const graph = await GraphStructureModel.findOne({ experimentId }).lean();
     const metrics = graph?.settings?.metrics;
     if (!metrics) {
       throw new Error('Graph metrics are not configured.');
     }
-
-    const rawResults = await ComputationResultModel.find({ experimentId: trimmedId })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (rawResults.length === 0) {
-      throw new Error('Computation results are missing for optimization.');
+    const hyperOptimizationMinutesPerPipeline =
+      graph?.settings?.hyperOptimizationMinutesPerPipeline ?? 30;
+    const graphNodes = graph?.nodes ?? [];
+    const graphPaths = buildGraphPaths(graphNodes);
+    if (graphPaths.length === 0) {
+      throw new Error('Graph has no paths for optimization.');
     }
+    const optimizationTimeoutSeconds =
+      Math.trunc(hyperOptimizationMinutesPerPipeline * 60 * graphPaths.length) || 0;
 
-    const seenPaths = new Set<string>();
-    const conveyors = rawResults
-      .map((result) => {
-        const pathNodeIds = (result.pathNodeIds ?? []).map((id) => String(id));
-        const pathKey = pathNodeIds.join('.');
-        if (!pathKey || seenPaths.has(pathKey)) return null;
-        seenPaths.add(pathKey);
-
-        let payload: Record<string, unknown> | null = null;
-        let payloadJson: string | null = null;
-        if (result.payloadJson) {
-          payloadJson = result.payloadJson;
-          try {
-            payload = JSON.parse(result.payloadJson) as Record<string, unknown>;
-            payloadJson = null;
-          } catch {
-            payload = null;
-          }
-        } else if (result.payload) {
-          payload = result.payload as Record<string, unknown>;
-        }
-
-        return {
-          run_id: String(result.runId),
-          path_node_ids: pathNodeIds,
-          payload,
-          payload_json: payloadJson,
-        };
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-
-    if (conveyors.length === 0) {
-      throw new Error('No completed paths available for optimization.');
-    }
-
-    const optimization = await this.optimizationRunner.run({
-      weights: {
-        accuracy: metrics.accuracy,
-        f1: metrics.f1,
-        rocAuc: metrics.rocAuc,
-        ntps: metrics.ntps,
+    const [uncomputedPipeline] = await PipelineModel.aggregate([
+      { $match: { experimentId: stringIdToObjectId(experimentId) } },
+      {
+        $lookup: {
+          from: workflowsCollectionName,
+          localField: '_id',
+          foreignField: 'instanceId',
+          as: 'workflow',
+        },
       },
-      conveyors,
+      { $unwind: { path: '$workflow' } },
+      {
+        $match: {
+          'workflow.status': { $ne: PipelineStatus.completed },
+        },
+      },
+    ]);
+
+    if (uncomputedPipeline) {
+      throw new Error('There are uncomuted pipelines.');
+    }
+
+    if (canEnterOptimization) {
+      await this.experimentManager.changeStatus({
+        experimentId,
+        status: ExperimentStatus.optimization,
+      });
+    }
+
+    await this.optimizationRunner.run({
+      experimentId,
+      backendUrl: config.backend.graphqlUrl,
+      backendToken: config.backend.serviceToken,
+      hyperOptimizationMinutesPerPipeline,
+      timeoutSeconds: optimizationTimeoutSeconds,
     });
 
-    if (!optimization.best) {
-      throw new Error('Optimization failed to select a path.');
-    }
+    await this.experimentManager.changeStatus({
+      experimentId,
+      status: ExperimentStatus.completed,
+    });
 
-    return {
-      runId: optimization.best.run_id,
-      pathNodeIds: optimization.best.path_node_ids,
-      score: optimization.best.score,
-    };
+    return this.getOptimizationResult(experimentId);
   }
 
-  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<Pipeline[]> {
-    const { experimentId, queue, pipelineId, rerun, runAll } = input;
+  async enqueueRuns(input: EnqueueExperimentRunsInput) {
+    const { experimentId, pipelineId, runAll } = input;
     if (runAll && pipelineId) {
       throw new Error('Provide either runAll or pathNodeIds, not both.');
     }
@@ -165,220 +176,206 @@ export class ComputationManager {
       path.some((nodeId) => nodeById.get(nodeId)?.stage === ClassificationStage.CLASSIFICATION)
     );
     if (!allPathsHaveClassification) {
-      throw new Error('Усі шляхи мають містити етап класифікації.');
+      throw new Error('Усі конвеєри мають містити етап класифікації.');
     }
 
-    let pathsToEnqueue: string[][] = [];
+    let pipelineIds: Types.ObjectId[] = [];
     if (runAll) {
-      pathsToEnqueue = paths;
+      const pipelines = await PipelineBaseService.listByExperiment(experimentId);
+      pipelineIds = pipelines.map((e) => e._id);
     } else if (pipelineId) {
-      const pipeline = await PipelineBaseService.getById(pipelineId);
-      const normalizedPath = pipeline.pathNodeIds.map((id) => {
-        if (!Types.ObjectId.isValid(id)) {
-          throw new Error(`Invalid graph node id: ${id}`);
-        }
-        return id.toString();
-      });
-      const pathKeys = new Set(paths.map((path) => path.join('.')));
-      const normalizedKey = normalizedPath.join('.');
-      if (!pathKeys.has(normalizedKey)) {
-        throw new Error('Selected path is not present in the graph.');
-      }
-      pathsToEnqueue = [normalizedPath];
+      pipelineIds = [stringIdToObjectId(pipelineId)];
     }
 
-    const pipelines = await PipelineBaseService.listByExperiment(experimentId);
-    const existingPathKeys = new Set(
-      pipelines.map((run) => run.pathNodeIds.map((id) => String(id)).join('.'))
+    const idlePipelineIds = (
+      await Promise.all(
+        pipelineIds.map(async (nextPipelineId) => {
+          const workflow = await this.workflowManager.getWorkflow({
+            instanceId: nextPipelineId,
+            type: WorkflowType.PIPELINE,
+          });
+          return workflow.status === PipelineStatus.idle ? nextPipelineId : null;
+        })
+      )
+    ).filter(Boolean) as Types.ObjectId[];
+
+    await Promise.all(
+      idlePipelineIds.map((nextPipelineId) =>
+        this.pipelineManager.changeStatus({
+          pipelineId: nextPipelineId,
+          status: PipelineStatus.queued,
+        })
+      )
     );
-    const dedupedPaths = pathsToEnqueue.filter((path) => !existingPathKeys.has(path.join('.')));
-    if (!rerun && dedupedPaths.length === 0) {
-      throw new Error(runAll ? 'Усі шляхи вже мають обчислення.' : 'Цей шлях уже має обчислення.');
-    }
-
-    const docs = dedupedPaths.map((path) => ({
-      experimentId,
-      queue: input.queue,
-      status: PipelineStatus.queued,
-      progress: 0,
-      statusMessage: 'В черзі',
-      priority: 0,
-      pathNodeIds: path.map((id) => new Types.ObjectId(id)),
-    }));
-
-    const created = await PipelineModel.insertMany(docs, { ordered: true });
-    await ExperimentModel.updateOne(
-      { _id: experimentId },
-      { $set: { status: ExperimentStatus.computing } }
-    ).exec();
-    return created.map((doc) => doc.toObject({ getters: true })) as Pipeline[];
   }
 
-  async stopRun(runId: string): Promise<Pipeline> {
-    const trimmedId = runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    const run = await PipelineModel.findById(trimmedId);
-    if (!run) throw new Error('Computation run not found');
-
-    if (
-      run.status === PipelineStatus.completed ||
-      run.status === PipelineStatus.failed ||
-      run.status === PipelineStatus.stopped
-    ) {
-      return run.toObject({ getters: true }) as Pipeline;
+  async stopRun(pipelineId: string): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(pipelineId);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+    if (workflow.status !== PipelineStatus.running) {
+      return pipeline;
     }
-
-    run.status = PipelineStatus.stopped;
-    await run.save();
-    await this.syncExperimentStatus(String(run.experimentId));
-
-    return run.toObject({ getters: true }) as Pipeline;
+    if (pipeline.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
+      await this.cancelCloudJob(pipeline.cloudJobId);
+    }
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.idle,
+      message: 'Зупинено користувачем',
+    });
+    return PipelineBaseService.getById(pipelineId);
   }
 
   async claimNextRun(
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
-  ): Promise<Pipeline | null> {
-    const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
-    const updateSet: Record<string, unknown> = {
-      status: PipelineStatus.running,
-      progress: 0,
-      statusMessage: 'Запущено',
-      priority: 0,
-    };
-    if (normalizedMachineInfo) {
-      updateSet.machineInfo = normalizedMachineInfo;
-    }
-
-    const run = await PipelineModel.findOneAndUpdate(
-      { queue, status: PipelineStatus.queued },
-      { $set: updateSet },
-      { sort: { priority: -1, createdAt: 1 }, new: true }
-    ).lean();
-
-    if (run && normalizedMachineInfo) {
-      await this.registerMachineInfo(run.experimentId, normalizedMachineInfo);
-    }
-
-    return run;
-  }
-
-  async completeRun(input: CompleteExperimentRunInput): Promise<Pipeline> {
-    const trimmedId = input.runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    const run = await PipelineModel.findById(trimmedId).lean();
-    if (!run) throw new Error('Computation run not found');
-    if (run.status === PipelineStatus.paused) {
-      return run;
-    }
-
-    const rawResult = input.resultJson?.trim();
-    let parsedPayload: Record<string, unknown> | null = null;
-    if (rawResult) {
-      try {
-        parsedPayload = JSON.parse(rawResult) as Record<string, unknown>;
-      } catch {
-        throw new Error('Result JSON is invalid');
+  ): Promise<Pipeline | undefined> {
+    if (queue === ComputationQueue.local) {
+      const [localRunningPipeline] = await WorkflowModel.aggregate([
+        { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.running } },
+        {
+          $lookup: {
+            from: pipelinesCollectionName,
+            localField: 'instanceId',
+            foreignField: '_id',
+            as: 'pipeline',
+          },
+        },
+        { $unwind: '$pipeline' },
+        { $match: { 'pipeline.queue': ComputationQueue.local } },
+        { $limit: 1 },
+      ]);
+      if (localRunningPipeline) {
+        return;
       }
     }
-    const structuredPayload = parsedPayload ? this.buildResultPayload(parsedPayload) : null;
-    const historyFromPayload = parsedPayload ? this.parseHistoryEntries(parsedPayload.history) : [];
 
-    await ComputationResultModel.create({
-      runId: run._id,
-      experimentId: run.experimentId,
-      pathNodeIds: run.pathNodeIds,
-      payloadJson: rawResult
-        ? rawResult
-        : parsedPayload
-          ? JSON.stringify(parsedPayload)
-          : undefined,
-      ...(structuredPayload ? { payload: structuredPayload } : {}),
+    const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
+    const [pipeline] = await WorkflowModel.aggregate<Pipeline | undefined>([
+      { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.queued } },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { queue } },
+      { $sort: { priority: -1, updatedAt: 1 } },
+    ]);
+
+    if (!pipeline) return;
+
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.running,
     });
 
-    const statusMessage = input.statusMessage?.trim() || 'Завершено';
-    const completionEntry = this.buildHistoryEntry(statusMessage);
-    const historyUpdates = this.mergeHistoryEntries(run.history, [
-      ...historyFromPayload,
-      completionEntry,
-    ]);
-    const updateOps: Record<string, unknown> = {
-      $set: {
+    if (normalizedMachineInfo) {
+      await PipelineModel.updateOne(
+        { _id: pipeline._id },
+        { $set: { machineInfo: normalizedMachineInfo } }
+      );
+      await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
+    }
+
+    return pipeline;
+  }
+
+  async completePipeline({ payload, pipelineId }: CompletePipelineInput) {
+    const pipeline = await PipelineBaseService.getById(pipelineId);
+
+    await PipelineModel.updateOne({ _id: pipeline._id }, { $set: { computingResult: payload } });
+
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.completed,
+      message: 'Завершено',
+    });
+  }
+
+  async completeRun({
+    runId,
+    resultJson,
+    statusMessage,
+  }: {
+    runId: string;
+    resultJson: string;
+    statusMessage?: string;
+  }): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(runId);
+    const parsedResult = JSON.parse(resultJson) as Record<string, unknown>;
+    await PipelineModel.updateOne(
+      { _id: pipeline._id },
+      { $set: { computingResult: parsedResult } }
+    );
+
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+    if (workflow.status === PipelineStatus.running) {
+      await this.pipelineManager.changeStatus({
+        pipelineId: pipeline._id,
         status: PipelineStatus.completed,
-        progress: 100,
-        statusMessage,
-      },
-    };
-    if (historyUpdates.length > 0) {
-      updateOps.$push = { history: { $each: historyUpdates } };
+        message: statusMessage ?? 'Завершено',
+      });
     }
-    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
-      new: true,
-    }).lean();
 
-    if (!updated) throw new Error('Computation run not found');
-    await this.syncExperimentStatus(String(run.experimentId));
-    return updated;
+    return PipelineBaseService.getById(runId);
   }
 
-  async failRun(input: FailExperimentRunInput): Promise<Pipeline> {
-    const trimmedId = input.runId.trim();
-    if (!trimmedId) throw new Error('Run _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Run _id is invalid');
-
-    const existing = await PipelineModel.findById(trimmedId).lean();
-    if (!existing) throw new Error('Computation run not found');
-    if (existing.status === PipelineStatus.paused) {
-      return existing;
+  async failRun({
+    runId,
+    statusMessage,
+  }: {
+    runId: string;
+    statusMessage?: string;
+  }): Promise<Pipeline> {
+    const pipeline = await PipelineBaseService.getById(runId);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+    if (workflow.status !== PipelineStatus.running) {
+      return pipeline;
     }
-
-    const statusMessage = input.statusMessage?.trim() || 'Помилка';
-    const failureEntry = this.buildHistoryEntry(statusMessage);
-    const historyUpdates = this.mergeHistoryEntries(existing.history, [failureEntry]);
-    const updateOps: Record<string, unknown> = {
-      $set: {
-        status: PipelineStatus.failed,
-        statusMessage,
-      },
-    };
-    if (historyUpdates.length > 0) {
-      updateOps.$push = { history: { $each: historyUpdates } };
-    }
-    const updated = await PipelineModel.findByIdAndUpdate(trimmedId, updateOps, {
-      new: true,
-    }).lean();
-    if (!updated) throw new Error('Computation run not found');
-    await this.syncExperimentStatus(String(existing.experimentId));
-    return updated;
+    await this.pipelineManager.changeStatus({
+      pipelineId: pipeline._id,
+      status: PipelineStatus.idle,
+      message: statusMessage ?? 'Некоректне завершення обчислення',
+    });
+    return PipelineBaseService.getById(runId);
   }
 
-  async pauseExperimentRuns(experimentId: string): Promise<Pipeline[]> {
-    const trimmedId = experimentId.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-    if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
-
-    const experimentObjectId = new Types.ObjectId(trimmedId);
-    const runs = await PipelineModel.find({
-      experimentId: experimentObjectId,
-      status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
-    }).lean();
+  async pauseExperimentRuns(experimentId: ObjectIdOrString): Promise<Pipeline[]> {
+    const runs = await WorkflowModel.aggregate<Pipeline>([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: { $in: [PipelineStatus.queued, PipelineStatus.running] },
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { experimentId: stringIdToObjectId(experimentId) } },
+    ]);
 
     if (runs.length === 0) return [];
-
-    const runIds = runs.map((run) => run._id);
-    await PipelineModel.updateMany(
-      { _id: { $in: runIds } },
-      {
-        $set: {
-          status: PipelineStatus.paused,
-          statusMessage: 'Пауза',
-        },
-      }
-    );
 
     const cloudJobs = runs.filter((run) => run.queue === ComputationQueue.cloud && run.cloudJobId);
     for (const run of cloudJobs) {
@@ -387,6 +384,16 @@ export class ComputationManager {
       }
     }
 
+    await Promise.all(
+      runs.map((run) =>
+        this.failRun({
+          runId: run._id.toString(),
+          statusMessage: 'Обчислення зупинено',
+        })
+      )
+    );
+
+    const runIds = runs.map((run) => run._id);
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
   }
 
@@ -396,27 +403,33 @@ export class ComputationManager {
     if (!Types.ObjectId.isValid(trimmedId)) throw new Error('Experiment _id is invalid');
 
     const experimentObjectId = new Types.ObjectId(trimmedId);
-    const runs = await PipelineModel.find({
-      experimentId: experimentObjectId,
-      status: PipelineStatus.paused,
-    }).lean();
+    const runs = await WorkflowModel.aggregate<Pipeline>([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: PipelineStatus.idle,
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $replaceRoot: { newRoot: '$pipeline' } },
+      { $match: { experimentId: experimentObjectId } },
+    ]);
 
     if (runs.length === 0) return [];
 
     const runIds = runs.map((run) => run._id);
-    await PipelineModel.updateMany(
-      { _id: { $in: runIds } },
-      {
-        $set: {
-          status: PipelineStatus.queued,
-          progress: 0,
-          statusMessage: 'В черзі',
-          priority: 1,
-        },
-        $unset: {
-          cloudJobId: '',
-        },
-      }
+    await Promise.all(
+      runIds.map((runId) =>
+        this.pipelineManager.changeStatus({ pipelineId: runId, status: PipelineStatus.queued })
+      )
     );
 
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
@@ -442,6 +455,8 @@ export class ComputationManager {
     if (release) normalized.release = release;
     const cpuModel = trim(input?.cpuModel);
     if (cpuModel) normalized.cpuModel = cpuModel;
+    const gpuModel = trim(input?.gpuModel);
+    if (gpuModel) normalized.gpuModel = gpuModel;
 
     if (typeof input?.cores === 'number' && Number.isFinite(input.cores) && input.cores > 0) {
       normalized.cores = Math.round(input.cores);
@@ -469,9 +484,7 @@ export class ComputationManager {
 
     const existingHosts = experiment.computationHosts ?? [];
     const matchIndex = existingHosts.findIndex(
-      (host) =>
-        String(host.queue ?? '') === String(machineInfo.queue ?? '') &&
-        String(host.hostname ?? '') === String(machineInfo.hostname ?? '')
+      (host) => String(host.queue ?? '') === String(machineInfo.queue ?? '')
     );
 
     const nextHosts = [...existingHosts];
@@ -526,325 +539,41 @@ export class ComputationManager {
           })
         );
       } catch (innerError) {
-        console.warn('Failed to cancel AWS job', innerError);
+        console.warn('Не вдалося скасувати AWS-завдання', innerError);
       }
     }
   }
 
   private async syncExperimentStatus(experimentId: string): Promise<void> {
-    const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
-      .select('status')
-      .lean();
+    // const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
+    //   .select('status')
+    //   .lean();
+    const runs: any[] = [];
     if (runs.length === 0) return;
 
     const hasActive = runs.some(
-      (run) =>
-        run.status === PipelineStatus.queued ||
-        run.status === PipelineStatus.running ||
-        run.status === PipelineStatus.paused
+      (run) => run.status === PipelineStatus.queued || run.status === PipelineStatus.running
     );
     const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
 
     await ExperimentModel.updateOne({ _id: experimentId }, { $set: { status: nextStatus } }).exec();
   }
 
-  private buildResultPayload(raw: Record<string, unknown>): ComputationResultPayload | null {
-    const payload: ComputationResultPayload = {};
-    const classMetrics: ClassificationMetric[] = [];
+  private async getOptimizationResult(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
+    const experiment = await ExperimentModel.findById(experimentId).lean();
+    const bestPipelineId = experiment?.optimization?.bestPipelineId;
+    const bestScore = experiment?.optimization?.bestScore;
 
-    Object.entries(raw).forEach(([key, value]) => {
-      const normalizedKey = key.trim().toLowerCase();
-
-      if (normalizedKey === 'accuracy') {
-        const accuracy = this.toNumber(value);
-        if (accuracy !== null) {
-          payload.accuracy = accuracy;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'accuracy_scores' ||
-        normalizedKey === 'accuracy-scores' ||
-        normalizedKey === 'accuracyscores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.accuracyScores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'f1_scores' ||
-        normalizedKey === 'f1-scores' ||
-        normalizedKey === 'f1scores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.f1Scores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'roc_auc_scores' ||
-        normalizedKey === 'roc-auc-scores' ||
-        normalizedKey === 'rocaucscores'
-      ) {
-        const scores = this.toNumberArray(value);
-        if (scores?.length) {
-          payload.rocAucScores = scores;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'macro avg' ||
-        normalizedKey === 'macro_avg' ||
-        normalizedKey === 'macroavg'
-      ) {
-        const metric = this.parseMetric('macro avg', value);
-        if (metric) {
-          payload.macroAvg = metric;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'weighted avg' ||
-        normalizedKey === 'weighted_avg' ||
-        normalizedKey === 'weightedavg'
-      ) {
-        const metric = this.parseMetric('weighted avg', value);
-        if (metric) {
-          payload.weightedAvg = metric;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'path_length' || normalizedKey === 'pathlength') {
-        const pathLength = this.toNumber(value);
-        if (pathLength !== null) {
-          payload.pathLength = pathLength;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'sample_count' ||
-        normalizedKey === 'samples' ||
-        normalizedKey === 'records_count' ||
-        normalizedKey === 'samplecount'
-      ) {
-        const sampleCount = this.toNumber(value);
-        if (sampleCount !== null) {
-          payload.sampleCount = sampleCount;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'duration_seconds' ||
-        normalizedKey === 'duration_sec' ||
-        normalizedKey === 'duration' ||
-        normalizedKey === 'path_duration' ||
-        normalizedKey === 'path_duration_seconds'
-      ) {
-        const durationSeconds = this.toNumber(value);
-        if (durationSeconds !== null) {
-          payload.durationSeconds = durationSeconds;
-        }
-        return;
-      }
-
-      if (
-        normalizedKey === 'confusion_matrix' ||
-        normalizedKey === 'confusionmatrix' ||
-        normalizedKey === 'confusion'
-      ) {
-        const matrix = this.toNumberMatrix(value);
-        if (matrix?.length) {
-          payload.confusionMatrix = matrix;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'class_labels' || normalizedKey === 'classlabels') {
-        const labels = this.toStringArray(value);
-        if (labels?.length) {
-          payload.classLabels = labels;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'class_count' || normalizedKey === 'classcount') {
-        const classCount = this.toNumber(value);
-        if (classCount !== null) {
-          payload.classCount = classCount;
-        }
-        return;
-      }
-
-      if (normalizedKey === 'completed_at' || normalizedKey === 'completedat') {
-        if (typeof value === 'string' && value.trim()) {
-          payload.completedAt = value.trim();
-        }
-        return;
-      }
-
-      if (normalizedKey === 'nodes' && Array.isArray(value)) {
-        const nodes = value
-          .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-          .filter(Boolean);
-        if (nodes.length > 0) {
-          payload.nodes = nodes;
-        }
-        return;
-      }
-
-      const metric = this.parseMetric(key, value);
-      if (metric) {
-        classMetrics.push(metric);
-      }
-    });
-
-    if (classMetrics.length > 0) {
-      payload.classes = classMetrics;
+    if (!bestPipelineId || typeof bestScore !== 'number') {
+      throw new Error('Optimization result is missing');
     }
 
-    const hasPayload =
-      payload.accuracy !== undefined ||
-      Boolean(payload.accuracyScores?.length) ||
-      Boolean(payload.f1Scores?.length) ||
-      Boolean(payload.rocAucScores?.length) ||
-      payload.macroAvg !== undefined ||
-      payload.weightedAvg !== undefined ||
-      Boolean(payload.classes?.length) ||
-      payload.sampleCount !== undefined ||
-      payload.durationSeconds !== undefined ||
-      Boolean(payload.confusionMatrix?.length) ||
-      Boolean(payload.classLabels?.length) ||
-      payload.classCount !== undefined ||
-      payload.pathLength !== undefined ||
-      Boolean(payload.nodes?.length) ||
-      payload.completedAt !== undefined;
-
-    return hasPayload ? payload : null;
-  }
-
-  private parseMetric(label: string, value: unknown): ClassificationMetric | null {
-    if (!value || typeof value !== 'object') return null;
-    const raw = value as Record<string, unknown>;
-
-    const precision = this.toNumber(raw.precision);
-    const recall = this.toNumber(raw.recall);
-    const f1Score = this.toNumber(raw['f1-score'] ?? raw.f1Score ?? raw.f1_score);
-    const support = this.toNumber(raw.support);
-
-    if (precision === null || recall === null || f1Score === null || support === null) {
-      return null;
-    }
+    const pipeline = await PipelineBaseService.getById(bestPipelineId);
 
     return {
-      label: label.trim(),
-      precision,
-      recall,
-      f1Score,
-      support,
+      runId: String(bestPipelineId),
+      pathNodeIds: (pipeline.pathNodeIds ?? []).map((id) => String(id)),
+      score: bestScore,
     };
-  }
-
-  private buildHistoryEntry(message: string, timestamp?: Date): PipelineHistoryItem {
-    return {
-      message: message.trim(),
-      createdAt: timestamp ?? new Date(),
-    };
-  }
-
-  private parseHistoryEntries(value: unknown): PipelineHistoryItem[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((entry) => {
-        if (!entry) return null;
-        if (typeof entry === 'string') {
-          return this.buildHistoryEntry(entry);
-        }
-        if (typeof entry === 'object') {
-          const raw = entry as Record<string, unknown>;
-          const message = typeof raw.message === 'string' ? raw.message.trim() : '';
-          if (!message) return null;
-          const timestampRaw =
-            raw.createdAt ?? raw.created_at ?? raw.timestamp ?? raw.time ?? raw.at ?? null;
-          const timestamp =
-            typeof timestampRaw === 'string' && timestampRaw.trim()
-              ? new Date(timestampRaw)
-              : timestampRaw instanceof Date
-                ? timestampRaw
-                : null;
-          const normalizedTimestamp =
-            timestamp instanceof Date && !Number.isNaN(timestamp.getTime()) ? timestamp : undefined;
-          return this.buildHistoryEntry(message, normalizedTimestamp);
-        }
-        return null;
-      })
-      .filter((entry): entry is PipelineHistoryItem => Boolean(entry?.message));
-  }
-
-  private mergeHistoryEntries(
-    existing: PipelineHistoryItem[] | undefined,
-    incoming: PipelineHistoryItem[]
-  ): PipelineHistoryItem[] {
-    if (!incoming.length) return [];
-    const merged: PipelineHistoryItem[] = [];
-    const lastExistingMessage = existing?.[existing.length - 1]?.message;
-    incoming.forEach((entry) => {
-      const lastMessage = merged.length ? merged[merged.length - 1]?.message : lastExistingMessage;
-      if (entry.message && entry.message !== lastMessage) {
-        merged.push(entry);
-      }
-    });
-    return merged;
-  }
-
-  private toNumberArray(value: unknown): number[] | null {
-    if (!Array.isArray(value)) return null;
-    const numbers = value
-      .map((entry) => this.toNumber(entry))
-      .filter((entry): entry is number => entry !== null);
-    return numbers.length > 0 ? numbers : null;
-  }
-
-  private toNumberMatrix(value: unknown): number[][] | null {
-    if (!Array.isArray(value)) return null;
-    const matrix = value
-      .map((row) => {
-        if (!Array.isArray(row)) return null;
-        const numbers = row
-          .map((entry) => this.toNumber(entry))
-          .filter((entry): entry is number => entry !== null);
-        return numbers.length > 0 ? numbers : null;
-      })
-      .filter((row): row is number[] => Boolean(row));
-    return matrix.length > 0 ? matrix : null;
-  }
-
-  private toStringArray(value: unknown): string[] | null {
-    if (!Array.isArray(value)) return null;
-    const values = value
-      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-      .filter(Boolean);
-    return values.length > 0 ? values : null;
-  }
-
-  private toNumber(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : null;
-    }
-    return null;
   }
 }

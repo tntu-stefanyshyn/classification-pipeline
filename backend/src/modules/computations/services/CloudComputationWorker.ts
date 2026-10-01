@@ -5,18 +5,26 @@ import { Readable } from 'node:stream';
 import { Types } from 'mongoose';
 import { config } from '../../../config/config';
 import { ComputationQueue } from '../classes/ComputationQueue';
-import { PipelineStatus } from '../classes/PipelineStatus';
-import { PipelineModel } from '../models/PipelineModel';
 import { ComputationManager } from './ComputationManager';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../../experiments/models/GraphStructureModel';
 import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 import type { GraphNode } from '../../experiments/classes/GraphNode';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
+import { WorkflowType } from '../../../core/workflow/enums';
+import { PipelineStatus } from '../../../core/pipeline/enums';
+import {
+  PipelineBaseService,
+  PipelineModel,
+  pipelinesCollectionName,
+} from '../../../core/pipeline';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { sleep } from '../../../utils';
 
 const DEFAULT_POLL_MS = 5000;
 
 type HandlerPayload = {
-  run_id: string;
+  pipelineId: string;
   experiment_id: string;
   queue: string;
   file_id?: string | null;
@@ -35,8 +43,6 @@ type HandlerPayload = {
 type ResultPayload =
   | { status: 'completed'; result: Record<string, unknown>; completed_at?: string }
   | { status: 'failed'; error: string; failed_at?: string };
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type TransformableStream = { transformToString: () => Promise<string> };
 
@@ -71,6 +77,7 @@ const isMissingKeyError = (error: unknown) => {
 export class CloudComputationWorker {
   private running = false;
   private stopping = false;
+  private readonly workflowManager = new WorkflowManager();
   private readonly manager = new ComputationManager();
   private readonly batch: BatchClient;
   private readonly s3: S3Client;
@@ -118,7 +125,7 @@ export class CloudComputationWorker {
   start() {
     if (this.running) return;
     if (!this.jobQueue || !this.jobDefinition || !this.resultsBucket) {
-      console.warn('Cloud worker disabled: AWS Batch or results bucket is not configured.');
+      console.warn('Хмарний воркер вимкнено: AWS Batch або bucket для результатів не налаштовано.');
       return;
     }
     this.stopping = false;
@@ -135,14 +142,17 @@ export class CloudComputationWorker {
       try {
         await this.reconcileRuns();
       } catch (error) {
-        console.warn('Cloud worker failed to reconcile runs', new Error(error as any).message);
+        console.warn(
+          'Хмарний воркер не зміг синхронізувати запуски',
+          new Error(error as any).message
+        );
       }
 
       let run = null;
       try {
         run = await this.manager.claimNextRun(ComputationQueue.cloud, this.buildMachineInfo());
       } catch (error) {
-        console.warn('Cloud worker failed to claim a run', error);
+        console.warn('Хмарний воркер не зміг отримати запуск з черги', error);
         await sleep(this.pollMs);
         continue;
       }
@@ -162,15 +172,28 @@ export class CloudComputationWorker {
   }
 
   private async reconcileRuns() {
-    const runningRuns = await PipelineModel.find({
-      queue: ComputationQueue.cloud,
-      status: PipelineStatus.running,
-    })
-      .sort({ createdAt: 1 })
-      .lean();
+    const runnings = await WorkflowModel.aggregate([
+      {
+        $match: {
+          type: WorkflowType.PIPELINE,
+          status: PipelineStatus.running,
+        },
+      },
+      {
+        $lookup: {
+          from: pipelinesCollectionName,
+          localField: 'instanceId',
+          foreignField: '_id',
+          as: 'pipeline',
+        },
+      },
+      { $unwind: '$pipeline' },
+      { $match: { 'pipeline.queue': ComputationQueue.cloud } },
+    ]);
 
-    for (const run of runningRuns) {
-      const runId = String(run._id);
+    for (const run of runnings) {
+      const runId = String((run as { pipeline?: { _id?: Types.ObjectId } }).pipeline?._id ?? '');
+      if (!runId) continue;
       const resultPayload = await this.fetchResultPayload(runId);
       if (!resultPayload) continue;
 
@@ -194,20 +217,22 @@ export class CloudComputationWorker {
       throw new Error(`Invalid run id: ${runId}`);
     }
 
-    const run = await PipelineModel.findById(runId).lean();
-    if (!run) {
-      throw new Error('Computation run not found');
-    }
-    if (run.status !== PipelineStatus.running) {
+    const pipeline = await PipelineBaseService.getById(runId);
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: pipeline._id,
+      type: WorkflowType.PIPELINE,
+    });
+
+    if (workflow.status !== PipelineStatus.running) {
       return;
     }
 
-    const experiment = await ExperimentModel.findById(run.experimentId).lean();
+    const experiment = await ExperimentModel.findById(pipeline.experimentId).lean();
     if (!experiment) {
       throw new Error('Experiment not found');
     }
 
-    const graph = await GraphStructureModel.findOne({ experimentId: run.experimentId }).lean();
+    const graph = await GraphStructureModel.findOne({ experimentId: pipeline.experimentId }).lean();
     const nodes = graph?.nodes ?? [];
     if (nodes.length === 0) {
       throw new Error('Experiment graph is empty');
@@ -231,7 +256,7 @@ export class CloudComputationWorker {
       experiment.fileId,
       fileStorageKey,
       nodes,
-      run.pathNodeIds
+      pipeline.pathNodeIds
     );
     const payloadJson = JSON.stringify(payload);
     const submitResponse = await this.batch.send(
@@ -248,7 +273,7 @@ export class CloudComputationWorker {
     const jobId = submitResponse.jobId ?? '';
     const statusMessage = jobId ? `AWS: ${jobId}` : 'Відправлено в AWS';
     await PipelineModel.findOneAndUpdate(
-      { _id: runId, status: PipelineStatus.running },
+      { _id: runId },
       {
         $set: {
           statusMessage,
@@ -275,7 +300,7 @@ export class CloudComputationWorker {
     const resultKey = this.getResultKey(runId);
 
     return {
-      run_id: runId,
+      pipelineId: runId,
       experiment_id: String(experimentId),
       queue: 'cloud',
       file_id: fileId ? String(fileId) : null,

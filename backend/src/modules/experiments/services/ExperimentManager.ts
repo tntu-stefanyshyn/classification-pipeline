@@ -6,24 +6,49 @@ import { UpdateExperimentInput } from '../classes/UpdateExperimentInput';
 import { ExperimentModel } from '../models/ExperimentModel';
 import { GraphManager } from './GraphManager';
 import { ExperimentStatus } from '../classes/ExperimentStatus';
+import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
+import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowType } from '../../../core/workflow/enums';
+import { Transitions } from '../../../core/workflow/services/WorkflowManager.types.';
+import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusInput';
+import { UpdateExperimentProgressInput } from '../classes/UpdateExperimentProgressInput';
+import { OptimizationHistoryItem } from '../classes/OptimizationHistoryItem';
+import { UpdateExperimentOptimizationResultInput } from '../classes/UpdateExperimentOptimizationResultInput';
+import { ObjectIdOrString } from '../../../types/context';
+import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 
 export class ExperimentManager {
   private readonly graphManager = new GraphManager();
+  private readonly pipelineManager = new PipelineManager();
+  private readonly workflowManager = new WorkflowManager();
 
-  async list(): Promise<Experiment[]> {
-    const experiments = await ExperimentModel.find().sort({ createdAt: -1 }).lean();
+  async list(userId: string): Promise<Experiment[]> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user id');
+    }
+    const experiments = await ExperimentModel.find({ createdById: userId })
+      .sort({ createdAt: -1 })
+      .lean();
     return experiments;
   }
 
-  async getById(_id: string): Promise<Experiment> {
-    const experiment = await ExperimentModel.findById(_id).lean();
+  async getById(_id: ObjectIdOrString, userId?: string): Promise<Experiment> {
+    const query: Record<string, unknown> = { _id };
+    if (userId) {
+      if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
+      query.createdById = userId;
+    }
+    const experiment = await ExperimentModel.findOne(query).lean();
     if (!experiment) throw new Error('Експеремент не знайдено');
     return experiment;
   }
 
-  async create(input: CreateExperimentInput): Promise<Experiment> {
+  async create(input: CreateExperimentInput, userId: string): Promise<Experiment> {
     const name = input.name.trim();
     if (!name) throw new Error('Name is required');
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error('Invalid user id');
+    }
 
     const description = input.description?.trim();
     const fileId = input.fileId?.trim();
@@ -34,23 +59,45 @@ export class ExperimentManager {
       name,
       description,
       fileId: fileId ? new Types.ObjectId(fileId) : undefined,
+      createdById: new Types.ObjectId(userId),
     });
 
     await this.graphManager.createDefaultGraph(experiment._id);
+    await this.workflowManager.create({
+      instanceId: experiment._id,
+      status: ExperimentStatus.creating,
+      type: WorkflowType.EXPERIMENT,
+    });
     return experiment.toObject({ getters: true });
   }
 
-  async update(input: UpdateExperimentInput): Promise<Experiment> {
-    const trimmedId = input._id.trim();
-    if (!trimmedId) throw new Error('Experiment _id is required');
-
-    const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+  async update(input: UpdateExperimentInput, userId: string): Promise<Experiment> {
+    if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
+    const existingExperiment = await ExperimentModel.findOne({
+      _id: input._id,
+      createdById: userId,
+    }).lean();
     if (!existingExperiment) throw new Error('Experiment not found');
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: input._id,
+      type: WorkflowType.EXPERIMENT,
+    });
     if (
-      existingExperiment.status === ExperimentStatus.computing ||
-      existingExperiment.status === ExperimentStatus.completed
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.optimization ||
+      workflow.status === ExperimentStatus.completed
     ) {
-      throw new Error('Редагування експерименту недоступне після початку обчислень.');
+      const canAttachMissingFile =
+        !existingExperiment.fileId &&
+        input.fileId !== undefined &&
+        input.name === undefined &&
+        input.description === undefined &&
+        input.graphNodes === undefined &&
+        input.graphSettings === undefined &&
+        input.graphComputationMode === undefined;
+      if (!canAttachMissingFile) {
+        throw new Error('Редагування експерименту недоступне після початку обчислень.');
+      }
     }
 
     const update: Partial<Experiment> = {};
@@ -81,7 +128,7 @@ export class ExperimentManager {
     const requiresGraphUpdate =
       input.graphNodes !== undefined || input.graphComputationMode !== undefined;
     if (requiresGraphUpdate) {
-      const existingExperiment = await ExperimentModel.findById(trimmedId).lean();
+      const existingExperiment = await ExperimentModel.findById(input._id).lean();
       if (!existingExperiment) throw new Error('Experiment not found');
     }
 
@@ -89,24 +136,26 @@ export class ExperimentManager {
       if (!Array.isArray(input.graphNodes)) {
         throw new Error('Graph nodes must be an array');
       }
-      await this.graphManager.updateGraph(trimmedId, input.graphNodes);
-      update.status = ExperimentStatus.configuring;
+      await this.graphManager.updateGraph(input._id, input.graphNodes);
     }
 
     if (input.graphSettings !== undefined) {
-      await this.graphManager.updateGraphSettings(trimmedId, input.graphSettings);
-      update.status = ExperimentStatus.configuring;
+      await this.graphManager.updateGraphSettings(input._id, input.graphSettings);
     }
 
     if (input.graphComputationMode !== undefined) {
-      await this.graphManager.updateComputationMode(trimmedId, input.graphComputationMode);
+      await this.graphManager.updateComputationMode(input._id, input.graphComputationMode);
     }
 
     const updateOps =
       Object.keys(unset).length > 0 ? { $set: update, $unset: unset } : { $set: update };
-    const experiment = await ExperimentModel.findOneAndUpdate({ _id: trimmedId }, updateOps, {
-      new: true,
-    }).lean();
+    const experiment = await ExperimentModel.findOneAndUpdate(
+      { _id: input._id, createdById: userId },
+      updateOps,
+      {
+        new: true,
+      }
+    ).lean();
 
     if (!experiment) {
       throw new Error('Experiment not found');
@@ -115,27 +164,133 @@ export class ExperimentManager {
     return experiment;
   }
 
-  async generateGraph(input: GenerateExperimentGraphInput): Promise<Experiment> {
+  async generateGraph(input: GenerateExperimentGraphInput, userId: string): Promise<Experiment> {
     const trimmedId = input._id.trim();
     if (!trimmedId) throw new Error('Experiment _id is required');
+    if (!Types.ObjectId.isValid(userId)) throw new Error('Invalid user id');
 
-    const experiment = await ExperimentModel.findById(trimmedId).lean();
+    const experiment = await ExperimentModel.findOne({
+      _id: trimmedId,
+      createdById: userId,
+    }).lean();
     if (!experiment) {
       throw new Error('Experiment not found');
     }
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: input._id,
+      type: WorkflowType.EXPERIMENT,
+    });
     if (
-      experiment.status === ExperimentStatus.computing ||
-      experiment.status === ExperimentStatus.completed
+      workflow.status === ExperimentStatus.computing ||
+      workflow.status === ExperimentStatus.optimization ||
+      workflow.status === ExperimentStatus.completed
     ) {
       throw new Error('Редагування графа недоступне після початку обчислень.');
     }
 
     await this.graphManager.generateGraphFromSelections(trimmedId, input.stages ?? []);
-    await ExperimentModel.updateOne(
-      { _id: trimmedId },
-      { $set: { status: ExperimentStatus.configuring } }
-    ).exec();
 
     return experiment;
+  }
+
+  private readonly transitions: Transitions<ExperimentStatus> = [
+    {
+      from: ExperimentStatus.creating,
+      to: ExperimentStatus.configuring,
+    },
+    {
+      from: ExperimentStatus.configuring,
+      to: ExperimentStatus.computing,
+      sideEffect: async ({ instanceId }) => {
+        await this.pipelineManager.generatePipelinesFromGraphStructure(instanceId);
+      },
+    },
+    {
+      from: ExperimentStatus.computing,
+      to: ExperimentStatus.optimization,
+    },
+    {
+      from: ExperimentStatus.optimization,
+      to: ExperimentStatus.completed,
+    },
+    {
+      from: ExperimentStatus.completed,
+      to: ExperimentStatus.optimization,
+    },
+  ];
+
+  async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {
+    if (status === ExperimentStatus.computing) {
+      await this.ensureExperimentFileReady(experimentId);
+    }
+
+    await this.workflowManager.changeStatus({
+      instanceId: experimentId,
+      status,
+      transitions: this.transitions,
+      type: WorkflowType.EXPERIMENT,
+    });
+
+    return true;
+  }
+
+  private async ensureExperimentFileReady(experimentId: ObjectIdOrString) {
+    const experiment = await this.getById(experimentId);
+    if (!experiment.fileId) {
+      throw new Error('Додайте CSV файл до експерименту перед запуском обчислень.');
+    }
+
+    const file = await UploadedFileModel.findById(experiment.fileId).lean();
+    if (!file?.storageKey) {
+      throw new Error('Файл експерименту не знайдено або він недоступний для обчислень.');
+    }
+  }
+
+  async updateExperimentProgress({
+    experimentId,
+    progress,
+    message,
+    status,
+  }: UpdateExperimentProgressInput): Promise<Experiment> {
+    await ExperimentModel.updateOne(
+      { _id: experimentId },
+      {
+        $set: {
+          ...(typeof progress === 'number' ? { 'optimization.progress': progress } : {}),
+          ...(status ? { 'optimization.status': status } : {}),
+        },
+        ...(message || status
+          ? {
+              $push: {
+                'optimization.history': {
+                  createdAt: new Date(),
+                  ...(message ? { message } : {}),
+                  ...(status ? { status } : {}),
+                } satisfies OptimizationHistoryItem,
+              },
+            }
+          : {}),
+      }
+    ).lean();
+
+    return this.getById(experimentId);
+  }
+
+  async updateExperimentOptimizationResult({
+    experimentId,
+    bestPipelineId,
+    score,
+  }: UpdateExperimentOptimizationResultInput): Promise<Experiment> {
+    await ExperimentModel.updateOne(
+      { _id: experimentId },
+      {
+        $set: {
+          'optimization.bestPipelineId': bestPipelineId,
+          'optimization.bestScore': score,
+        },
+      }
+    ).lean();
+
+    return this.getById(experimentId);
   }
 }

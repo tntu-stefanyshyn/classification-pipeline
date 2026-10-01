@@ -19,6 +19,10 @@ Notes:
 - The service mounts the local `aws-jobs/` folder into the container at `/app` so code changes are immediate.
 - If you prefer an immutable image (no mounts), remove the `volumes` section in `docker-compose.yml`.
 
+## Deploy to AWS
+
+For ECR upload steps and AWS Batch job definitions for both computation and optimization handlers, see [backend/instructions/AWS_JOBS.md](../backend/instructions/AWS_JOBS.md).
+
 # AWS jobs (Python)
 
 Міні-воркспейс для ML задач класифікації, сумісний з AWS оточенням.

@@ -12,19 +12,25 @@ import { Health } from './graphql/Health';
 import { ServerInfoApi } from './graphql/ServerInfo';
 import { Experiments } from './modules/experiments/graphql/Experiments';
 import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
+import { PipelineModel } from './core/pipeline/models/PipelineModel';
 import { GraphManager } from './modules/experiments/services/GraphManager';
 import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
 import { Technologies } from './modules/technologies/graphql/Technologies';
 import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
+import { UploadedFileModel } from './modules/files/models/UploadedFileModel';
 import { config } from './config/config';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
+import { runMigrations } from './migrations';
 import { ComputationResolver } from './modules/computations';
 import { PipelineResolver } from './core/pipeline/graphql/pipeline';
+import { CloudComputationWorker } from './modules/computations/services/CloudComputationWorker';
+import { LocalBackendComputationWorker } from './modules/computations/services/LocalBackendComputationWorker';
 
 async function bootstrap() {
-  // let cloudWorker: CloudComputationWorker | null = null;
+  let cloudWorker: CloudComputationWorker | null = null;
+  let localWorker: LocalBackendComputationWorker | null = null;
   let shuttingDown = false;
   const schema = buildSchemaSync({
     resolvers: [
@@ -74,11 +80,69 @@ async function bootstrap() {
       }
 
       const graph = await graphManager.getByExperimentId(experimentId);
+      const pipelines = await PipelineModel.find({ experimentId }).lean();
+      const sourceFile = experiment.fileId
+        ? await UploadedFileModel.findById(experiment.fileId).lean()
+        : null;
       const report = await buildGraphReportPdf({
         experimentId,
         experimentName: experiment.name,
+        description: experiment.description,
         createdAt: experiment.createdAt ? new Date(experiment.createdAt) : undefined,
+        graph: {
+          settings: graph.settings
+            ? {
+                metrics: graph.settings.metrics
+                  ? {
+                      accuracy: graph.settings.metrics.accuracy,
+                      f1: graph.settings.metrics.f1,
+                      rocAuc: graph.settings.metrics.rocAuc,
+                      ntps: graph.settings.metrics.ntps,
+                    }
+                  : undefined,
+                queues: graph.settings.queues ? [...graph.settings.queues] : [],
+                folds: graph.settings.folds,
+                hyperOptimizationMinutesPerPipeline:
+                  graph.settings.hyperOptimizationMinutesPerPipeline,
+                predictDataPercent: graph.settings.predictDataPercent,
+              }
+            : undefined,
+          computationMode: graph.computationMode ?? undefined,
+        },
+        file: sourceFile
+          ? {
+              filename: sourceFile.filename,
+              sizeMb: sourceFile.sizeMb,
+              status: sourceFile.status,
+              uploadedAt: sourceFile.uploadedAt ? new Date(sourceFile.uploadedAt) : undefined,
+              uploadedByName: sourceFile.uploadedByName,
+            }
+          : undefined,
         nodes: graph.nodes ?? [],
+        pipelines: pipelines.map((pipeline) => ({
+          _id: String(pipeline._id),
+          queue: pipeline.queue,
+          pathNodeIds: (pipeline.pathNodeIds ?? []).map((id: any) => String(id)),
+          computingResult: pipeline.computingResult as any,
+          optimizationScores: pipeline.optimizationScores as number[] | undefined,
+          machineInfo: pipeline.machineInfo as any,
+          createdAt: pipeline.createdAt ? new Date(pipeline.createdAt) : undefined,
+          updatedAt: pipeline.updatedAt ? new Date(pipeline.updatedAt) : undefined,
+        })),
+        optimization: experiment.optimization
+          ? {
+              bestPipelineId: experiment.optimization.bestPipelineId?.toString(),
+              bestScore: experiment.optimization.bestScore ?? undefined,
+              progress: experiment.optimization.progress ?? undefined,
+              status: experiment.optimization.status ?? undefined,
+              history:
+                (experiment.optimization.history as any[])?.map((item) => ({
+                  createdAt: item.createdAt ? new Date(item.createdAt) : undefined,
+                  message: item.message,
+                  status: item.status,
+                })) ?? [],
+            }
+          : undefined,
       });
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -96,9 +160,16 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
+    await runMigrations();
     await runSeeders();
-    // cloudWorker = new CloudComputationWorker();
-    // cloudWorker.start();
+    if (config.computations.cloudWorkerEnabled) {
+      cloudWorker = new CloudComputationWorker();
+      cloudWorker.start();
+    }
+    if (config.computations.localWorkerEnabled) {
+      localWorker = new LocalBackendComputationWorker();
+      localWorker.start();
+    }
   } else {
     console.warn('MONGODB_URI is not set; skipping database connection');
   }
@@ -113,7 +184,8 @@ async function bootstrap() {
     console.log(`Received ${signal}, shutting down...`);
 
     try {
-      // cloudWorker?.stop();
+      cloudWorker?.stop();
+      localWorker?.stop();
       await apollo.stop();
       await mongoose.disconnect();
       await new Promise<void>((resolve, reject) => {

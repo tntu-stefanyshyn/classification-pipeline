@@ -1,0 +1,9 @@
+query Pipeline($pipelineId: ID!) {
+  pipeline(pipelineId: $pipelineId) {
+    _id
+    status
+    statusMessage
+    progress
+    queue
+  }
+}

@@ -15,8 +15,12 @@ type CreateFileInput = {
 export class FileStore {
   private storage?: StorageClient;
 
-  async list(): Promise<UploadedFile[]> {
-    return UploadedFileModel.find().sort({ uploadedAt: -1 }).lean();
+  async listByUser(userId: string): Promise<UploadedFile[]> {
+    const normalizedId = userId.trim();
+    if (!normalizedId || !Types.ObjectId.isValid(normalizedId)) {
+      throw new Error('Invalid user id');
+    }
+    return UploadedFileModel.find({ uploadedById: normalizedId }).sort({ uploadedAt: -1 }).lean();
   }
 
   async create(input: CreateFileInput): Promise<UploadedFile> {
@@ -48,11 +52,18 @@ export class FileStore {
     return file.toObject({ getters: true });
   }
 
-  async remove(_id: string): Promise<UploadedFile> {
+  async remove(_id: string, userId: string): Promise<UploadedFile> {
     const trimmedId = _id.trim();
     if (!trimmedId) throw new Error('File _id is required');
+    const normalizedUserId = userId.trim();
+    if (!normalizedUserId || !Types.ObjectId.isValid(normalizedUserId)) {
+      throw new Error('Invalid user id');
+    }
 
-    const file = await UploadedFileModel.findById(trimmedId).lean();
+    const file = await UploadedFileModel.findOne({
+      _id: trimmedId,
+      uploadedById: normalizedUserId,
+    }).lean();
     if (!file) {
       throw new Error('File not found');
     }

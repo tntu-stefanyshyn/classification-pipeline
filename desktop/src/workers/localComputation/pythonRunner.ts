@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
-import type { HandlerEvent, HandlerPayload } from './types';
+import type { HandlerPayload } from './types';
 
 export type PythonHandlerOptions = {
   pythonBin?: string;
@@ -16,96 +15,170 @@ export type PythonHandlerCallbacks = {
   onError?: (message: string) => Promise<void>;
 };
 
-const resolvePythonPath = () => {
-  const candidates = [
-    process.cwd(),
-    app.getAppPath(),
-    path.resolve(app.getAppPath(), '..'),
-    path.resolve(app.getAppPath(), '..', '..'),
-  ];
+const DOCKER_BUILD_PREFIX = '[docker build] ';
+const DOCKER_IMAGE = 'aws-jobs';
+const rebuildFlag = (process.env.LOCAL_WORKER_REBUILD_IMAGE ?? '').trim().toLowerCase();
+const shouldRebuildImage =
+  rebuildFlag === '1' ||
+  rebuildFlag === 'true' ||
+  (rebuildFlag !== '0' && rebuildFlag !== 'false' && process.env.NODE_ENV === 'development');
+let imageReadyPromise: Promise<void> | null = null;
 
-  for (const candidate of candidates) {
-    const handlerPath = path.join(candidate, 'aws-jobs', 'src', 'aws_jobs', 'compute_handler.py');
-    if (fs.existsSync(handlerPath)) {
-      return path.join(candidate, 'aws-jobs', 'src');
+const attachStreamLogger = (
+  stream: NodeJS.ReadableStream | null,
+  callbacks: PythonHandlerCallbacks
+) => {
+  if (!stream) return;
+  let buffer = '';
+  stream.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+    let idx = buffer.indexOf('\n');
+    while (idx !== -1) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (line) {
+        void callbacks.onLog?.(`${line}`);
+      }
+      idx = buffer.indexOf('\n');
     }
-  }
-
-  return path.join(process.cwd(), 'aws-jobs', 'src');
+  });
+  stream.on('end', () => {
+    const leftover = buffer.trim();
+    if (leftover) {
+      void callbacks.onLog?.(`${leftover}`);
+    }
+  });
 };
 
-export const runPythonHandler = (
+const runDockerCommand = (
+  args: string[],
+  callbacks: PythonHandlerCallbacks,
+  logPrefix: string,
+  cwd?: string
+) =>
+  new Promise<void>((resolve, reject) => {
+    const proc = spawn('docker', args, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    attachStreamLogger(proc.stdout, callbacks);
+    attachStreamLogger(proc.stderr, callbacks);
+
+    let stderrBuffer = '';
+    proc.stderr.on('data', (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderrBuffer.trim() || `Docker command failed with code ${code}`));
+    });
+  });
+
+const dockerImageExists = () =>
+  new Promise<boolean>((resolve, reject) => {
+    const proc = spawn('docker', ['image', 'inspect', DOCKER_IMAGE], {
+      stdio: 'ignore',
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => resolve(code === 0));
+  });
+
+const resolveAwsJobsDir = () => {
+  const configuredDir = process.env.AWS_JOBS_DIR?.trim();
+  const candidates = [
+    configuredDir,
+    path.resolve(process.cwd(), '../aws-jobs'),
+    path.resolve(process.cwd(), 'aws-jobs'),
+    path.resolve(__dirname, '../../../../aws-jobs'),
+    path.resolve(__dirname, '../../../../../aws-jobs'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'Dockerfile'))) ?? null;
+};
+
+const ensureDockerImageReady = async (callbacks: PythonHandlerCallbacks) => {
+  if (imageReadyPromise) return imageReadyPromise;
+
+  imageReadyPromise = (async () => {
+    const imageExists = await dockerImageExists();
+
+    const awsJobsDir = resolveAwsJobsDir();
+    if ((!imageExists || shouldRebuildImage) && !awsJobsDir) {
+      throw new Error(
+        `Docker image "${DOCKER_IMAGE}" is missing and aws-jobs directory was not found.`
+      );
+    }
+
+    if (!imageExists) {
+      await callbacks.onLog?.(
+        `${DOCKER_BUILD_PREFIX}Image "${DOCKER_IMAGE}" not found. Building from ${awsJobsDir}...`
+      );
+      await runDockerCommand(
+        ['build', '-t', DOCKER_IMAGE, awsJobsDir as string],
+        callbacks,
+        DOCKER_BUILD_PREFIX
+      );
+      return;
+    }
+
+    if (shouldRebuildImage) {
+      await callbacks.onLog?.(
+        `${DOCKER_BUILD_PREFIX}Rebuilding image "${DOCKER_IMAGE}" from ${awsJobsDir}...`
+      );
+      await runDockerCommand(
+        ['build', '-t', DOCKER_IMAGE, awsJobsDir as string],
+        callbacks,
+        DOCKER_BUILD_PREFIX
+      );
+    }
+  })().catch((error) => {
+    imageReadyPromise = null;
+    throw error;
+  });
+
+  return imageReadyPromise;
+};
+
+export const warmupLocalDockerImage = async (callbacks: PythonHandlerCallbacks = {}) => {
+  await ensureDockerImageReady(callbacks);
+};
+
+export const runPythonHandler = async (
   payload: HandlerPayload,
   options: PythonHandlerOptions,
   callbacks: PythonHandlerCallbacks
 ): Promise<Record<string, unknown> | null> => {
+  await ensureDockerImageReady(callbacks);
+
+  if (options.signal?.aborted) {
+    return null;
+  }
+
   return new Promise((resolve, reject) => {
-    let result: Record<string, unknown> | null = null;
+    const result: Record<string, unknown> | null = null;
     let aborted = false;
     let abortTimer: NodeJS.Timeout | null = null;
-    const image = 'aws-jobs-image';
+    const runArgs: string[] = ['run', '--rm', '-i'];
+    const computePayloadJson = JSON.stringify({ pipelineId: payload.pipelineId });
 
-    const proc = spawn(
-      'docker',
-      [
-        'run',
-        '--rm',
-        '-i',
-        '-v',
-        `${process.cwd()}:/app`,
-        image,
-        'python',
-        '-m',
-        'aws_jobs.compute_handler',
-      ],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
-    );
+    runArgs.push('--env', `COMPUTE_PAYLOAD_JSON=${computePayloadJson}`);
 
-    const handleEvent = async (event: HandlerEvent) => {
-      try {
-        if (event.type === 'progress') {
-          await callbacks.onProgress?.(event.progress, event.message);
-          return;
-        }
+    runArgs.push('--env', `COMPUTE_BACKEND_URL=${payload.backend_url}`);
 
-        if (event.type === 'log' && event.message) {
-          await callbacks.onLog?.(event.message.trim());
-          return;
-        }
+    runArgs.push('--add-host', 'host.docker.internal:host-gateway', DOCKER_IMAGE);
 
-        if (event.type === 'result') {
-          result = event.result ?? {};
-          return;
-        }
-
-        if (event.type === 'error' && event.message) {
-          await callbacks.onError?.(event.message.trim());
-        }
-      } catch (error) {
-        console.warn('Local worker failed to report progress', error);
-      }
-    };
-
-    let stdoutBuffer = '';
-    proc.stdout.on('data', (chunk) => {
-      stdoutBuffer += chunk.toString();
-      let idx = stdoutBuffer.indexOf('\n');
-      while (idx !== -1) {
-        const line = stdoutBuffer.slice(0, idx).trim();
-        stdoutBuffer = stdoutBuffer.slice(idx + 1);
-        if (line) {
-          try {
-            const event = JSON.parse(line) as HandlerEvent;
-            void handleEvent(event);
-          } catch {
-            void callbacks.onLog?.(line.slice(0, 180));
-          }
-        }
-        idx = stdoutBuffer.indexOf('\n');
-      }
+    const proc = spawn('docker', runArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    attachStreamLogger(proc.stdout, callbacks);
+    attachStreamLogger(proc.stderr, callbacks);
 
     let stderrBuffer = '';
     proc.stderr.on('data', (chunk) => {

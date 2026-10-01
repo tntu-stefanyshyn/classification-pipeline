@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import type { FC } from 'react';
-import { navItems } from './constants/navItems';
 import type { AppSidebarProps } from './AppSidebar.types';
+import { useI18n } from '../../../i18n';
 
 const AppSidebar: FC<AppSidebarProps> = ({
   onLogout,
@@ -11,19 +11,38 @@ const AppSidebar: FC<AppSidebarProps> = ({
   theme,
   onToggleTheme,
 }) => {
+  const { locale, setLocale, messages } = useI18n();
+  const navItems = [
+    {
+      label: messages.sidebar.nav.dashboard.label,
+      hint: messages.sidebar.nav.dashboard.hint,
+      to: '/app',
+    },
+    {
+      label: messages.sidebar.nav.experiments.label,
+      hint: messages.sidebar.nav.experiments.hint,
+      to: '/app/experiments',
+    },
+    {
+      label: messages.sidebar.nav.files.label,
+      hint: messages.sidebar.nav.files.hint,
+      to: '/app/files',
+    },
+  ];
+
   return (
     <aside className={`app-sidebar ${isOpen ? 'open' : ''} ${isMobile ? 'mobile' : ''}`}>
       <div className="sidebar-inner">
         <div className="sidebar-brand">
           <div>
-            <p className="sidebar-title">Дослідницька панель</p>
+            <p className="sidebar-title">{messages.sidebar.title}</p>
           </div>
           {isMobile ? (
             <button
               className="sidebar-close"
               type="button"
               onClick={onCloseMobile}
-              aria-label="Закрити меню"
+              aria-label={messages.sidebar.closeMenu}
             >
               ×
             </button>
@@ -46,11 +65,26 @@ const AppSidebar: FC<AppSidebarProps> = ({
       </div>
 
       <div className="sidebar-footer">
+        <div className="sidebar-locale">
+          <span className="sidebar-locale-label">{messages.locale.label}</span>
+          <div className="sidebar-locale-switch" role="group" aria-label={messages.locale.label}>
+            {(['uk', 'en'] as const).map((nextLocale) => (
+              <button
+                key={nextLocale}
+                className={`sidebar-locale-button${locale === nextLocale ? ' active' : ''}`}
+                type="button"
+                onClick={() => setLocale(nextLocale)}
+              >
+                {messages.locale[nextLocale]}
+              </button>
+            ))}
+          </div>
+        </div>
         <button className="sidebar-theme" type="button" onClick={onToggleTheme}>
-          {theme === 'dark' ? 'Світла тема' : 'Темна тема'}
+          {theme === 'dark' ? messages.sidebar.themeLight : messages.sidebar.themeDark}
         </button>
         <button className="sidebar-logout" type="button" onClick={onLogout} disabled={!onLogout}>
-          Вийти
+          {messages.sidebar.logout}
         </button>
       </div>
     </aside>

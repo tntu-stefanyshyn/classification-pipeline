@@ -44,6 +44,6 @@ export class GraphqlClient {
 }
 
 export const createGraphqlClient = () => {
-  console.log(config.renderer.graphqlEndpoint);
+  console.log(`Адреса GraphQL: ${config.renderer.graphqlEndpoint}`);
   return new GraphqlClient(config.renderer.graphqlEndpoint);
 };

@@ -1,9 +1,13 @@
-import { Arg, ID, Query, Resolver } from 'type-graphql';
+import { Arg, Ctx, ID, Query, Resolver } from 'type-graphql';
 import { Types } from 'mongoose';
 import { StorageClient } from '../services/StorageClient';
 import { SignedUploadRequest } from '../classes/SignedUploadRequest';
 import { SignedUploadUrl } from '../classes/SignedUploadUrl';
 import { UploadedFileModel } from '../../files/models/UploadedFileModel';
+import { AuthFlow } from '../../auth/services/AuthFlow';
+import type { GraphQLContext } from '../../../types/context';
+
+const authFlow = new AuthFlow();
 
 @Resolver()
 export class Storage {
@@ -17,7 +21,10 @@ export class Storage {
   }
 
   @Query(() => SignedUploadUrl)
-  async signedDownloadUrl(@Arg('fileId', () => ID) fileId: string): Promise<SignedUploadUrl> {
+  async signedDownloadUrl(
+    @Arg('fileId', () => ID) fileId: string,
+    @Ctx() context: GraphQLContext
+  ): Promise<SignedUploadUrl> {
     const trimmedId = fileId.trim();
     if (!trimmedId) {
       throw new Error('File _id is required');
@@ -26,7 +33,11 @@ export class Storage {
       throw new Error('File _id is invalid');
     }
 
-    const file = await UploadedFileModel.findById(trimmedId).lean();
+    const user = await authFlow.me(context.req);
+    const file = await UploadedFileModel.findOne({
+      _id: trimmedId,
+      uploadedById: user?._id,
+    }).lean();
     if (!file?.storageKey) {
       throw new Error('File not found');
     }

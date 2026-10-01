@@ -95,7 +95,11 @@ desktop/out/
 
 # Workspace builds
 dist/
+*.test-dist/
+.test-dist/
+**/.test-dist/
 backend/src/**/*.js
+backend/backups/
 
 # GraphQL codegen outputs
 generated/
@@ -117,3 +121,5 @@ aws-jobs/.venv/
 aws-jobs/.python-version
 aws-jobs/.coverage
 aws-jobs/.pytest_cache/
+
+.codex

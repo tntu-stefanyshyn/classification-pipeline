@@ -1,11 +1,9 @@
-import { useCallback, useMemo, useRef, useState, type FC } from 'react';
-import type { ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type FC, ChangeEvent } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AuthLayout } from '../../layout/AuthLayout';
 import { FileInput } from '../../inputs/FileInput';
-import { DataTable, tableLabels } from '../../ui/DataTable';
+import { DataTable } from '../../ui/DataTable';
 import { isCsvFile } from '../../../utils/fileValidation';
-import { statusLabels } from './constants/statusLabels';
 import {
   useCreateUploadedFileMutation,
   useDeleteUploadedFileMutation,
@@ -14,8 +12,10 @@ import {
 } from './graphql';
 import type { FileRow, FilesPageProps } from './FilesPage.types';
 import { formatTimeAgo } from './utils/formatTimeAgo';
+import { useI18n } from '../../../i18n';
 
 const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
+  const { locale, messages } = useI18n();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -28,7 +28,7 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
 
   const files = data?.uploadedFiles ?? [];
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.sizeMb, 0), [files]);
-  const emptyMessage = loading ? 'Завантаження файлів...' : 'Файлів ще немає — додайте перші дані.';
+  const emptyMessage = loading ? messages.filesPage.loading : messages.filesPage.empty;
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -39,7 +39,7 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
     if (!file) return;
 
     if (!isCsvFile(file)) {
-      setUploadError('Підтримуються лише CSV файли.');
+      setUploadError(messages.filesPage.onlyCsv);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -62,7 +62,7 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
       const signedUrl = signedData?.signedUploadUrl?.url;
       const storageKey = signedData?.signedUploadUrl?.key;
       if (!signedUrl || !storageKey) {
-        throw new Error('Не вдалося отримати дані для завантаження.');
+        throw new Error(messages.filesPage.uploadDataFailed);
       }
 
       const uploadResponse = await fetch(signedUrl, {
@@ -72,7 +72,7 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Помилка завантаження файла.');
+        throw new Error(messages.filesPage.uploadFailed);
       }
 
       const sizeMb = Math.max(1, Math.round(file.size / (1024 * 1024)));
@@ -82,7 +82,6 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
             filename: file.name,
             storageKey,
             sizeMb,
-            status: 'uploaded',
           },
         },
       });
@@ -90,7 +89,7 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
       await refetch();
     } catch (uploadErr) {
       setUploadError(
-        uploadErr instanceof Error ? uploadErr.message : 'Не вдалося завантажити файл.'
+        uploadErr instanceof Error ? uploadErr.message : messages.filesPage.uploadUnknown
       );
     } finally {
       setUploading(false);
@@ -102,46 +101,53 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
 
   const handleDelete = useCallback(
     async (_id: string) => {
-      if (!window.confirm('Видалити файл?')) return;
+      if (!window.confirm(messages.filesPage.deleteConfirm)) return;
       try {
         await deleteFile({ variables: { _id } });
         await refetch();
       } catch (deleteErr) {
         setUploadError(
-          deleteErr instanceof Error ? deleteErr.message : 'Не вдалося видалити файл.'
+          deleteErr instanceof Error ? deleteErr.message : messages.filesPage.deleteUnknown
         );
       }
     },
-    [deleteFile, refetch]
+    [deleteFile, messages.filesPage.deleteConfirm, messages.filesPage.deleteUnknown, refetch]
   );
 
   const columns = useMemo<ColumnDef<FileRow>[]>(
     () => [
       {
-        header: 'Файл',
+        header: messages.filesPage.columns.file,
         accessorKey: 'filename',
         cell: (info) => <span className="item-title">{info.getValue<string>()}</span>,
       },
       {
-        header: 'Розмір',
+        header: messages.filesPage.columns.size,
         accessorKey: 'sizeMb',
-        cell: (info) => <span className="cell-number">{info.getValue<number>()} МБ</span>,
+        cell: (info) => (
+          <span className="cell-number">
+            {info.getValue<number>()} {messages.filesPage.mb}
+          </span>
+        ),
       },
       {
-        header: 'Завантажено',
+        header: messages.filesPage.columns.uploaded,
         accessorKey: 'uploadedAt',
         cell: (info) => {
           const value = info.getValue<string | Date>();
-          return <span className="muted">{formatTimeAgo(value)}</span>;
+          return <span className="muted">{formatTimeAgo(value, locale)}</span>;
         },
       },
       {
-        header: 'Статус',
+        header: messages.filesPage.columns.status,
         accessorKey: 'status',
         cell: (info) => {
           const status = info.getValue<string>();
           return (
-            <span className={`status-pill status-${status}`}>{statusLabels[status] ?? status}</span>
+            <span className={`status-pill status-${status}`}>
+              {messages.statuses.fileStatus[status as keyof typeof messages.statuses.fileStatus] ??
+                status}
+            </span>
           );
         },
       },
@@ -155,8 +161,8 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
               type="button"
               onClick={() => handleDelete(row.original._id)}
               disabled={deleting}
-              aria-label="Видалити"
-              title="Видалити"
+              aria-label={messages.filesPage.columns.delete}
+              title={messages.filesPage.columns.delete}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path
@@ -200,14 +206,14 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
         ),
       },
     ],
-    [deleting, handleDelete]
+    [deleting, handleDelete, locale, messages.filesPage, messages.statuses.fileStatus]
   );
 
   return (
     <AuthLayout
-      badge="Авторизований доступ"
-      title="Файли"
-      subtitle="Керуйте завантаженими файлами та переглядайте статистику."
+      badge={messages.filesPage.badge}
+      title={messages.filesPage.title}
+      subtitle={messages.filesPage.subtitle}
       onLogout={onLogout}
       actions={
         <div className="actions">
@@ -217,10 +223,10 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
             onClick={handleUploadClick}
             disabled={uploading}
           >
-            {uploading ? 'Завантаження...' : 'Завантажити файл'}
+            {uploading ? messages.common.loading : messages.filesPage.upload}
           </button>
           <button className="btn ghost" type="button" onClick={() => refetch()} disabled={loading}>
-            Оновити
+            {messages.filesPage.refresh}
           </button>
         </div>
       }
@@ -229,33 +235,38 @@ const FilesPage: FC<FilesPageProps> = ({ onLogout }) => {
 
       <div className="stat-grid">
         <article className="card stat-card">
-          <p className="muted">Усього файлів</p>
+          <p className="muted">{messages.filesPage.totalFiles}</p>
           <div className="stat-value">{files.length}</div>
-          <p className="stat-hint">В системі</p>
+          <p className="stat-hint">{messages.filesPage.totalFilesHint}</p>
         </article>
         <article className="card stat-card">
-          <p className="muted">Загальний обсяг</p>
-          <div className="stat-value">{totalSize} МБ</div>
-          <p className="stat-hint">Сумарний розмір</p>
+          <p className="muted">{messages.filesPage.totalSize}</p>
+          <div className="stat-value">
+            {totalSize} {messages.filesPage.mb}
+          </div>
+          <p className="stat-hint">{messages.filesPage.totalSizeHint}</p>
         </article>
       </div>
 
       <section className="card data-card">
         <header className="card-head">
           <div>
-            <h3>Завантажені файли</h3>
-            <p className="muted">Історія завантажень та статус обробки.</p>
+            <h3>{messages.filesPage.uploadedFilesTitle}</h3>
+            <p className="muted">{messages.filesPage.uploadedFilesSubtitle}</p>
           </div>
         </header>
         <div className="table-status">
-          {error && <p className="error">Помилка: {error.message}</p>}
+          {error && (
+            <p className="error">
+              {messages.common.errorPrefix}: {error.message}
+            </p>
+          )}
           {uploadError && <p className="error">{uploadError}</p>}
         </div>
         <DataTable
           data={files}
           columns={columns}
           emptyMessage={emptyMessage}
-          labels={tableLabels}
           pageSize={5}
           pageSizeOptions={[5, 10, 20]}
           getRowId={(row) => row._id}

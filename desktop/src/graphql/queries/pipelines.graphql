@@ -1,0 +1,38 @@
+query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
+  pipelines(experimentId: $experimentId, queue: $queue) {
+    _id
+    experimentId
+    queue
+    status
+    progress
+    statusMessage
+    optimizationScores
+    computingResult {
+      accuracyScores
+      f1Scores
+      rocAucScores
+      duration
+      sampleCount
+    }
+    machineInfo {
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      queue
+    }
+    history {
+      message
+      createdAt
+    }
+    pathNodes {
+      _id
+      label
+      technology
+    }
+    pathNodeIds
+    createdAt
+    updatedAt
+  }
+}

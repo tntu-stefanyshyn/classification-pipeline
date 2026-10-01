@@ -8,7 +8,7 @@ export {
   ROOT_NODE_ID,
   ROOT_NODE_LABEL,
 } from './constants/graph';
-export { classificationStages, stageLabels } from './constants/stages';
+export { classificationStages, getStageLabels } from './constants/stages';
 export { buildFlowElements } from './utils/flow';
 export { getStageLabel, isClassificationStage } from './utils/stage';
 export {

@@ -1,8 +1,11 @@
 import type { ClassificationStage } from '../graphql';
-import { classificationStages, stageLabels } from '../constants/stages';
+import { classificationStages, getStageLabels } from '../constants/stages';
+import { getMessages, localeService } from '../../../../i18n';
 
 export const getStageLabel = (stage?: ClassificationStage | null) =>
-  stage && stageLabels[stage] ? stageLabels[stage] : 'Етап не вказано';
+  stage && getStageLabels()[stage]
+    ? getStageLabels()[stage]
+    : getMessages(localeService.getLocale()).graph.stageNotSpecified;
 
 export const isClassificationStage = (value: string): value is ClassificationStage =>
   classificationStages.some((stage) => stage === value);

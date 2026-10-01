@@ -15,13 +15,47 @@ import { ComputationMode } from '../classes/ComputationMode';
 type TechnologyIndex = {
   byStage: Map<ClassificationStage, Technology[]>;
   byStageName: Map<string, Technology>;
+  byStageAlias: Map<string, Technology>;
   byName: Map<string, Technology>;
+  byAlias: Map<string, Technology>;
 };
 
 const DEFAULT_NODE_TYPE = 'technology';
+const DEFAULT_FOLDS = 5;
+const MAX_FOLDS = 20;
+const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
+const DEFAULT_PREDICT_DATA_PERCENT = 20;
+const DISPLAY_NAME_SEPARATOR = ' / ';
 
 export class GraphManager {
   private readonly technologyManager = new TechnologyManager();
+
+  private getTechnologyLabel(technology: Technology): string {
+    const displayName = technology.displayName?.trim();
+    return displayName || technology.name;
+  }
+
+  private getTechnologyAliases(technology: Pick<Technology, 'displayName' | 'name'>): string[] {
+    const aliases = new Set<string>();
+    const addAlias = (value?: string | null) => {
+      const normalizedValue = value?.trim() ?? '';
+      if (normalizedValue) aliases.add(normalizedValue);
+    };
+
+    addAlias(technology.name);
+    addAlias(technology.displayName);
+
+    const displayName = technology.displayName?.trim() ?? '';
+    if (displayName.includes(DISPLAY_NAME_SEPARATOR)) {
+      displayName
+        .split(DISPLAY_NAME_SEPARATOR)
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach(addAlias);
+    }
+
+    return Array.from(aliases);
+  }
 
   async getById(_id: Types.ObjectId | string): Promise<GraphStructure> {
     const graph = await GraphStructureModel.findOne({ _id });
@@ -142,7 +176,7 @@ export class GraphManager {
         const settings = this.buildSettingsForTechnology(technology, undefined);
         nodes.push({
           _id: nodeId,
-          label: technology.name,
+          label: this.getTechnologyLabel(technology),
           stage,
           technology: technology.name,
           type: DEFAULT_NODE_TYPE,
@@ -168,7 +202,7 @@ export class GraphManager {
 
   private async normalizeGraphNodes(nodes: GraphNodeInput[]): Promise<GraphNode[]> {
     const technologies = await this.technologyManager.list();
-    const { byStageName, byName } = this.buildTechnologyIndex(technologies);
+    const { byStageName, byStageAlias, byName, byAlias } = this.buildTechnologyIndex(technologies);
 
     const idMap = new Map<string, Types.ObjectId>();
     const rawIds = new Set<string>();
@@ -203,9 +237,12 @@ export class GraphManager {
         if (!CLASSIFICATION_STAGE_VALUES.includes(stage)) {
           throw new Error(`Unsupported classification stage for node ${nodeId.toHexString()}`);
         }
-        technology = byStageName.get(`${stage}:${candidateTechnology}`) ?? null;
+        technology =
+          byStageName.get(`${stage}:${candidateTechnology}`) ??
+          byStageAlias.get(`${stage}:${candidateTechnology}`) ??
+          null;
       } else {
-        technology = byName.get(candidateTechnology) ?? null;
+        technology = byName.get(candidateTechnology) ?? byAlias.get(candidateTechnology) ?? null;
         if (technology) stage = technology.stage;
       }
 
@@ -231,7 +268,7 @@ export class GraphManager {
 
       return {
         _id: nodeId,
-        label: technology.name,
+        label: this.getTechnologyLabel(technology),
         stage,
         technology: technology.name,
         settings,
@@ -295,9 +332,40 @@ export class GraphManager {
       throw new Error('Потрібно обрати хоча б один тип обчислень.');
     }
 
+    const folds = Number.isFinite(Number(settings.folds))
+      ? Math.trunc(Number(settings.folds))
+      : DEFAULT_FOLDS;
+    if (folds < 1) {
+      throw new Error('Кількість кроків перехресної валідації має бути більшою за 0.');
+    }
+    if (folds > MAX_FOLDS) {
+      throw new Error(
+        `Кількість кроків перехресної валідації має бути не більшою за ${MAX_FOLDS}.`
+      );
+    }
+
+    const hyperOptimizationMinutesPerPipeline = Number.isFinite(
+      Number(settings.hyperOptimizationMinutesPerPipeline)
+    )
+      ? Math.trunc(Number(settings.hyperOptimizationMinutesPerPipeline))
+      : DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE;
+    if (hyperOptimizationMinutesPerPipeline < 1) {
+      throw new Error('Час гіпероптимізації для одного конвеєра має бути більшим за 0 хвилин.');
+    }
+
+    const predictDataPercent = Number.isFinite(Number(settings.predictDataPercent))
+      ? Math.trunc(Number(settings.predictDataPercent))
+      : DEFAULT_PREDICT_DATA_PERCENT;
+    if (predictDataPercent < 1 || predictDataPercent > 99) {
+      throw new Error('Відсоток даних для предікту має бути цілим числом від 1 до 99.');
+    }
+
     return {
       metrics: { accuracy, f1, rocAuc, ntps },
       queues: uniqueQueues,
+      folds,
+      hyperOptimizationMinutesPerPipeline,
+      predictDataPercent,
     };
   }
 
@@ -345,19 +413,30 @@ export class GraphManager {
   private buildTechnologyIndex(technologies: Technology[]): TechnologyIndex {
     const byStage = new Map<ClassificationStage, Technology[]>();
     const byStageName = new Map<string, Technology>();
+    const byStageAlias = new Map<string, Technology>();
     const byName = new Map<string, Technology>();
+    const byAlias = new Map<string, Technology>();
 
     technologies.forEach((technology) => {
       const list = byStage.get(technology.stage) ?? [];
       list.push(technology);
       byStage.set(technology.stage, list);
       byStageName.set(`${technology.stage}:${technology.name}`, technology);
+      this.getTechnologyAliases(technology).forEach((alias) => {
+        const byStageKey = `${technology.stage}:${alias}`;
+        if (!byStageAlias.has(byStageKey)) {
+          byStageAlias.set(byStageKey, technology);
+        }
+        if (!byAlias.has(alias)) {
+          byAlias.set(alias, technology);
+        }
+      });
       if (!byName.has(technology.name)) {
         byName.set(technology.name, technology);
       }
     });
 
-    return { byStage, byStageName, byName };
+    return { byStage, byStageName, byStageAlias, byName, byAlias };
   }
 
   private buildSettingsForTechnology(
@@ -368,20 +447,21 @@ export class GraphManager {
     (inputSettings ?? []).forEach((setting) => {
       const key = setting.key.trim();
       if (!key) return;
-      values.set(key, String(setting.value ?? '').trim());
+      const value = String(setting.value ?? '').trim();
+      if (!value) return;
+      values.set(key, value);
     });
 
-    return technology.settings.map((setting) => {
-      const fallback = setting.defaultValue ?? '';
-      const value = values.get(setting.key) ?? fallback;
-      if (setting.required && !value) {
-        throw new Error(`Setting "${setting.key}" is required for ${technology.name}`);
-      }
-      return {
-        key: setting.key,
-        value,
-      };
-    });
+    return technology.settings
+      .map((setting) => {
+        const value = values.get(setting.key);
+        if (value === undefined) return null;
+        return {
+          key: setting.key,
+          value,
+        };
+      })
+      .filter((setting): setting is GraphNodeSetting => setting !== null);
   }
 
   private async ensureGraphNodeIntegrity(graph: GraphStructure): Promise<GraphStructure> {

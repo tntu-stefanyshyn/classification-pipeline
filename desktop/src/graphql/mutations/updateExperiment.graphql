@@ -19,6 +19,9 @@ mutation UpdateExperiment($input: UpdateExperimentInput!) {
           ntps
         }
         queues
+        folds
+        hyperOptimizationMinutesPerPipeline
+        predictDataPercent
       }
       nodes {
         _id

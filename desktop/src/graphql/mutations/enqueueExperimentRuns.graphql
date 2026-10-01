@@ -1,13 +1,3 @@
 mutation EnqueueExperimentRuns($input: EnqueueExperimentRunsInput!) {
-  enqueueExperimentRuns(input: $input) {
-    _id
-    experimentId
-    queue
-    status
-    progress
-    statusMessage
-    pathNodeIds
-    createdAt
-    updatedAt
-  }
+  enqueueExperimentRuns(input: $input)
 }

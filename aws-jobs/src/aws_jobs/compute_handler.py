@@ -1,126 +1,97 @@
 import json
+import math
 import os
 import sys
 import tempfile
-import urllib.request
 import time
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import boto3
-import numpy as np
+import boto3 # type: ignore
+import numpy as np # type: ignore
 import pandas as pd
 from sklearn.decomposition import FastICA, PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    roc_auc_score,
+  accuracy_score,
+  confusion_matrix,
+  f1_score,
+  roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import ShuffleSplit, StratifiedShuffleSplit
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from graphql.completePipeline import completePipeline 
+from graphql.graphqlRequest import graphqlRequest 
+from graphql.updatePipelineProgress import updatePipelineProgress 
+
+STAGE_LABELS_UA: Dict[str, str] = {
+    "PREPROCESSING": "Попередня обробка",
+    "DATA_ENHANCEMENT": "Покращення даних",
+    "FEATURE_EXTRACTION": "Видобування ознак",
+    "DIMENSIONALITY_REDUCTION": "Зниження розмірності",
+    "CLASSIFICATION": "Класифікація",
+}
+
+MAX_FOLDS = 20
 
 
-def _emit(event: Dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(event, ensure_ascii=True) + "\n")
-    sys.stdout.flush()
+def _vector_length(values: List[float]) -> float:
+    return math.sqrt(sum(value * value for value in values))
 
 
-def _emit_progress(progress: int, message: str) -> None:
-    _emit({"type": "progress", "progress": progress, "message": message})
+def _emit(
+  backend_url: str,
+  pipelineId: str,
+  message: Optional[str] = None,
+  progress: Optional[float] = None,
+  token: Optional[str] = None,
+) -> None:
+  updatePipelineProgress(
+    backend_url=backend_url,
+    pipelineId=pipelineId,
+    token=token,
+    message=message,
+    progress=progress
+  )
 
 
-def _append_history(history: List[Dict[str, Any]], message: str) -> None:
-    message = message.strip()
-    if not message:
-        return
-    history.append({"message": message, "timestamp": _timestamp()})
-
-
-def _emit_log(message: str, history: Optional[List[Dict[str, Any]]] = None) -> None:
-    message = message.strip()
-    if not message:
-        return
-    _emit({"type": "log", "message": message})
-    if history is not None:
-        _append_history(history, message)
-
-
-def _timestamp() -> str:
-    return datetime.utcnow().isoformat() + "Z"
-
+def _format_step_log(action: str, technology: str, stage: str) -> str:
+    stage_ua = STAGE_LABELS_UA.get(stage, stage) or "Невідомий етап"
+    technology_label = technology.strip() or stage_ua or "Невідомий крок"
+    return f'{action} "{technology_label}", етап {stage_ua}'
 
 def _load_payload() -> Dict[str, Any]:
     raw = sys.stdin.read()
     if not raw.strip():
         raw = os.getenv("COMPUTE_PAYLOAD_JSON", "")
     if not raw.strip():
-        raise ValueError("Не передано дані для обчислення")
+        raise ValueError("PAYLOAD_NOT_FOUND", raw)
     return json.loads(raw)
 
-
-def _store_result(payload: Dict[str, Any], data: Dict[str, Any]) -> None:
-    if not isinstance(payload, dict):
-        return
-    bucket = payload.get("result_s3_bucket") or os.getenv("COMPUTE_RESULT_S3_BUCKET", "")
-    key = payload.get("result_s3_key") or os.getenv("COMPUTE_RESULT_S3_KEY", "")
-    if not bucket or not key:
-        return
-
-    body = json.dumps(data, ensure_ascii=True)
-    boto3.client("s3").put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=body.encode("utf-8"),
-        ContentType="application/json",
-    )
-
-
-def _graphql_request(
-    url: str, query: str, variables: Optional[Dict[str, Any]] = None, token: Optional[str] = None
-) -> Dict[str, Any]:
-    payload = {"query": query, "variables": variables or {}}
-    headers = {"content-type": "application/json"}
-    if token:
-        headers["authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(
-        url, data=json.dumps(payload).encode("utf-8"), headers=headers
-    )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        raw = response.read().decode("utf-8")
-    data = json.loads(raw or "{}")
-    if data.get("errors"):
-        message = data["errors"][0].get("message") or "GraphQL request failed"
-        raise ValueError(message)
-    if "data" not in data:
-        raise ValueError("GraphQL response is empty")
-    return data["data"]
+     
 
 
 def _fetch_path_from_backend(
-    backend_url: str, run_id: str, token: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    backend_url: str, pipelineId: str, token: Optional[str] = None
+):
     run_query = """
-      query ExperimentRun($runId: ID!) {
-        experimentRun(runId: $runId) {
+      query Pipeline($pipelineId: ID!) {
+        pipeline(pipelineId: $pipelineId) {
           experimentId
           pathNodeIds
         }
       }
     """
-    run_payload = _graphql_request(backend_url, run_query, {"runId": run_id}, token)
-    run = run_payload.get("experimentRun")
+    run_payload = graphqlRequest(backend_url, run_query, {"pipelineId": pipelineId}, token)
+    run = run_payload.get("pipeline")
     if not run:
-        raise ValueError("Run not found")
+        raise ValueError("PIPELINE_NOT_FOUND")
 
     experiment_id = run.get("experimentId")
     path_node_ids = run.get("pathNodeIds") or []
     if not experiment_id:
-        raise ValueError("Experiment id is missing for run")
+        raise ValueError("EXPERIMENT_NOT_FOUND")
 
     experiment_query = """
       query ExperimentForRun($id: ID!) {
@@ -128,6 +99,10 @@ def _fetch_path_from_backend(
           _id
           fileId
           graph {
+            settings {
+              folds
+              predictDataPercent
+            }
             nodes {
               _id
               stage
@@ -141,7 +116,7 @@ def _fetch_path_from_backend(
         }
       }
     """
-    experiment_payload = _graphql_request(
+    experiment_payload = graphqlRequest(
         backend_url, experiment_query, {"id": experiment_id}, token
     )
     experiment = experiment_payload.get("experiment")
@@ -158,7 +133,8 @@ def _fetch_path_from_backend(
         path_nodes.append(node)
 
     file_id = experiment.get("fileId")
-    return path_nodes, file_id
+    graph_settings = (experiment.get("graph") or {}).get("settings") or {}
+    return path_nodes, file_id, graph_settings
 
 
 def _fetch_signed_download_url(
@@ -171,10 +147,10 @@ def _fetch_signed_download_url(
         }
       }
     """
-    payload = _graphql_request(backend_url, query, {"fileId": file_id}, token)
+    payload = graphqlRequest(backend_url, query, {"fileId": file_id}, token)
     url = (payload.get("signedDownloadUrl") or {}).get("url")
     if not url:
-        raise ValueError("Не вдалося отримати посилання на файл")
+        raise ValueError("FILE_URL_NOT_FOUND")
     return url
 
 
@@ -200,13 +176,15 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
             temp_path = _download_s3_to_temp(bucket, key)
             file_path = temp_path
         elif backend_url and payload.get("file_id"):
-            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id"))
+            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id")) # type: ignore
 
     if not file_url and not file_path:
-        raise ValueError("Не вдалося отримати шлях до EEG файлу")
+        if not payload.get("file_id"):
+            raise ValueError("EXPERIMENT_FILE_NOT_CONFIGURED")
+        raise ValueError("FILE_URL_NOT_FOUND")
 
     try:
-        df = pd.read_csv(file_url or file_path)
+        df = pd.read_csv(file_url or file_path, sep=";")
     finally:
         if temp_path:
             try:
@@ -215,7 +193,7 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
                 pass
 
     if df.empty:
-        raise ValueError("EEG файл порожній")
+        raise ValueError("EEG_FILE_EMPTY")
     return df
 
 
@@ -226,8 +204,21 @@ def _settings_to_dict(settings: List[Dict[str, Any]]) -> Dict[str, str]:
         if not key:
             continue
         value = entry.get("value")
-        result[key] = str(value) if value is not None else ""
+        if value is None:
+            continue
+        normalized_value = str(value).strip()
+        if not normalized_value:
+            continue
+        result[key] = normalized_value
     return result
+
+
+def _get_setting(settings: Dict[str, str], key: str) -> Optional[str]:
+    value = settings.get(key)
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _to_float(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -264,46 +255,44 @@ def _to_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
-def _resolve_target_column(
-    df: pd.DataFrame, payload: Dict[str, Any], path: List[Dict[str, Any]]
-) -> str:
-    candidate = payload.get("target_column")
-    if candidate and candidate in df.columns:
-        return candidate
-
-    for node in path:
-        settings = _settings_to_dict(node.get("settings") or [])
-        candidate = settings.get("target_column") or settings.get("label_column")
-        if candidate and candidate in df.columns:
-            return candidate
-
-    for fallback in ("label", "target", "class"):
-        if fallback in df.columns:
-            return fallback
-
-    return df.columns[-1]
+INVALID_FILE_ERROR = "Невалідний файл"
 
 
-def _prepare_features(df: pd.DataFrame, target_column: str) -> Tuple[pd.DataFrame, pd.Series]:
-    if target_column not in df.columns:
-        raise ValueError("Target column is missing in EEG data")
+def _validate_eeg_dataframe(df: pd.DataFrame) -> None:
+    if df.shape[1] < 3:
+        raise ValueError(INVALID_FILE_ERROR)
 
-    y = df[target_column]
-    X = df.drop(columns=[target_column])
-    X = pd.get_dummies(X)
-    X = X.replace([np.inf, -np.inf], np.nan)
-    means = X.mean(numeric_only=True)
-    X = X.fillna(means).fillna(0)
+    missing_mask = np.asarray(df.isna())
+    if missing_mask.any():
+        raise ValueError(INVALID_FILE_ERROR)
 
+    feature_frame = df.iloc[:, 1:]
+    feature_columns = feature_frame.columns
+    for column_name in feature_columns:
+        column = feature_frame[column_name]
+        if not pd.api.types.is_numeric_dtype(column):
+            raise ValueError(INVALID_FILE_ERROR)
+
+    values = np.asarray(feature_frame, dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError(INVALID_FILE_ERROR)
+
+
+def _prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    _validate_eeg_dataframe(df)
+
+    y = df.iloc[:, 0].astype(str).str.strip()
+    X = df.iloc[:, 1:]
     if X.empty:
-        raise ValueError("EEG файл не містить ознак для класифікації")
+        raise ValueError(INVALID_FILE_ERROR)
 
     return X, y
 
 
 def _apply_preprocessing(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
     values = X.values.astype(float)
-    if _to_bool(settings.get("log")):
+    log_setting = _get_setting(settings, "log")
+    if log_setting is not None and _to_bool(log_setting):
         values = np.sign(values) * np.log1p(np.abs(values))
 
     scaler = StandardScaler()
@@ -338,27 +327,39 @@ def _apply_artifact_suppression(X: pd.DataFrame, settings: Dict[str, str]) -> pd
 
 
 def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
-    n_components = _to_int(settings.get("n_components")) or min(20, X.shape[1])
-    algorithm = (settings.get("algorithm") or "parallel").lower()
-    whiten = (settings.get("whiten") or "unit-variance").lower()
-    fun = (settings.get("fun") or "logcosh").lower()
-    max_iter = _to_int(settings.get("max_iter"), 200) or 200
-    tol = _to_float(settings.get("tol"), 0.0001) or 0.0001
-    random_state = _to_int(settings.get("random_state"), 42)
+    transformer_kwargs: Dict[str, Any] = {}
+    n_components = _to_int(_get_setting(settings, "n_components"))
+    if n_components is not None:
+        transformer_kwargs["n_components"] = n_components
 
-    whiten_value: Any = whiten
-    if whiten in {"false", "none", "0"}:
-        whiten_value = False
+    algorithm = _get_setting(settings, "algorithm")
+    if algorithm is not None:
+        transformer_kwargs["algorithm"] = algorithm.lower()
 
-    transformer = FastICA(
-        n_components=n_components,
-        algorithm=algorithm,
-        whiten=whiten_value,
-        fun=fun,
-        max_iter=max_iter,
-        tol=tol,
-        random_state=random_state,
-    )
+    whiten = _get_setting(settings, "whiten")
+    if whiten is not None:
+        whiten_value: Any = whiten.lower()
+        if whiten_value in {"false", "none", "0"}:
+            whiten_value = False
+        transformer_kwargs["whiten"] = whiten_value
+
+    fun = _get_setting(settings, "fun")
+    if fun is not None:
+        transformer_kwargs["fun"] = fun.lower()
+
+    max_iter = _to_int(_get_setting(settings, "max_iter"))
+    if max_iter is not None and max_iter > 0:
+        transformer_kwargs["max_iter"] = max_iter
+
+    tol = _to_float(_get_setting(settings, "tol"))
+    if tol is not None:
+        transformer_kwargs["tol"] = tol
+
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    if random_state is not None:
+        transformer_kwargs["random_state"] = random_state
+
+    transformer = FastICA(**transformer_kwargs)
     values = transformer.fit_transform(X.values.astype(float))
     columns = [f"ica_{idx}" for idx in range(values.shape[1])]
     return pd.DataFrame(values, columns=columns)
@@ -386,21 +387,32 @@ def _parse_pca_components(value: Any) -> Any:
 
 
 def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
-    n_components = _parse_pca_components(settings.get("n_components"))
-    svd_solver = (settings.get("svd_solver") or "auto").lower()
-    whiten = _to_bool(settings.get("whiten"), False)
-    iterated_power = settings.get("iterated_power") or "auto"
-    random_state = _to_int(settings.get("random_state"), 42)
-    tol = _to_float(settings.get("tol"), 0.0) or 0.0
+    transformer_kwargs: Dict[str, Any] = {}
+    n_components = _parse_pca_components(_get_setting(settings, "n_components"))
+    if n_components is not None:
+        transformer_kwargs["n_components"] = n_components
 
-    transformer = PCA(
-        n_components=n_components,
-        svd_solver=svd_solver,
-        whiten=whiten,
-        iterated_power=iterated_power,
-        random_state=random_state,
-        tol=tol,
-    )
+    svd_solver = _get_setting(settings, "svd_solver")
+    if svd_solver is not None:
+        transformer_kwargs["svd_solver"] = svd_solver.lower()
+
+    whiten_raw = _get_setting(settings, "whiten")
+    if whiten_raw is not None:
+        transformer_kwargs["whiten"] = _to_bool(whiten_raw, False)
+
+    iterated_power = _get_setting(settings, "iterated_power")
+    if iterated_power is not None:
+        transformer_kwargs["iterated_power"] = iterated_power
+
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    if random_state is not None:
+        transformer_kwargs["random_state"] = random_state
+
+    tol = _to_float(_get_setting(settings, "tol"))
+    if tol is not None:
+        transformer_kwargs["tol"] = tol
+
+    transformer = PCA(**transformer_kwargs)
     values = transformer.fit_transform(X.values.astype(float))
     columns = [f"pca_{idx}" for idx in range(values.shape[1])]
     return pd.DataFrame(values, columns=columns)
@@ -410,53 +422,105 @@ def _build_classifier(technology: str, settings: Dict[str, str]):
     normalized = technology.strip().lower()
 
     if normalized == "svm":
-        c_value = _to_float(settings.get("c"), 1.0) or 1.0
-        kernel = (settings.get("kernel") or "rbf").lower()
-        degree = _to_int(settings.get("degree"), 3) or 3
-        gamma = settings.get("gamma") or "scale"
-        try:
-            gamma_value: Any = float(gamma)
-        except (TypeError, ValueError):
-            gamma_value = gamma
-        coef0 = _to_float(settings.get("coef0"), 0.0) or 0.0
-        shrinking = _to_bool(settings.get("shrinking"), True)
-        probability = _to_bool(settings.get("probability"), False)
-        tol = _to_float(settings.get("tol"), 0.001) or 0.001
-        max_iter = _to_int(settings.get("max_iter"), -1) or -1
-        class_weight_raw = (settings.get("class_weight") or "none").lower()
-        class_weight = "balanced" if class_weight_raw == "balanced" else None
+        classifier_kwargs: Dict[str, Any] = {"probability": True}
+        c_value = _to_float(_get_setting(settings, "c"))
+        if c_value is not None:
+            classifier_kwargs["C"] = c_value
 
-        return SVC(
-            C=c_value,
-            kernel=kernel,
-            degree=degree,
-            gamma=gamma_value,
-            coef0=coef0,
-            shrinking=shrinking,
-            probability=probability,
-            tol=tol,
-            max_iter=max_iter,
-            class_weight=class_weight,
-        )
+        kernel = _get_setting(settings, "kernel")
+        if kernel is not None:
+            classifier_kwargs["kernel"] = kernel.lower()
+
+        degree = _to_int(_get_setting(settings, "degree"))
+        if degree is not None:
+            classifier_kwargs["degree"] = degree
+
+        gamma = _get_setting(settings, "gamma")
+        if gamma is not None:
+            try:
+                classifier_kwargs["gamma"] = float(gamma)
+            except (TypeError, ValueError):
+                classifier_kwargs["gamma"] = gamma
+
+        coef0 = _to_float(_get_setting(settings, "coef0"))
+        if coef0 is not None:
+            classifier_kwargs["coef0"] = coef0
+
+        shrinking = _get_setting(settings, "shrinking")
+        if shrinking is not None:
+            classifier_kwargs["shrinking"] = _to_bool(shrinking, True)
+
+        tol = _to_float(_get_setting(settings, "tol"))
+        if tol is not None:
+            classifier_kwargs["tol"] = tol
+
+        max_iter = _to_int(_get_setting(settings, "max_iter"))
+        if max_iter is not None:
+            classifier_kwargs["max_iter"] = max_iter
+
+        class_weight_raw = _get_setting(settings, "class_weight")
+        if class_weight_raw is not None and class_weight_raw.lower() == "balanced":
+            classifier_kwargs["class_weight"] = "balanced"
+
+        return SVC(**classifier_kwargs)
 
     if normalized == "cnn":
-        epochs = _to_int(settings.get("epochs"), 30) or 30
-        batch_size = _to_int(settings.get("batch_size"), 32) or 32
-        learning_rate = _to_float(settings.get("learning_rate"), 0.001) or 0.001
-        optimizer = (settings.get("optimizer") or "adam").lower()
-        solver = "sgd" if optimizer == "sgd" else "adam"
-        random_state = _to_int(settings.get("random_state"), 42)
+        classifier_kwargs: Dict[str, Any] = {"hidden_layer_sizes": (128, 64)}
+        epochs = _to_int(_get_setting(settings, "epochs"))
+        if epochs is not None and epochs > 0:
+            classifier_kwargs["max_iter"] = epochs
 
-        return MLPClassifier(
-            hidden_layer_sizes=(128, 64),
-            solver=solver,
-            batch_size=batch_size,
-            learning_rate_init=learning_rate,
-            max_iter=epochs,
-            random_state=random_state,
-        )
+        batch_size = _to_int(_get_setting(settings, "batch_size"))
+        if batch_size is not None and batch_size > 0:
+            classifier_kwargs["batch_size"] = batch_size
 
-    return LogisticRegression(max_iter=1000)
+        learning_rate = _to_float(_get_setting(settings, "learning_rate"))
+        if learning_rate is not None:
+            classifier_kwargs["learning_rate_init"] = learning_rate
+
+        optimizer = _get_setting(settings, "optimizer")
+        if optimizer is not None:
+            classifier_kwargs["solver"] = "sgd" if optimizer.lower() == "sgd" else "adam"
+
+        random_state = _to_int(_get_setting(settings, "random_state"))
+        if random_state is not None:
+            classifier_kwargs["random_state"] = random_state
+
+        return MLPClassifier(**classifier_kwargs)
+
+    return LogisticRegression()
+
+
+def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> float:
+    scores: Any = None
+    try:
+        if hasattr(model, "predict_proba"):
+            scores = model.predict_proba(X_val)
+    except Exception:
+        scores = None
+
+    if scores is None:
+        try:
+            if hasattr(model, "decision_function"):
+                scores = model.decision_function(X_val)
+        except Exception:
+            scores = None
+
+    if scores is None:
+        return 0.0
+
+    try:
+        scores_array = np.asarray(scores)
+        unique_labels = pd.Series(y_val).nunique(dropna=True)
+        if unique_labels <= 2:
+            if scores_array.ndim == 2 and scores_array.shape[1] > 1:
+                positive_scores = scores_array[:, 1]
+            else:
+                positive_scores = scores_array.ravel()
+            return float(roc_auc_score(y_val, positive_scores))
+        return float(roc_auc_score(y_val, scores_array, multi_class="ovr", average="macro"))
+    except Exception:
+        return 0.0
 
 
 def _run_classifier(
@@ -464,189 +528,162 @@ def _run_classifier(
     y: pd.Series,
     technology: str,
     settings: Dict[str, str],
-    log: Optional[Callable[[str], None]] = None,
-) -> Dict[str, Any]:
-    test_size = _to_float(settings.get("test_size"), 0.2) or 0.2
-    random_state = _to_int(settings.get("random_state"), 42)
-    folds = _to_int(
-        settings.get("cv_folds")
-        or settings.get("cross_validation_folds")
-        or settings.get("k_folds")
-        or settings.get("folds")
-    )
+    graphStructureSettings: Dict[str, Any],
+    progress_for_one_step: float,
+    backend_url: str,
+    pipelineId: str,
+):
+    random_state = _to_int(_get_setting(settings, "random_state"))
+    raw_folds = _to_int(graphStructureSettings.get("folds"))
+    splitter_kwargs: Dict[str, Any] = {}
 
-    def emit(message: str) -> None:
-        if log:
-            log(message)
+    if raw_folds is not None and raw_folds > 0:
+        folds = min(raw_folds, MAX_FOLDS)
+        if raw_folds > MAX_FOLDS:
+            _emit(
+                backend_url,
+                pipelineId,
+                message=f"Кількість кроків CV обмежено до {MAX_FOLDS} для стабільного виконання.",
+            )
+        splitter_kwargs["n_splits"] = folds
+
+    predict_percent = _to_float(graphStructureSettings.get("predictDataPercent"))
+    if predict_percent is None:
+        predict_percent = _to_float(_get_setting(settings, "predict_percent"))
+    if predict_percent is not None and 0 < predict_percent < 100:
+        splitter_kwargs["test_size"] = predict_percent / 100.0
+
+    if random_state is not None:
+        splitter_kwargs["random_state"] = random_state
 
     labels = np.unique(y)
-
-    if folds and folds > 1:
-        folds = max(2, folds)
-        if len(y) < folds:
-            folds = len(y)
-        if folds >= 2:
-            try:
-                splitter = StratifiedKFold(
-                    n_splits=folds, shuffle=True, random_state=random_state
-                )
-                splits = splitter.split(X, y)
-            except Exception:
-                splitter = KFold(n_splits=folds, shuffle=True, random_state=random_state)
-                splits = splitter.split(X)
-
-            all_true: List[Any] = []
-            all_pred: List[Any] = []
-            accuracy_scores: List[float] = []
-            f1_scores: List[float] = []
-            roc_auc_scores: List[Optional[float]] = []
-            confusion_total: Optional[np.ndarray] = None
-
-            for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
-                emit(f"Крос-валідація: прохід {fold_index}/{folds}")
-                X_train = X.iloc[train_idx]
-                y_train = y.iloc[train_idx]
-                X_val = X.iloc[val_idx]
-                y_val = y.iloc[val_idx]
-
-                model = _build_classifier(technology, settings)
-                model.fit(X_train, y_train)
-                y_pred = model.predict(X_val)
-
-                emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
-                accuracy_scores.append(float(accuracy_score(y_val, y_pred)))
-                f1_scores.append(float(f1_score(y_val, y_pred, average="weighted")))
-                roc_auc_scores.append(_compute_roc_auc(model, X_val, y_val))
-
-                all_true.extend(list(y_val))
-                all_pred.extend(list(y_pred))
-
-                matrix = confusion_matrix(y_val, y_pred, labels=labels)
-                confusion_total = (
-                    matrix
-                    if confusion_total is None
-                    else confusion_total + matrix
-                )
-
-            report = classification_report(
-                all_true, all_pred, labels=labels, output_dict=True, zero_division=0
-            )
-            roc_values = [score for score in roc_auc_scores if score is not None]
-            if roc_values:
-                report["roc_auc"] = float(np.mean(roc_values))
-
-            report["accuracy_scores"] = accuracy_scores
-            report["f1_scores"] = f1_scores
-            report["roc_auc_scores"] = roc_auc_scores
-            report["confusion_matrix"] = (
-                confusion_total.tolist() if confusion_total is not None else []
-            )
-            report["class_labels"] = [str(label) for label in labels]
-            report["class_count"] = int(len(labels))
-            report["cv_folds"] = folds
-            return report
-
     try:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=y
-        )
-    except ValueError:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=None
-        )
-
-    model = _build_classifier(technology, settings)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_val)
-
-    emit("Класифікація: обчислення метрик accuracy, F1, ROC-AUC")
-    report = classification_report(y_val, y_pred, output_dict=True, zero_division=0)
-    roc_auc = _compute_roc_auc(model, X_val, y_val)
-    if roc_auc is not None:
-        report["roc_auc"] = roc_auc
-
-    report["accuracy_scores"] = [float(accuracy_score(y_val, y_pred))]
-    report["f1_scores"] = [float(f1_score(y_val, y_pred, average="weighted"))]
-    report["roc_auc_scores"] = [roc_auc] if roc_auc is not None else []
-    report["confusion_matrix"] = confusion_matrix(y_val, y_pred, labels=labels).tolist()
-    report["class_labels"] = [str(label) for label in labels]
-    report["class_count"] = int(len(labels))
-    report["cv_folds"] = 1
-    return report
-
-
-def _compute_roc_auc(model: Any, X_val: pd.DataFrame, y_val: pd.Series) -> Optional[float]:
-    scores: Any = None
-    if hasattr(model, "predict_proba"):
-        try:
-            scores = model.predict_proba(X_val)
-        except Exception:
-            scores = None
-    if scores is None and hasattr(model, "decision_function"):
-        try:
-            scores = model.decision_function(X_val)
-        except Exception:
-            scores = None
-    if scores is None:
-        return None
-    try:
-        scores_array = np.asarray(scores)
-        if scores_array.ndim == 1:
-            return float(roc_auc_score(y_val, scores_array))
-        if scores_array.shape[1] == 2:
-            return float(roc_auc_score(y_val, scores_array[:, 1]))
-        return float(
-            roc_auc_score(y_val, scores_array, multi_class="ovr", average="macro")
-        )
+        splitter = StratifiedShuffleSplit(**splitter_kwargs)
+        splits = splitter.split(X, y)
     except Exception:
-        return None
+        splitter = ShuffleSplit(**splitter_kwargs)
+        splits = splitter.split(X)
+    folds = int(getattr(splitter, "n_splits", 1) or 1)
+
+    all_true: List[Any] = []
+    all_pred: List[Any] = []
+    accuracyScores: List[float] = []
+    f1Scores: List[float] = []
+    rocAucScores: List[float] = []
+    optimizationIntermediateScores: List[float] = []
+    confusionMatrixes: List[List[float]] = []
+    predictionSampleCounts: List[int] = []
+    predictionSampleCount: Optional[int] = None
+
+    for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
+        prediction_rows = len(val_idx)
+        predictionSampleCounts.append(prediction_rows)
+        if predictionSampleCount is None:
+            predictionSampleCount = prediction_rows
+        fold_fraction = fold_index / folds
+        progress = (progress_for_one_step * 0.5) * fold_fraction
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Початок перехресної валідації: крок {fold_index}/{folds}",
+            progress=progress
+        )
+        X_train = X.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+        X_val = X.iloc[val_idx]
+        y_val = y.iloc[val_idx]
+
+        model = _build_classifier(technology, settings)
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_val)
+
+        accuracyScores.append(float(accuracy_score(y_val, y_pred)))
+        f1Scores.append(float(f1_score(y_val, y_pred, average="weighted")))
+        rocAucScores.append(_compute_roc_auc(model, X_val, y_val))
+        optimizationIntermediateScores.append(
+            float(
+                _vector_length(
+                    [
+                        accuracyScores[-1],
+                        f1Scores[-1],
+                        rocAucScores[-1],
+                    ]
+                )
+            )
+        )
+
+        all_true.extend(list(y_val))
+        all_pred.extend(list(y_pred))
+        matrix = confusion_matrix(y_val, y_pred, labels=labels)
+        confusionMatrixes.append(matrix.tolist())
+        progress = progress_for_one_step * fold_fraction
+        _emit(
+            backend_url,
+            pipelineId,
+            message=f"Завершення перехресної валідації: крок {fold_index}/{folds}",
+            progress=progress
+        )
+
+    channelNames = [str(label) for label in labels]
+    return (
+        accuracyScores,
+        f1Scores,
+        rocAucScores,
+        optimizationIntermediateScores,
+        confusionMatrixes,
+        channelNames,
+        predictionSampleCount or 0,
+        predictionSampleCounts,
+        predict_percent,
+    )
 
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
-    backend_url = payload.get("backend_url") or os.getenv("COMPUTE_BACKEND_URL", "")
+    backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+    pipelineId = payload.get("pipelineId")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
-    history: List[Dict[str, Any]] = []
 
-    path = payload.get("path") or []
-    if backend_url and payload.get("run_id"):
-        path, file_id = _fetch_path_from_backend(backend_url, payload.get("run_id"), token)
+    if not backend_url or not pipelineId:
+        raise ValueError("MISSING_PARAMS")
+    
+    path = []
+    if backend_url and pipelineId:
+        path, file_id, graphStructureSettings = _fetch_path_from_backend(
+            backend_url, pipelineId, token
+        )
         payload["path"] = path
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
-    _emit_log("Запуск обчислення", history)
-    _emit_progress(0, "Запуск обчислення")
+    _emit(backend_url, pipelineId, message="Початок обчислення", progress=1)
 
-    if not path:
-        _emit_log("Немає кроків для обчислення", history)
-        _emit_progress(100, "Немає кроків для обчислення")
-        return {
-            "path_length": 0,
-            "nodes": [],
-            "completed_at": _timestamp(),
-            "history": history,
-        }
+   
 
-    _emit_log("Зчитування EEG файлу", history)
-    _emit_progress(5, "Зчитування EEG файлу")
+    _emit(backend_url, pipelineId, message="Зчитування файлу ЕЕГ", progress=3)
     df = _load_dataframe(payload, backend_url or None)
-    _emit_log("EEG файл зчитано", history)
-    _emit_progress(10, "EEG файл зчитано")
+    _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5)
 
-    target_column = _resolve_target_column(df, payload, path)
-    X, y = _prepare_features(df, target_column)
+    X, y = _prepare_features(df)
 
-    report: Optional[Dict[str, Any]] = None
+    report: Optional[Dict[str, Any]] = {}
+   
     total = len(path)
+    progress_for_one_step = 90/ total
+
     for index, node in enumerate(path, start=1):
         stage = str(node.get("stage") or "").upper()
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
-        label = technology or stage or f"крок {index}"
-        progress = 10 + int((index / total) * 80)
-        _emit_progress(progress, f"Крок {index}/{total}: {label}")
-        _emit_log(f"Початок етапу: {label}", history)
+
+        progress = (progress_for_one_step * 0.5) * (index)
+
+        _emit(
+            backend_url,
+            pipelineId,
+            message=_format_step_log("Початок кроку", technology, stage),
+            progress=progress
+        )
 
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
@@ -657,32 +694,51 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif stage == "DIMENSIONALITY_REDUCTION":
             X = _apply_pca(X, settings)
         elif stage == "CLASSIFICATION":
-            report = _run_classifier(
+            (
+                accuracyScores,
+                f1Scores,
+                rocAucScores,
+                optimizationIntermediateScores,
+                confusionMatrixes,
+                channelNames,
+                predictionSampleCount,
+                predictionSampleCounts,
+                predictPercent,
+            ) = _run_classifier(
                 X,
                 y,
                 technology or "svm",
                 settings,
-                log=lambda message: _emit_log(message, history),
+                graphStructureSettings,
+                progress_for_one_step,
+                backend_url,
+                pipelineId
             )
-            _emit_log(f"Завершено етап: {label}", history)
+            report["accuracyScores"] = accuracyScores
+            report["f1Scores"] = f1Scores
+            report["rocAucScores"] = rocAucScores
+            report["optimizationIntermediateScores"] = optimizationIntermediateScores
+            report["confusionMatrixes"] = confusionMatrixes
+            report["channelNames"] = channelNames
+            report["predictionSampleCount"] = predictionSampleCount
+            report["predictionSampleCounts"] = predictionSampleCounts
+            report["predictionDataPercent"] = predictPercent
             break
-        _emit_log(f"Завершено етап: {label}", history)
+        progress = (progress_for_one_step) * (index)
+        _emit(
+            backend_url,
+            pipelineId,
+            message=_format_step_log("Завершення кроку", technology, stage),
+            progress=progress
+        )
 
-    if report is None:
-        raise ValueError("Не знайдено етап класифікації")
 
     duration = max(time.time() - started_at, 0.0)
-    sample_count = max(int(len(df)), 1)
-    report["ntps"] = duration / sample_count
-    report["sample_count"] = sample_count
-    report["duration_seconds"] = duration
-    report["path_length"] = total
-    report["nodes"] = [node.get("technology") or node.get("stage") for node in path]
-    report["completed_at"] = _timestamp()
-    report["history"] = history
+    sampleCount = max(int(len(df)), 1)
+    report["sampleCount"] = sampleCount
+    report["duration"] = duration
 
-    _emit_log("Обчислення завершено", history)
-    _emit_progress(100, "Обчислення завершено")
+    _emit(backend_url, pipelineId, message="Обчислення завершено", progress=100)
     return report
 
 
@@ -690,23 +746,35 @@ def main() -> None:
     payload: Dict[str, Any] = {}
     try:
         payload = _load_payload()
-        result = run_compute(payload)
-        _store_result(
-            payload,
-            {"status": "completed", "result": result, "completed_at": _timestamp()},
-        )
-        _emit({"type": "result", "result": result})
-    except Exception as exc:  # noqa: BLE001
-        try:
-            _store_result(
-                payload if isinstance(payload, dict) else {},
-                {"status": "failed", "error": str(exc), "failed_at": _timestamp()},
-            )
-        except Exception:
-            pass
-        _emit({"type": "error", "message": str(exc)})
-        sys.exit(1)
 
+        token = payload.get("backend_token")
+        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+        pipelineId = payload.get("pipelineId")
+
+        if not backend_url or not pipelineId:
+            raise ValueError("MISSING_PARAMS")
+
+        result = run_compute(payload)
+
+        completePipeline(
+            backend_url=backend_url,
+            payload=result,
+            pipelineId=pipelineId,
+            token=token
+        )
+        print((json.dumps(result, indent=2)))
+    except Exception as exc:
+        backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
+        token = payload.get("backend_token")
+        pipelineId = payload.get("pipelineId")
+        message = f"{type(exc).__name__}: {exc}"
+
+        if backend_url and pipelineId:
+            try:
+                _emit(backend_url, pipelineId, message=message, token=token)
+            except Exception:
+                pass
+        raise
 
 if __name__ == "__main__":
     main()

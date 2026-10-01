@@ -1,14 +1,41 @@
-query ExperimentRunInfo($experimentRunId: ID!) {
-  experimentRun(runId: $experimentRunId) {
+query PipelineInfo($pipelineId: ID!) {
+  pipeline(pipelineId: $pipelineId) {
     _id
     status
     updatedAt
     queue
     statusMessage
     progress
+    machineInfo {
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      platform
+      arch
+      release
+      appVersion
+      queue
+      lastSeenAt
+    }
+    computingResult {
+      accuracyScores
+      confusionMatrix
+      confusionMatrixes
+      duration
+      f1Scores
+      predictionDataPercent
+      predictionSampleCount
+      predictionSampleCounts
+      rocAucScores
+      sampleCount
+      channelNames
+    }
     pathNodes {
       _id
       label
+      technology
     }
     history {
       createdAt

@@ -10,8 +10,9 @@ const authFlow = new AuthFlow();
 @Resolver()
 export class Files {
   @Query(() => [UploadedFile])
-  uploadedFiles(): Promise<UploadedFile[]> {
-    return fileStore.list();
+  async uploadedFiles(@Ctx() context: GraphQLContext): Promise<UploadedFile[]> {
+    const user = await authFlow.me(context.req);
+    return fileStore.listByUser(user._id.toString());
   }
 
   @Mutation(() => UploadedFile)
@@ -28,7 +29,11 @@ export class Files {
   }
 
   @Mutation(() => UploadedFile)
-  deleteUploadedFile(@Arg('_id', () => ID) _id: string): Promise<UploadedFile> {
-    return fileStore.remove(_id);
+  async deleteUploadedFile(
+    @Arg('_id', () => ID) _id: string,
+    @Ctx() context: GraphQLContext
+  ): Promise<UploadedFile> {
+    const user = await authFlow.me(context.req);
+    return fileStore.remove(_id, user._id.toString());
   }
 }

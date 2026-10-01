@@ -1,10 +1,10 @@
 import { prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
-import { Field, ID, Int, ObjectType } from 'type-graphql';
+import { Field, Float, ID, Int, ObjectType } from 'type-graphql';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
-import { PipelineStatus } from '../enums';
 import { PipelineMachineInfo } from './PipelineMachineInfo';
+import { ComputationResultPayload } from '../../../modules/computations/classes/ComputationResultPayload';
 import { PipelineHistoryItem } from './PipelineHistoryItem';
 
 @ObjectType()
@@ -24,19 +24,11 @@ export class Pipeline extends TimeStamps {
   @prop({ required: true, enum: ComputationQueue, type: () => String })
   queue!: ComputationQueue;
 
-  @Field(() => PipelineStatus)
-  @prop({
-    required: true,
-    enum: PipelineStatus,
-    type: () => String,
-  })
-  status!: PipelineStatus;
-
   @Field(() => [ID])
   @prop({ required: true, type: () => [Types.ObjectId] })
   pathNodeIds!: Types.ObjectId[];
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Float, { nullable: true })
   @prop({ min: 0, max: 100 })
   progress?: number;
 
@@ -48,8 +40,17 @@ export class Pipeline extends TimeStamps {
   @prop({ _id: false, type: () => [PipelineHistoryItem], default: [] })
   history!: PipelineHistoryItem[];
 
+  @Field(() => PipelineMachineInfo, { nullable: true })
   @prop({ _id: false, type: () => PipelineMachineInfo })
   machineInfo?: PipelineMachineInfo;
+
+  @Field(() => ComputationResultPayload, { nullable: true })
+  @prop({ _id: false, type: () => ComputationResultPayload })
+  computingResult?: ComputationResultPayload;
+
+  @Field(() => [Float], { nullable: true })
+  @prop({ type: () => [Number], default: [] })
+  optimizationScores?: number[];
 
   @prop({ min: 0, default: 0 })
   priority?: number;

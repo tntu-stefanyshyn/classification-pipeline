@@ -1,5 +1,6 @@
 import { ComputationQueue } from '../../../../graphql/types.generated';
 import { formatWeightPercent } from '../../../../utils/metricWeights';
+import { getMessages, localeService } from '../../../../i18n';
 import type {
   GraphSettingsDraft,
   GraphSettingsValidation,
@@ -7,6 +8,11 @@ import type {
 } from '../GraphSettingsModal.types';
 import type { GraphStructureSettings } from '../../../../graphql/types.generated';
 import { metricKeys } from '../constants/labels';
+
+const DEFAULT_FOLDS = 5;
+const MAX_FOLDS = 20;
+const DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE = 30;
+const DEFAULT_PREDICT_DATA_PERCENT = 20;
 
 export const buildSettingsDraft = (
   settings?: GraphStructureSettings | null
@@ -17,7 +23,24 @@ export const buildSettingsDraft = (
     rocAuc: formatWeightPercent(settings?.metrics?.rocAuc),
     ntps: formatWeightPercent(settings?.metrics?.ntps),
   },
-  queues: settings?.queues?.length ? settings.queues : [ComputationQueue.cloud],
+  queues: settings?.queues?.length ? settings.queues : [ComputationQueue.local],
+  folds:
+    typeof settings?.folds === 'number' && Number.isInteger(settings.folds) && settings.folds > 0
+      ? settings.folds
+      : DEFAULT_FOLDS,
+  hyperOptimizationMinutesPerPipeline:
+    typeof settings?.hyperOptimizationMinutesPerPipeline === 'number' &&
+    Number.isInteger(settings.hyperOptimizationMinutesPerPipeline) &&
+    settings.hyperOptimizationMinutesPerPipeline > 0
+      ? settings.hyperOptimizationMinutesPerPipeline
+      : DEFAULT_HYPER_OPTIMIZATION_MINUTES_PER_PIPELINE,
+  predictDataPercent:
+    typeof settings?.predictDataPercent === 'number' &&
+    Number.isInteger(settings.predictDataPercent) &&
+    settings.predictDataPercent >= 1 &&
+    settings.predictDataPercent <= 99
+      ? settings.predictDataPercent
+      : DEFAULT_PREDICT_DATA_PERCENT,
 });
 
 export const normalizeMetricInput = (value: string, fallback: string): string => {
@@ -33,6 +56,7 @@ export const normalizeMetricInput = (value: string, fallback: string): string =>
 export const validateGraphSettings = (
   settingsDraft: GraphSettingsDraft | null
 ): GraphSettingsValidation => {
+  const { validation } = getMessages(localeService.getLocale()).graphSettings;
   if (!settingsDraft) {
     return { isValid: false, errors: [], sum: 0, normalized: null };
   }
@@ -54,16 +78,38 @@ export const validateGraphSettings = (
     return !Number.isFinite(value) || value < 0 || value > 100;
   });
   if (hasInvalidMetric) {
-    errors.push('Заповніть усі ваги метрик значеннями від 0 до 100.');
+    errors.push(validation.metricsRange);
   }
 
   const sum = metricKeys.reduce((total, key) => total + (parsedMetrics[key] ?? 0), 0);
   if (!hasInvalidMetric && Math.abs(sum - 100) > 0.01) {
-    errors.push('Сума ваг має дорівнювати 100%.');
+    errors.push(validation.metricsSum);
   }
 
   if (settingsDraft.queues.length === 0) {
-    errors.push('Оберіть хоча б один тип обчислень.');
+    errors.push(validation.queues);
+  }
+
+  if (!Number.isInteger(settingsDraft.folds) || settingsDraft.folds < 1) {
+    errors.push(validation.folds);
+  }
+  if (Number.isInteger(settingsDraft.folds) && settingsDraft.folds > MAX_FOLDS) {
+    errors.push(`${validation.folds} ${MAX_FOLDS}.`);
+  }
+
+  if (
+    !Number.isInteger(settingsDraft.hyperOptimizationMinutesPerPipeline) ||
+    settingsDraft.hyperOptimizationMinutesPerPipeline < 1
+  ) {
+    errors.push(validation.optimizationMinutes);
+  }
+
+  if (
+    !Number.isInteger(settingsDraft.predictDataPercent) ||
+    settingsDraft.predictDataPercent < 1 ||
+    settingsDraft.predictDataPercent > 99
+  ) {
+    errors.push(validation.predictPercent);
   }
 
   const normalizedMetrics: Record<MetricKey, number> = {
@@ -82,6 +128,9 @@ export const validateGraphSettings = (
         ? {
             metrics: normalizedMetrics,
             queues: settingsDraft.queues,
+            folds: settingsDraft.folds,
+            hyperOptimizationMinutesPerPipeline: settingsDraft.hyperOptimizationMinutesPerPipeline,
+            predictDataPercent: settingsDraft.predictDataPercent,
           }
         : null,
   };

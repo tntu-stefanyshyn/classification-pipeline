@@ -4,9 +4,6 @@ export enum PipelineStatus {
   idle = 'idle',
   queued = 'queued',
   running = 'running',
-  paused = 'paused',
-  failed = 'failed',
-  stopped = 'stopped',
   completed = 'completed',
 }
 

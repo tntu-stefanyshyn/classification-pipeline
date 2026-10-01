@@ -3,11 +3,21 @@ import { Pipeline, PipelineBaseService } from '../../../core/pipeline';
 import { GraphNode } from '../../../modules/experiments/classes/GraphNode';
 import { GraphStructureModel } from '../../../modules/experiments/models/GraphStructureModel';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
-import { UpdatePipelineInput } from '../classes/UpdatePipelineInput';
-import { ObjectIdOrSting } from '../../../types/context';
+import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
+import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimizationInput';
+import { ObjectIdOrString } from '../../../types/context';
+import { WorkflowManager } from '../../workflow/services/WorkflowManager';
+import { WorkflowType } from '../../workflow/enums';
+import { PipelineStatus } from '../enums';
+import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
+import { PipelineManager } from '../services/PipelineManager';
 
 @Resolver(() => Pipeline)
 export class PipelineResolver {
+  private readonly pipelineManager = new PipelineManager();
+  private readonly workflowManager = new WorkflowManager();
+
+  // #region FieldResolver
   @FieldResolver(() => [GraphNode])
   async pathNodes(@Root() { experimentId, pathNodeIds }: Pipeline): Promise<GraphNode[]> {
     const graphNodes = await GraphStructureModel.aggregate<GraphNode>([
@@ -26,23 +36,52 @@ export class PipelineResolver {
     return orderedNodes;
   }
 
+  @FieldResolver(() => PipelineStatus)
+  async status(@Root() { _id }: Pipeline) {
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: _id,
+      type: WorkflowType.PIPELINE,
+    });
+    return workflow.status;
+  }
+  // #endregion FieldResolver
+
+  // #region Query
   @Query(() => [Pipeline])
-  experimentRuns(
-    @Arg('experimentId', () => ID) experimentId: ObjectIdOrSting,
+  async pipelines(
+    @Arg('experimentId', () => ID) experimentId: ObjectIdOrString,
     @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {
     return PipelineBaseService.listByExperiment(experimentId, queue);
   }
 
   @Query(() => Pipeline, { nullable: true })
-  experimentRun(@Arg('runId', () => ID) pipelineId: ObjectIdOrSting): Promise<Pipeline | null> {
+  pipeline(@Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString): Promise<Pipeline | null> {
     return PipelineBaseService.getById(pipelineId);
   }
+  // #endregion Query
 
+  // #region Mutation
   @Mutation(() => Pipeline)
-  updateExperimentRun(
-    @Arg('input', () => UpdatePipelineInput) input: UpdatePipelineInput
+  updatePipelineProgress(
+    @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput
   ): Promise<Pipeline> {
-    return PipelineBaseService.update(input);
+    return PipelineBaseService.updatePipelineProgress(input);
   }
+
+  @Mutation(() => Boolean)
+  async updatePipelineOptimization(
+    @Arg('input', () => UpdatePipelineOptimizationInput) input: UpdatePipelineOptimizationInput
+  ): Promise<boolean> {
+    await PipelineBaseService.updatePipelineOptimization(input);
+    return true;
+  }
+
+  @Mutation(() => Boolean)
+  changePipelineStatus(
+    @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput
+  ): Promise<boolean> {
+    return this.pipelineManager.changeStatus(input);
+  }
+  // #endregion Mutation
 }

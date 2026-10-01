@@ -6,6 +6,30 @@ query Experiment($_id: ID!) {
     fileId
     status
     createdAt
+    computationHosts {
+      queue
+      hostname
+      cpuModel
+      gpuModel
+      memoryGb
+      cores
+      platform
+      arch
+      release
+      appVersion
+      lastSeenAt
+    }
+    optimization {
+      progress
+      status
+      bestPipelineId
+      bestScore
+      history {
+        message
+        status
+        createdAt
+      }
+    }
     graph {
       _id
       computationMode
@@ -19,6 +43,9 @@ query Experiment($_id: ID!) {
           ntps
         }
         queues
+        folds
+        hyperOptimizationMinutesPerPipeline
+        predictDataPercent
       }
       nodes {
         _id

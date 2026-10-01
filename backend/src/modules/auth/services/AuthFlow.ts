@@ -44,9 +44,11 @@ export class AuthFlow {
     return { token, user };
   }
 
-  async me(req: Request): Promise<User | null> {
+  async me(req: Request): Promise<User> {
     if (config.isDev) {
-      return UserModel.findOne();
+      return (await UserModel.findOne({
+        email: 'ivan_stefanyshyn0707@tntu.edu.ua',
+      }).lean()) as User;
     }
 
     const token = this.extractToken(req);

@@ -1,5 +1,0 @@
-mutation CompleteExperimentRun($input: CompleteExperimentRunInput!) {
-  completeExperimentRun(input: $input) {
-    _id
-  }
-}

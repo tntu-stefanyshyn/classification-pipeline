@@ -7,26 +7,31 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import type { DataTableProps } from './DataTable.types';
-import { defaultLabels } from './constants/defaultLabels';
 import { isInteractiveTarget } from './utils/isInteractiveTarget';
+import { useI18n } from '../../../i18n';
 
 const DataTable = <TData,>({
   data,
   columns,
   pageSize = 6,
   pageSizeOptions,
-  emptyMessage = 'No data.',
+  emptyMessage,
   labels,
   className,
   getRowId,
   onRowClick,
 }: DataTableProps<TData>) => {
+  const { messages } = useI18n();
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
   });
 
-  const resolvedLabels = useMemo(() => ({ ...defaultLabels, ...labels }), [labels]);
+  const resolvedEmptyMessage = emptyMessage ?? messages.common.noData;
+  const resolvedLabels = useMemo(
+    () => ({ ...messages.table, ...labels }),
+    [labels, messages.table]
+  );
   const resolvedPageSizes = useMemo(() => {
     const fallback = [pageSize, pageSize * 2, pageSize * 3];
     const options = pageSizeOptions?.length ? pageSizeOptions : fallback;
@@ -58,6 +63,11 @@ const DataTable = <TData,>({
     onRowClick(row);
   };
 
+  const getColumnClassName = (meta: unknown) =>
+    typeof meta === 'object' && meta !== null && 'className' in meta
+      ? String((meta as { className?: string }).className ?? '')
+      : undefined;
+
   return (
     <div className={containerClassName}>
       <div className="table-wrapper">
@@ -66,7 +76,7 @@ const DataTable = <TData,>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id}>
+                  <th key={header.id} className={getColumnClassName(header.column.columnDef.meta)}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -79,7 +89,7 @@ const DataTable = <TData,>({
             {data.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="table-empty">
-                  {emptyMessage}
+                  {resolvedEmptyMessage}
                 </td>
               </tr>
             ) : (
@@ -90,7 +100,7 @@ const DataTable = <TData,>({
                   onClick={(event) => handleRowClick(event, row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id}>
+                    <td key={cell.id} className={getColumnClassName(cell.column.columnDef.meta)}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

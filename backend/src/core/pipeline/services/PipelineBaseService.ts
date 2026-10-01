@@ -1,14 +1,15 @@
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { Pipeline } from '../classes/Pipeline';
 import { PipelineModel } from '../models/PipelineModel';
-import { UpdatePipelineInput } from '../classes/UpdatePipelineInput';
+import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
+import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimizationInput';
 import { PipelineStatus } from '../enums';
 import { PipelineHistoryItem } from '../classes/PipelineHistoryItem';
-import { ObjectIdOrSting } from '../../../types/context';
+import { ObjectIdOrString } from '../../../types/context';
 
 class PipelineBaseServiceClass {
   async listByExperiment(
-    experimentId: ObjectIdOrSting,
+    experimentId: ObjectIdOrString,
     queue?: ComputationQueue
   ): Promise<Pipeline[]> {
     return PipelineModel.find({ experimentId, ...(queue ? { queue } : {}) })
@@ -16,35 +17,49 @@ class PipelineBaseServiceClass {
       .lean();
   }
 
-  async getById(pipelineId: ObjectIdOrSting): Promise<Pipeline> {
+  async getById(pipelineId: ObjectIdOrString): Promise<Pipeline> {
     const pipeline = await PipelineModel.findById(pipelineId).lean();
-    if (!pipeline) throw new Error('Шляху не знайдено');
+    if (!pipeline) throw new Error('Конвеєр не знайдено');
     return pipeline;
   }
 
-  async update({ pipelineId, progress, statusMessage }: UpdatePipelineInput): Promise<Pipeline> {
-    const pipeline = await this.getById(pipelineId);
-    if (pipeline.status === PipelineStatus.paused) {
-      return pipeline;
-    }
-
+  async updatePipelineProgress({
+    pipelineId,
+    progress,
+    message,
+    status,
+  }: UpdatePipelineProgressInput & { status?: PipelineStatus }): Promise<Pipeline> {
     await PipelineModel.updateOne(
       { _id: pipelineId },
       {
         $set: {
           ...(typeof progress === 'number' ? { progress } : {}),
-          ...(statusMessage ? { statusMessage } : {}),
         },
-        ...(statusMessage
+        ...(message || status
           ? {
               $push: {
                 history: {
                   createdAt: new Date(),
-                  message: statusMessage,
+                  message,
+                  status,
                 } satisfies PipelineHistoryItem,
               },
             }
           : {}),
+      }
+    ).lean();
+
+    return this.getById(pipelineId);
+  }
+
+  async updatePipelineOptimization({
+    pipelineId,
+    score,
+  }: UpdatePipelineOptimizationInput): Promise<Pipeline> {
+    await PipelineModel.updateOne(
+      { _id: pipelineId },
+      {
+        $push: { optimizationScores: score },
       }
     ).lean();
 

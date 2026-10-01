@@ -3,36 +3,28 @@ import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
-import { CompleteExperimentRunInput } from '../classes/CompleteExperimentRunInput';
-import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
+import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ComputationManager } from '../services/ComputationManager';
 import { Pipeline } from '../../../core/pipeline';
 import { PipelineMachineInfoInput } from '../../../core/pipeline/classes/PipelineMachineInfo';
-import { ComputationResult } from '../classes/ComputationResult';
 
 @Resolver()
 export class ComputationResolver {
   private readonly manager = new ComputationManager();
 
-  @Query(() => [ComputationResult])
-  experimentResults(
-    @Arg('experimentId', () => ID) experimentId: string
-  ): Promise<ComputationResult[]> {
-    return this.manager.listResultsByExperiment(experimentId);
-  }
-
   @Query(() => OptimizationResult)
-  optimizeExperimentRuns(
+  async optimizeExperimentRuns(
     @Arg('experimentId', () => ID) experimentId: string
   ): Promise<OptimizationResult> {
-    return this.manager.optimizeExperimentRuns(experimentId);
+    return this.manager.optimize(experimentId);
   }
 
-  @Mutation(() => [Pipeline])
-  enqueueExperimentRuns(
+  @Mutation(() => Boolean)
+  async enqueueExperimentRuns(
     @Arg('input', () => EnqueueExperimentRunsInput) input: EnqueueExperimentRunsInput
-  ): Promise<Pipeline[]> {
-    return this.manager.enqueueRuns(input);
+  ): Promise<boolean> {
+    await this.manager.enqueueRuns(input);
+    return true;
   }
 
   @Mutation(() => Pipeline)
@@ -47,7 +39,7 @@ export class ComputationResolver {
     @Arg('queue', () => ComputationQueue) queue: ComputationQueue,
     @Arg('machineInfo', () => PipelineMachineInfoInput, { nullable: true })
     machineInfo?: PipelineMachineInfoInput
-  ): Promise<Pipeline | null> {
+  ): Promise<Pipeline | undefined> {
     return this.manager.claimNextRun(queue, machineInfo);
   }
 
@@ -61,17 +53,11 @@ export class ComputationResolver {
     return this.manager.resumeExperimentRuns(experimentId);
   }
 
-  @Mutation(() => Pipeline)
-  completeExperimentRun(
-    @Arg('input', () => CompleteExperimentRunInput) input: CompleteExperimentRunInput
-  ): Promise<Pipeline> {
-    return this.manager.completeRun(input);
-  }
-
-  @Mutation(() => Pipeline)
-  failExperimentRun(
-    @Arg('input', () => FailExperimentRunInput) input: FailExperimentRunInput
-  ): Promise<Pipeline> {
-    return this.manager.failRun(input);
+  @Mutation(() => Boolean)
+  async completePipeline(
+    @Arg('input', () => CompletePipelineInput) input: CompletePipelineInput
+  ): Promise<boolean> {
+    await this.manager.completePipeline(input);
+    return true;
   }
 }

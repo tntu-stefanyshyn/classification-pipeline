@@ -30,35 +30,6 @@ input CompleteExperimentRunInput {
   statusMessage: String
 }
 
-type PipelineHistoryItem {
-  createdAt: DateTimeISO!
-  message: String!
-}
-
-type PipelineMachineInfo {
-  appVersion: String
-  arch: String
-  cores: Int
-  cpuModel: String
-  hostname: String
-  lastSeenAt: DateTimeISO
-  memoryGb: Float
-  platform: String
-  queue: ComputationQueue
-  release: String
-}
-
-input PipelineMachineInfoInput {
-  appVersion: String
-  arch: String
-  cores: Int
-  cpuModel: String
-  hostname: String
-  memoryGb: Float
-  platform: String
-  release: String
-}
-
 enum ComputationMode {
   both
   cloud
@@ -98,30 +69,6 @@ type ComputationResultPayload {
   weightedAvg: ClassificationMetric
 }
 
-type Pipeline {
-  _id: ID!
-  createdAt: DateTimeISO!
-  experimentId: ID!
-  history: [PipelineHistoryItem!]!
-  pathNodeIds: [ID!]!
-  pathNodes: [GraphNode!]!
-  progress: Int
-  queue: ComputationQueue!
-  status: PipelineStatus!
-  statusMessage: String
-  updatedAt: DateTimeISO!
-}
-
-enum PipelineStatus {
-  completed
-  failed
-  idle
-  paused
-  queued
-  running
-  stopped
-}
-
 input CreateExperimentInput {
   description: String
   fileId: ID
@@ -142,7 +89,7 @@ scalar DateTimeISO
 
 input EnqueueExperimentRunsInput {
   experimentId: ID!
-  pathNodeIds: [ID!]
+  pipelineId: ID
   queue: ComputationQueue!
   rerun: Boolean
   runAll: Boolean
@@ -273,6 +220,60 @@ type OptimizationResult {
   score: Float!
 }
 
+type Pipeline {
+  _id: ID!
+  createdAt: DateTimeISO!
+  experimentId: ID!
+  graphStructureId: ID!
+  history: [PipelineHistoryItem!]!
+  pathNodeIds: [ID!]!
+  pathNodes: [GraphNode!]!
+  progress: Int
+  queue: ComputationQueue!
+  status: PipelineStatus!
+  statusMessage: String
+  updatedAt: DateTimeISO!
+}
+
+type PipelineHistoryItem {
+  createdAt: DateTimeISO!
+  message: String!
+}
+
+type PipelineMachineInfo {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  lastSeenAt: DateTimeISO
+  memoryGb: Float
+  platform: String
+  queue: ComputationQueue
+  release: String
+}
+
+input PipelineMachineInfoInput {
+  appVersion: String
+  arch: String
+  cores: Int
+  cpuModel: String
+  hostname: String
+  memoryGb: Float
+  platform: String
+  release: String
+}
+
+enum PipelineStatus {
+  completed
+  failed
+  idle
+  paused
+  queued
+  running
+  stopped
+}
+
 type Query {
   experiment(_id: ID!): Experiment
   experimentResults(experimentId: ID!): [ComputationResult!]!
@@ -351,8 +352,8 @@ input UpdateExperimentInput {
 }
 
 input UpdatePipelineInput {
+  pipelineId: ID!
   progress: Int
-  runId: ID!
   statusMessage: String
 }
 

@@ -87,6 +87,61 @@ const stubRouterPages = (t: any) => {
   });
 };
 
+for (const currentPath of ['/login', '/register']) {
+  test(`AppRouter redirects authenticated users from ${currentPath} to /app`, (t) => {
+    stubResolvedModule(
+      t,
+      routerCompiledFile,
+      'react-router-dom',
+      createReactRouterDomStub(currentPath)
+    );
+    stubRouterPages(t);
+    stubResolvedModule(t, routerCompiledFile, './graphql', {
+      useMeQuery: () => ({ data: { me: { _id: 'user-1' } }, loading: false, error: null }),
+    });
+
+    const module =
+      loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
+    const html = renderToStaticMarkup(
+      React.createElement(module.default, {
+        isAuthenticated: true,
+        onLoginSuccess: () => undefined,
+        onLogout: () => undefined,
+      })
+    );
+
+    assert.match(html, /navigate:\/app/);
+  });
+
+  test(`AppRouter keeps ${currentPath} accessible without a verified user`, (t) => {
+    stubResolvedModule(
+      t,
+      routerCompiledFile,
+      'react-router-dom',
+      createReactRouterDomStub(currentPath)
+    );
+    stubRouterPages(t);
+    stubResolvedModule(t, routerCompiledFile, './graphql', {
+      useMeQuery: () => ({ data: null, loading: false, error: null }),
+    });
+
+    const module =
+      loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
+    for (const isAuthenticated of [false, true]) {
+      const html = renderToStaticMarkup(
+        React.createElement(module.default, {
+          isAuthenticated,
+          onLoginSuccess: () => undefined,
+          onLogout: () => undefined,
+        })
+      );
+
+      assert.match(html, new RegExp(`data-page="${currentPath.slice(1)}"`));
+      assert.doesNotMatch(html, /navigate:\/app/);
+    }
+  });
+}
+
 test('AppRouter redirects unauthenticated users away from private routes', (t) => {
   stubResolvedModule(t, routerCompiledFile, 'react-router-dom', createReactRouterDomStub('/app'));
   stubRouterPages(t);

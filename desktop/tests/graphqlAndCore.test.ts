@@ -236,6 +236,7 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
   const tokenServiceCompiledFile = path.resolve(__dirname, '../src/services/tokenService.js');
   const storageCalls: Array<[string, string, string?]> = [];
   const snapshots: Array<string | null> = [];
+  const storedValues = new Map([['auth_token', 'saved-token']]);
 
   const previousLocalStorage = (globalThis as typeof globalThis & { localStorage?: unknown })
     .localStorage;
@@ -243,8 +244,15 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
     configurable: true,
     writable: true,
     value: {
-      setItem: (key: string, value: string) => storageCalls.push(['setItem', key, value]),
-      removeItem: (key: string) => storageCalls.push(['removeItem', key]),
+      getItem: (key: string) => storedValues.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storedValues.set(key, value);
+        storageCalls.push(['setItem', key, value]);
+      },
+      removeItem: (key: string) => {
+        storedValues.delete(key);
+        storageCalls.push(['removeItem', key]);
+      },
     },
   });
   t.after(() => {
@@ -277,19 +285,28 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
   const listenerCalls: Array<string | null> = [];
   const unsubscribe = module.tokenService.subscribe((token) => listenerCalls.push(token));
 
+  assert.equal(module.useAuthToken(), 'saved-token');
   module.tokenService.setToken('next-token');
+  assert.equal(module.useAuthToken(), 'next-token');
   module.tokenService.clearToken();
   const currentToken = module.useAuthToken();
   unsubscribe();
 
-  assert.equal(module.tokenService.getToken(), 'token');
-  assert.equal(currentToken, 'token');
+  assert.equal(module.tokenService.getToken(), null);
+  assert.equal(currentToken, null);
   assert.deepEqual(listenerCalls, ['next-token', null]);
   assert.deepEqual(storageCalls, [
     ['setItem', 'auth_token', 'next-token'],
     ['removeItem', 'auth_token'],
   ]);
-  assert.deepEqual(snapshots, ['token', 'token']);
+  assert.deepEqual(snapshots, [
+    'saved-token',
+    'saved-token',
+    'next-token',
+    'next-token',
+    null,
+    null,
+  ]);
 });
 
 test('types and localization exports stay aligned', () => {

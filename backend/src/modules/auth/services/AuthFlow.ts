@@ -45,11 +45,11 @@ export class AuthFlow {
   }
 
   async me(req: Request): Promise<User> {
-    if (config.isDev) {
-      return (await UserModel.findOne({
-        email: 'ivan_stefanyshyn0707@tntu.edu.ua',
-      }).lean()) as User;
-    }
+    // if (config.isDev) {
+    //   return (await UserModel.findOne({
+    //     email: 'ivan_stefanyshyn0707@tntu.edu.ua',
+    //   }).lean()) as User;
+    // }
 
     const token = this.extractToken(req);
     const payload = jwt.verify(token, config.jwtSecret) as JwtPayload;

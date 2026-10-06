@@ -32,8 +32,26 @@ const AppRouter: FC<AppRouterProps> = ({ isAuthenticated, onLoginSuccess, onLogo
   return (
     <HashRouter>
       <Routes>
-        <Route path="/login" element={<LoginPage onLoginSuccess={onLoginSuccess} />} />
-        <Route path="/register" element={<RegisterPage onRegisterSuccess={onLoginSuccess} />} />
+        <Route
+          path="/login"
+          element={
+            resolvedAuth ? (
+              <Navigate to="/app" replace />
+            ) : (
+              <LoginPage onLoginSuccess={onLoginSuccess} />
+            )
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            resolvedAuth ? (
+              <Navigate to="/app" replace />
+            ) : (
+              <RegisterPage onRegisterSuccess={onLoginSuccess} />
+            )
+          }
+        />
         <Route
           path="/app"
           element={

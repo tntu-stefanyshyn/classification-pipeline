@@ -148,3 +148,36 @@ test('Storage resolver delegates upload and download operations', async (t) => {
     ['download', 'uploads/key.csv'],
   ]);
 });
+
+test('Storage.signedDownloadUrl serves the compute service without a user filter', async (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  config.backend.serviceToken = 'svc-token';
+  useS3Config(t, {
+    bucket: 'uploads-bucket',
+    region: 'eu-west-1',
+    accessKeyId: '',
+    secretAccessKey: '',
+    presignExpiresSeconds: 900,
+  });
+
+  const resolver = new Storage();
+  const findOneArgs: any[] = [];
+  stub(t, resolver as unknown as Record<string, unknown>, 'storage', {
+    getSignedDownloadUrl: async () => ({ url: 'https://download', key: 'k', expiresIn: 900 }),
+  } as any);
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => {
+    throw new Error('Not authenticated');
+  });
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'findOne', (...args: any[]) => {
+    findOneArgs.push(args[0]);
+    return createLeanResult({ storageKey: 'uploads/key.csv' });
+  });
+
+  const fileId = new Types.ObjectId().toHexString();
+  const context = { req: { headers: { authorization: 'Bearer svc-token' } } } as any;
+  await resolver.signedDownloadUrl(fileId, context);
+  assert.deepEqual(findOneArgs, [{ _id: fileId }]);
+});

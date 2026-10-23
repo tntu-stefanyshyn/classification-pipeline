@@ -1,5 +1,6 @@
 import io
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from module_loader import load_compute_handler
@@ -231,7 +232,9 @@ class ComputeHandlerTests(unittest.TestCase):
 
         self.assertEqual(payload["file_id"], "file-1")
         self.assertEqual(payload["path"], path)
-        load_dataframe.assert_called_once_with(payload, "http://backend/graphql")
+        load_dataframe.assert_called_once_with(
+            payload, "http://backend/graphql", "svc-token"
+        )
         apply_preprocessing.assert_called_once_with("raw-x", {"log": "true"})
         run_classifier.assert_called_once_with(
             "normalized-x",
@@ -321,6 +324,22 @@ class ComputeHandlerTests(unittest.TestCase):
                 )
             ],
         )
+
+
+    def test_load_dataframe_forwards_token_to_signed_download_request(self):
+        module = load_compute_handler()
+        frame = SimpleNamespace(empty=False)
+
+        with patch.object(
+            module, "_fetch_signed_download_url", return_value="https://signed/file.csv"
+        ) as fetch_url, patch.object(module.pd, "read_csv", create=True, return_value=frame) as read_csv:
+            result = module._load_dataframe(
+                {"file_id": "file-1"}, "http://backend/graphql", "svc-token"
+            )
+
+        self.assertIs(result, frame)
+        fetch_url.assert_called_once_with("http://backend/graphql", "file-1", "svc-token")
+        read_csv.assert_called_once_with("https://signed/file.csv", sep=";")
 
 
 if __name__ == "__main__":

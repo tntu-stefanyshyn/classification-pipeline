@@ -3,6 +3,7 @@ import { WorkflowModel } from '../model/WorkflowModel';
 import { ObjectIdOrString } from '../../../types/context';
 import { WorkflowStatus, WorkflowType } from '../enums';
 import { Workflow } from '../classes/Workflow';
+import { WorkflowTransitionConflictError } from '../errors';
 import { SortOrder } from 'mongoose';
 
 export class WorkflowManager {
@@ -65,8 +66,9 @@ export class WorkflowManager {
         ? message.trim()
         : `Перехід статусу: ${String(workflow.status)} -> ${String(status)}`;
 
-    await WorkflowModel.updateOne(
-      { _id: workflow._id },
+    // Match the previous status so concurrent claimers cannot both win the transition.
+    const { modifiedCount } = await WorkflowModel.updateOne(
+      { _id: workflow._id, status: workflow.status },
       {
         $set: { status },
         $push: {
@@ -79,6 +81,7 @@ export class WorkflowManager {
         },
       }
     );
+    if (!modifiedCount) throw new WorkflowTransitionConflictError();
     await transition?.sideEffect?.({ instanceId });
   };
 }

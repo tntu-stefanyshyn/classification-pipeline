@@ -28,6 +28,7 @@ import { WorkflowType } from '../../../core/workflow/enums';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
 import { stringIdToObjectId } from '../../../utils';
 import { WorkflowModel, workflowsCollectionName } from '../../../core/workflow/model/WorkflowModel';
+import { WorkflowTransitionConflictError } from '../../../core/workflow/errors';
 import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
@@ -272,10 +273,16 @@ export class ComputationManager {
 
     if (!pipeline) return;
 
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.running,
-    });
+    try {
+      await this.pipelineManager.changeStatus({
+        pipelineId: pipeline._id,
+        status: PipelineStatus.running,
+      });
+    } catch (error) {
+      // Another worker claimed this run first.
+      if (error instanceof WorkflowTransitionConflictError) return;
+      throw error;
+    }
 
     if (normalizedMachineInfo) {
       await PipelineModel.updateOne(

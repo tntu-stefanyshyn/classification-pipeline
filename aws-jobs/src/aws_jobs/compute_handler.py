@@ -164,7 +164,9 @@ def _download_s3_to_temp(bucket: str, key: str) -> str:
         tmp.close()
 
 
-def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.DataFrame:
+def _load_dataframe(
+    payload: Dict[str, Any], backend_url: Optional[str], token: Optional[str] = None
+) -> pd.DataFrame:
     file_url = payload.get("file_url") or ""
     file_path = payload.get("file_path") or ""
     temp_path = ""
@@ -176,7 +178,7 @@ def _load_dataframe(payload: Dict[str, Any], backend_url: Optional[str]) -> pd.D
             temp_path = _download_s3_to_temp(bucket, key)
             file_path = temp_path
         elif backend_url and payload.get("file_id"):
-            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id")) # type: ignore
+            file_url = _fetch_signed_download_url(backend_url, payload.get("file_id"), token)  # type: ignore
 
     if not file_url and not file_path:
         if not payload.get("file_id"):
@@ -661,7 +663,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
    
 
     _emit(backend_url, pipelineId, message="Зчитування файлу ЕЕГ", progress=3)
-    df = _load_dataframe(payload, backend_url or None)
+    df = _load_dataframe(payload, backend_url or None, token)
     _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5)
 
     X, y = _prepare_features(df)

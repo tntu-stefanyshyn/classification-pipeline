@@ -51,9 +51,9 @@ export class Experiments {
     @Arg('_id', () => ID) _id: string,
     @Ctx() context: GraphQLContext
   ): Promise<Experiment | null> {
-    const user = await this.auth.me(context.req);
+    const user = this.auth.isService(context.req) ? null : await this.auth.me(context.req);
     try {
-      return await this.manager.getById(_id, user._id.toString());
+      return await this.manager.getById(_id, user?._id.toString());
     } catch {
       return null;
     }

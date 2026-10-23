@@ -120,3 +120,22 @@ test('AuthFlow.me rejects missing authentication headers outside development', a
 
   await assert.rejects(() => authFlow.me({ headers: {} } as any), /Not authenticated/);
 });
+
+test('AuthFlow.isService accepts only the configured service token', (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  const flow = new AuthFlow();
+  const req = (authorization?: string) => ({ headers: { authorization } }) as any;
+
+  config.backend.serviceToken = 'svc-token';
+  assert.equal(flow.isService(req('Bearer svc-token')), true);
+  assert.equal(flow.isService(req('Bearer svc-other')), false);
+  assert.equal(flow.isService(req('Bearer svc')), false);
+  assert.equal(flow.isService(req()), false);
+  assert.equal(flow.isService({} as any), false);
+
+  config.backend.serviceToken = '';
+  assert.equal(flow.isService(req('Bearer ')), false);
+});

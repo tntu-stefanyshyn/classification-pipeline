@@ -6,10 +6,12 @@ import PipelineBaseService from '../../../core/pipeline/services/PipelineBaseSer
 import { PipelineStatus } from '../../../core/pipeline/enums';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { ClassificationStage } from '../../experiments/classes/ClassificationStage';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { createLeanResult, stub } from '../../../test/testUtils';
 import { ComputationManager } from './ComputationManager';
+import { WorkflowTransitionConflictError } from '../../../core/workflow/errors';
 
 const validMetrics = {
   accuracy: 0.25,
@@ -138,4 +140,20 @@ test('ComputationManager.enqueueRuns rejects graphs without classification in ev
       } as any),
     /Усі конвеєри мають містити етап класифікації/
   );
+});
+
+test('ComputationManager.claimNextRun skips a run that another worker claimed first', async (t) => {
+  const manager = new ComputationManager();
+  const claimedRun = { _id: new Types.ObjectId(), queue: ComputationQueue.cloud };
+
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
+    claimedRun,
+  ]);
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatus: async () => {
+      throw new WorkflowTransitionConflictError();
+    },
+  } as any);
+
+  assert.equal(await manager.claimNextRun(ComputationQueue.cloud), undefined);
 });

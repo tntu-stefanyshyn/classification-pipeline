@@ -1,14 +1,50 @@
-version: '3.8'
 services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      mongo:
+        condition: service_healthy
+      aws-jobs:
+        condition: service_completed_successfully
+      aws-jobs-optimization:
+        condition: service_completed_successfully
+    env_file: backend/.env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/app
+      # Sibling compute containers reach the backend through the host's published port.
+      BACKEND_GRAPHQL_URL: http://host.docker.internal:4000/graphql
+    ports:
+      - "4000:4000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Build-only: produce the images the backend launches via docker.sock, then exit.
   aws-jobs:
     build: ./aws-jobs
-    container_name: aws-jobs
-    volumes:
-      - ./aws-jobs:/app
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_JOBS_IN_CONTAINER=1
-    command: python -u src/aws_jobs/compute_handler.py
-    restart: unless-stopped
+    image: aws-jobs
+    entrypoint: ["true"]
+    restart: "no"
+
+  aws-jobs-optimization:
+    build: ./aws-jobs
+    image: aws-jobs-optimization
+    entrypoint: ["true"]
+    restart: "no"
+
+volumes:
+  mongo-data:

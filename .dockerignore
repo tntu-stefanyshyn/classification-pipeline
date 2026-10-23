@@ -1,0 +1,8 @@
+node_modules
+**/node_modules
+**/dist
+desktop/*
+!desktop/package.json
+aws-jobs
+.git
+backend/.env

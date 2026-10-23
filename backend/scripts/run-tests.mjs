@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -43,7 +44,7 @@ const runCompiledTests = async () => {
 if (process.env[childEnvName] === '1') {
   await runCompiledTests();
 } else {
-  const outputFile = path.join('/tmp', `backend-test-output-${process.pid}.log`);
+  const outputFile = path.join(os.tmpdir(), `backend-test-output-${process.pid}.log`);
 
   const coverageResult = await runCommandWithTee(
     process.execPath,

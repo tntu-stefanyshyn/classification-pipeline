@@ -131,7 +131,8 @@ MONGODB_URI=mongodb://127.0.0.1:27017/app
 JWT_SECRET=replace-with-a-long-random-secret
 
 BACKEND_CLOUD_WORKER_ENABLED=false
-BACKEND_LOCAL_WORKER_ENABLED=false
+BACKEND_LOCAL_WORKER_ENABLED=true
+BACKEND_SERVICE_TOKEN=replace-with-a-long-random-string
 BACKEND_GRAPHQL_URL=http://host.docker.internal:4000/graphql
 
 AWS_S3_BUCKET=your-development-bucket
@@ -150,10 +151,13 @@ using those credentials; the desktop uploads directly to S3. Keep credentials in
 AWS Batch queues, job definitions, computation results buckets, and a root `.env`
 are unnecessary for this setup.
 
-The desktop worker executes the `local` queue. Keep both backend worker flags
-false: the backend's Docker worker consumes the `cloud` queue, and the AWS worker
-submits cloud jobs. These flags do not disable the desktop's local worker or the
-backend's Docker optimization runner.
+Two workers execute runs. The backend's Docker worker
+(`BACKEND_LOCAL_WORKER_ENABLED=true`, the default) consumes the `cloud` queue and
+needs no AWS Batch; the desktop worker executes the `local` queue. Keep
+`BACKEND_CLOUD_WORKER_ENABLED=false` unless you use AWS Batch. The containers that
+the backend starts authenticate with `BACKEND_SERVICE_TOKEN`; any long random string
+works. The same values apply to the Compose and the manual start below (Compose sets
+`MONGODB_URI` and `BACKEND_GRAPHQL_URL` itself).
 
 ### Allow uploads to the bucket from localhost
 
@@ -182,7 +186,24 @@ CORS allows the browser request, while IAM permissions authorize the upload.
 See [AWS CORS configuration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/enabling-cors-examples.html)
 and [CORS rule fields](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ManageCorsUsing.html).
 
-## 4. Start locally
+## 4. Start with Docker Compose (recommended)
+
+With Docker running and `backend/.env` created from `backend/.env.example`
+(local mode is the default; set `JWT_SECRET`, `BACKEND_SERVICE_TOKEN` and the S3 values), run from the root:
+
+```bash
+docker compose up -d
+npm run start:desktop
+```
+
+Compose starts MongoDB (volume `mongo-data`), builds the `aws-jobs` and
+`aws-jobs-optimization` images, and runs the backend on port 4000. The backend
+mounts `/var/run/docker.sock` to start compute containers, which reach it via
+`host.docker.internal` (mapped with `host-gateway`). MongoDB and the host
+installation steps above are then unnecessary; the compose backend overrides
+`MONGODB_URI`.
+
+## 4b. Start manually (without Compose)
 
 From the repository root, start the backend in one terminal:
 
@@ -190,8 +211,12 @@ From the repository root, start the backend in one terminal:
 npm run start:backend
 ```
 
-The backend's `prestart` hook builds the `aws-jobs-optimization` image before
-starting the server. It also attempts to stop existing processes on port 4000.
+The backend needs MongoDB (section 3) and the `aws-jobs` and `aws-jobs-optimization`
+images. Build the images once (and after changes in `aws-jobs/`):
+
+```bash
+docker compose build aws-jobs aws-jobs-optimization
+```
 
 Start the desktop from the repository root in another Linux terminal:
 
@@ -228,15 +253,17 @@ upload a CSV from the Files page. Confirm that it appears in the file list and
 under `uploads/` in the S3 bucket. The backend credentials also need `s3:GetObject`
 on `uploads/*` so computations can download the dataset through a presigned URL.
 
-To check local computation, create an experiment with the uploaded CSV, select
-`local` as the computation mode and allowed queue, and include a classification
-stage in every graph path. Start a local run and inspect its status and the
-desktop terminal logs. Keep the desktop open while local runs are queued or active.
+To check a computation, create an experiment with the uploaded CSV, select `cloud`
+(the backend's Docker worker) as the allowed queue, and include a classification
+stage in every graph path. Start a run and inspect its status and the backend logs
+(`docker compose logs -f backend` when using Compose). Runs on the `local` queue are
+executed by the desktop worker, which does not send a token to its container yet;
+see the troubleshooting entry below.
 
 After all pipelines complete, optimization uses the local `aws-jobs-optimization`
-image. The optimizer's authenticated experiment query requires
-`BACKEND_SERVICE_TOKEN` in `backend/.env` to be a valid login JWT for the experiment
-owner. Add it after signing in and restart the backend; replace it when it expires.
+image. The optimizer and the backend compute containers read the experiment and the
+dataset with `BACKEND_SERVICE_TOKEN` from `backend/.env`. Set it to any long random
+string and restart the backend.
 
 ## Troubleshooting
 
@@ -248,13 +275,13 @@ owner. Add it after signing in and restart the backend; replace it when it expir
   or Linux user permissions, and confirm `docker info` works without `sudo`.
 - **Local runs stay queued:** keep the desktop open, remove any
   `LOCAL_WORKER_ENABLED=false` override, and choose the `local` queue.
-- **Local run fails with `Not authenticated`:** the existing desktop worker sends
-  experiment queries without an authorization header, and the compute handler
-  does not consistently forward authentication to dataset queries. Enabling Docker
-  does not resolve this existing application issue; worker authentication needs a
-  code fix. Setting `BACKEND_SERVICE_TOKEN` alone does not fix the desktop worker.
-- **Optimization fails with `Not authenticated`:** set `BACKEND_SERVICE_TOKEN` to
-  the experiment owner's valid login JWT and restart the backend.
+- **Run fails with `Not authenticated`:** for runs executed by the backend Docker
+  worker (`cloud` queue), check that `BACKEND_SERVICE_TOKEN` is set in `backend/.env`
+  and restart the backend. The desktop worker for the `local` queue starts its
+  container without a token, so those runs can still fail this way (tracked
+  separately); use the `cloud` queue meanwhile.
+- **Optimization fails with `Not authenticated`:** set `BACKEND_SERVICE_TOKEN` and
+  restart the backend.
 - **Container cannot reach the backend:** check that the backend is listening on
   port 4000 and `BACKEND_GRAPHQL_URL` uses `host.docker.internal`.
 - **Port 4000 already in use:** stop the existing server before launching another.

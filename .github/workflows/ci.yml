@@ -14,45 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  node-tests:
-    name: Tests (${{ matrix.workspace }})
+  tests:
+    name: Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace: [backend, desktop]
-    env:
-      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Install dependencies and generate GraphQL types
-        run: npm ci
-      - name: Run tests
-        run: npm run test --workspace ${{ matrix.workspace }}
-
-  python-tests:
-    name: Tests (aws-jobs)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: aws-jobs
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: aws-jobs/pyproject.toml
-      - name: Install dependencies
-        run: python -m pip install -e '.[dev]'
-      - name: Run tests
-        run: python -m pytest
+      - name: Build shared test container
+        run: docker build --file Dockerfile.ci --tag classification-tests:ci .
+      - name: Run all tests in the same container
+        run: docker run --rm classification-tests:ci
 
   container-build:
     name: Docker (${{ matrix.image }})
@@ -83,7 +54,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
           cache: npm
       - name: Install dependencies and generate GraphQL types
         run: npm ci
@@ -100,18 +71,17 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [node-tests, python-tests, container-build, windows-installer]
+    needs: [tests, container-build, windows-installer]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every check to succeed
         env:
-          NODE_TESTS: ${{ needs.node-tests.result }}
-          PYTHON_TESTS: ${{ needs.python-tests.result }}
+          TESTS: ${{ needs.tests.result }}
           CONTAINERS: ${{ needs.container-build.result }}
           WINDOWS: ${{ needs.windows-installer.result }}
         run: |
-          for result in "$NODE_TESTS" "$PYTHON_TESTS" "$CONTAINERS" "$WINDOWS"; do
+          for result in "$TESTS" "$CONTAINERS" "$WINDOWS"; do
             if [ "$result" != success ]; then
               echo "A required check finished with status: $result"
               exit 1

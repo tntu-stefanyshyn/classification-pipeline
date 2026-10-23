@@ -4,9 +4,7 @@
 
 | Check                 | What it verifies                                                                                             |
 | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Tests (backend)       | TypeScript compilation and all backend tests on Node.js 22                                                   |
-| Tests (desktop)       | Portable codegen cleanup and all desktop tests on Node.js 22                                                 |
-| Tests (aws-jobs)      | All Python tests on Python 3.11                                                                              |
+| Tests                 | One Docker container runs `npm test`: desktop, backend, and Python suites, with Node.js 24 and Python 3.11   |
 | Docker (backend)      | The backend image builds from the repository root                                                            |
 | Docker (aws-jobs)     | The compute/optimization image builds                                                                        |
 | Windows x64 installer | GraphQL code generation, production application bundles, and a Squirrel installer on a native Windows runner |
@@ -26,13 +24,23 @@ This workflow does not create GitHub releases, publish container images to ECR, 
 
 From the repository root:
 
+Run the complete CI test suite in the same container used by GitHub Actions:
+
 ```bash
+docker build -f Dockerfile.ci -t classification-tests:ci .
+docker run --rm classification-tests:ci
+```
+
+To run the same test command directly on your machine:
+
+```bash
+nvm install
+nvm use
 npm ci
-npm run test:desktop
-npm run test --workspace backend
 python3 -m venv aws-jobs/.venv
-aws-jobs/.venv/bin/python -m pip install -e 'aws-jobs[dev]'
-aws-jobs/.venv/bin/python -m pytest aws-jobs/tests
+source aws-jobs/.venv/bin/activate
+python -m pip install -e 'aws-jobs[dev]'
+npm test
 docker build -f backend/Dockerfile -t backend:ci .
 docker build -f aws-jobs/Dockerfile -t aws-jobs:ci aws-jobs
 ```

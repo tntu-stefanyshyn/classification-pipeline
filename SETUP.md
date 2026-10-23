@@ -22,21 +22,21 @@ On native Linux, use your normal desktop session. All remaining commands run in
 the Linux terminal, including on WSL. Keep the repository in your Linux home
 directory (for example, `~/projects/classification-pipeline`).
 
-You need Git, curl, Node.js 20+ with npm 10+, local MongoDB, and Docker. On Ubuntu:
+You need Git, curl, Node.js 24 with npm 11+, local MongoDB, and Docker. On Ubuntu:
 
 ```bash
 sudo apt update
 sudo apt install -y git curl
 ```
 
-Install Node.js 22 with [NVM](https://github.com/nvm-sh/nvm/tree/v0.40.3), or use
+Install Node.js 24 with [NVM](https://github.com/nvm-sh/nvm/tree/v0.40.3), or use
 your existing installation if it meets the requirements:
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 source ~/.bashrc
-nvm install 22
-nvm use 22
+nvm install 24
+nvm use 24
 node --version
 npm --version
 ```

@@ -49,6 +49,7 @@ if (process.env[childEnvName] === '1') {
   const coverageResult = await runCommandWithTee(
     process.execPath,
     [
+      '--test-reporter=tap',
       '--experimental-test-coverage',
       '--test-coverage-exclude=dist/**/*.test.js',
       '--test-coverage-exclude=dist/test/**',

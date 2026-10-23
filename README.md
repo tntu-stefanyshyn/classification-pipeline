@@ -12,6 +12,8 @@ Desktop application and backend for building and running classification experime
 
 ## Quick start
 
+Use Node.js 24 and npm 11 or newer. The Node.js version is recorded in [`.nvmrc`](.nvmrc).
+
 ```bash
 cp backend/.env.example backend/.env   # set JWT_SECRET, BACKEND_SERVICE_TOKEN and the S3 values
 docker compose up -d                   # MongoDB, backend, compute images

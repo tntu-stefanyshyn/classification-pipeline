@@ -44,5 +44,5 @@ await build({
   packages: 'external',
   platform: 'node',
   sourcemap: false,
-  target: 'node20',
+  target: 'node24',
 });

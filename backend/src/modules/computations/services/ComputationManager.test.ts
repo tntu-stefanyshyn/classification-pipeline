@@ -11,6 +11,7 @@ import { ClassificationStage } from '../../experiments/classes/ClassificationSta
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { createLeanResult, stub } from '../../../test/testUtils';
 import { ComputationManager } from './ComputationManager';
+import { WorkflowTransitionConflictError } from '../../../core/workflow/errors';
 
 const validMetrics = {
   accuracy: 0.25,
@@ -150,7 +151,7 @@ test('ComputationManager.claimNextRun skips a run that another worker claimed fi
   ]);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async () => {
-      throw new Error('TRANSITION_NOT_FOUND');
+      throw new WorkflowTransitionConflictError();
     },
   } as any);
 

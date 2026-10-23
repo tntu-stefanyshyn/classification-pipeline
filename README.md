@@ -12,7 +12,7 @@ Desktop application and backend for building and running classification experime
 ## Quick start
 
 ```bash
-cp backend/.env.example backend/.env   # set JWT_SECRET and the S3 values
+cp backend/.env.example backend/.env   # set JWT_SECRET, BACKEND_SERVICE_TOKEN and the S3 values
 docker compose up -d                   # MongoDB, backend, compute images
 npm install && npm run start:desktop   # Electron runs on the host
 ```

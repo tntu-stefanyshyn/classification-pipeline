@@ -6,6 +6,7 @@ import puppeteer from 'puppeteer';
 import { WorkflowType } from '../../core/workflow/enums';
 import { stub, createLeanResult } from '../../test/testUtils';
 import { AuthFlow } from '../auth/services/AuthFlow';
+import { config } from '../../config/config';
 import { ComputationMode } from './classes/ComputationMode';
 import { ComputationQueue } from '../computations/classes/ComputationQueue';
 import { ClassificationStage, CLASSIFICATION_STAGE_VALUES } from './classes/ClassificationStage';
@@ -364,6 +365,7 @@ test('Experiments resolver delegates queries, field resolvers and mutations', as
 
   stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
     me: async () => user,
+    isService: () => false,
   } as any);
   stub(t, resolver as unknown as Record<string, unknown>, 'manager', {
     list: async (...args: any[]) => {
@@ -559,4 +561,33 @@ test('buildGraphReportPdf renders html and returns a pdf buffer', async (t) => {
   assert.match(capturedHtml, /Signal Analysis/);
   assert.match(capturedHtml, /Найефективніший конвеєр/);
   assert.equal(closed, true);
+});
+
+test('Experiments.experiment lets the compute service read any experiment without a user', async (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  config.backend.serviceToken = 'svc-token';
+
+  const resolver = new Experiments();
+  const experiment = { _id: new Types.ObjectId() };
+  const getByIdArgs: any[] = [];
+  stub(t, resolver as unknown as Record<string, unknown>, 'manager', {
+    getById: async (...args: any[]) => {
+      getByIdArgs.push(args);
+      return experiment;
+    },
+  } as any);
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => {
+    throw new Error('Not authenticated');
+  });
+
+  const context = { req: { headers: { authorization: 'Bearer svc-token' } } } as any;
+  assert.equal(await resolver.experiment('exp-1', context), experiment);
+  assert.deepEqual(getByIdArgs, [['exp-1', undefined]]);
+  await assert.rejects(
+    () => resolver.experiment('exp-1', { req: { headers: {} } } as any),
+    /Not authenticated/
+  );
 });

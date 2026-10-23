@@ -7,6 +7,7 @@ import { WorkflowType } from '../enums';
 import { WorkflowModel } from '../model/WorkflowModel';
 import { stub } from '../../../test/testUtils';
 import { WorkflowManager } from './WorkflowManager';
+import { WorkflowTransitionConflictError } from '../errors';
 
 test('WorkflowManager.changeStatus updates status history and runs side effects', async (t) => {
   const manager = new WorkflowManager();
@@ -119,7 +120,7 @@ test('WorkflowManager.changeStatus loses the race when the status already change
           },
         ],
       }),
-    /TRANSITION_NOT_FOUND/
+    WorkflowTransitionConflictError
   );
   assert.equal(sideEffectRan, false);
 });

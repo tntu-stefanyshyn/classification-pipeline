@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { timingSafeEqual } from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import type { Request } from 'express';
 
@@ -65,6 +66,15 @@ export class AuthFlow {
     }
 
     return user;
+  }
+
+  /** True when the request carries BACKEND_SERVICE_TOKEN (compute workers read experiments and files with it). */
+  isService(req: Request): boolean {
+    const expected = Buffer.from(config.backend.serviceToken);
+    const provided = Buffer.from((req.headers?.authorization || '').replace('Bearer', '').trim());
+    return (
+      expected.length > 0 && expected.length === provided.length && timingSafeEqual(expected, provided)
+    );
   }
 
   private buildToken(user: User): string {

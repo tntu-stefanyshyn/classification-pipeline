@@ -52,6 +52,11 @@ export class LocalBackendComputationWorker {
       console.log(
         `Локальний backend-воркер готовий: polling=${this.pollMs}ms, dockerImage="${this.dockerImage}".`
       );
+      if (!config.backend.serviceToken) {
+        console.warn(
+          'BACKEND_SERVICE_TOKEN не задано: контейнери обчислень не зможуть прочитати експеримент і файл.'
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'невідома помилка підготовки docker-образу';

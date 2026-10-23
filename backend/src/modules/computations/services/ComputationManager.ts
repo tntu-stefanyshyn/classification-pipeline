@@ -28,6 +28,7 @@ import { WorkflowType } from '../../../core/workflow/enums';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
 import { stringIdToObjectId } from '../../../utils';
 import { WorkflowModel, workflowsCollectionName } from '../../../core/workflow/model/WorkflowModel';
+import { WorkflowTransitionConflictError } from '../../../core/workflow/errors';
 import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
@@ -279,7 +280,7 @@ export class ComputationManager {
       });
     } catch (error) {
       // Another worker claimed this run first.
-      if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') return;
+      if (error instanceof WorkflowTransitionConflictError) return;
       throw error;
     }
 

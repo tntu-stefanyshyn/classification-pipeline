@@ -33,10 +33,10 @@ export class Storage {
       throw new Error('File _id is invalid');
     }
 
-    const user = await authFlow.me(context.req);
+    const user = authFlow.isService(context.req) ? null : await authFlow.me(context.req);
     const file = await UploadedFileModel.findOne({
       _id: trimmedId,
-      uploadedById: user?._id,
+      ...(user ? { uploadedById: user._id } : {}),
     }).lean();
     if (!file?.storageKey) {
       throw new Error('File not found');

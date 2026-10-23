@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
@@ -9,14 +11,31 @@ import {
   upsertTestMetricsRow,
 } from './test-metrics.mjs';
 
-const ignoreDir = '/usr/lib/python3.12:/usr/lib/python3/dist-packages:/tmp:./node_modules';
+const pythonEnvironment = JSON.parse(
+  execFileSync(
+    'python3',
+    [
+      '-c',
+      'import json, sys, sysconfig; print(json.dumps({"executable": sys.executable, "libraryDirs": [sysconfig.get_path(name) for name in ("stdlib", "platstdlib", "purelib", "platlib")]}))',
+    ],
+    { encoding: 'utf8' }
+  )
+);
+const ignoreDir = [
+  ...pythonEnvironment.libraryDirs,
+  tmpdir(),
+  path.join(projectRoot, 'node_modules'),
+].join(path.delimiter);
 
 const runSuite = async ({ component, traceDir, pattern }) => {
   await rm(traceDir, { recursive: true, force: true });
-  const outputFile = path.join('/tmp', `${component.replace(/[:]/g, '-')}-test-output-${process.pid}.log`);
+  const outputFile = path.join(
+    '/tmp',
+    `${component.replace(/[:]/g, '-')}-test-output-${process.pid}.log`
+  );
 
   const result = await runCommandWithTee(
-    'python3',
+    pythonEnvironment.executable,
     [
       '-m',
       'trace',

@@ -3,14 +3,11 @@ import type { CodegenConfig } from '@graphql-codegen/cli';
 const config: CodegenConfig = {
   schema: 'schema.graphql',
   documents: ['./src/**/*.graphql'],
-  hooks: {
-    afterAllFileWrite: ['prettier --write'],
-  },
   config: {
     sort: false,
   },
-   generates: {
-   'src/graphql/types.generated.ts': {
+  generates: {
+    'src/graphql/types.generated.ts': {
       plugins: ['typescript'],
       config: {
         declarationKind: {
@@ -41,7 +38,7 @@ const config: CodegenConfig = {
         preResolveTypes: true,
         dedupeOperationSuffix: true,
         withRefetchFn: true,
-       experimentalFragmentVariables: true,
+        experimentalFragmentVariables: true,
         dedupeFragments: false,
         namingConvention: {
           typeNames: 'keep',

@@ -24,8 +24,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test": "node ./scripts/build-tests.mjs && node ./scripts/run-tests.mjs",
-    "codegen:clean": "find src -type d -name generated -prune -exec rm -rf {} +",
+    "test": "node --test ./scripts/clean-codegen.test.mjs && node ./scripts/build-tests.mjs && node ./scripts/run-tests.mjs",
+    "codegen:clean": "node ./scripts/clean-codegen.mjs",
     "sync:schema": "node scripts/sync-schema.js",
     "codegen": "npm run codegen:clean && npm run sync:schema && graphql-codegen --config codegen.ts"
   },

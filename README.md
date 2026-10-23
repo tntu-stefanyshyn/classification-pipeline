@@ -4,6 +4,7 @@ Desktop application and backend for building and running classification experime
 
 ## Documentation
 
+- [Continuous integration](docs/CI.md) - automated checks and Windows x64 installer artifacts.
 - [Setup guide](SETUP.md) - local setup for WSL/Linux, Docker computations, and S3 uploads.
 - [Backend documentation](backend/instructions/README.md)
 - [Desktop documentation](desktop/instructions/README.md)

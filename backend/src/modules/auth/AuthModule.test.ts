@@ -6,7 +6,7 @@ import { Types } from 'mongoose';
 import { config } from '../../config/config';
 import { User } from '../../core/user';
 import { UserModel } from '../../core/user/models/UserModel';
-import { stub, createLeanResult } from '../../test/testUtils';
+import { stub } from '../../test/testUtils';
 import { Auth } from './graphql/Auth';
 import { AuthPayload } from './classes/AuthPayload';
 import { LoginInput } from './classes/LoginInput';
@@ -57,26 +57,16 @@ test('auth classes store assigned values and resolver delegates to AuthFlow', as
   assert.deepEqual(meCalls, [{ headers: {} }]);
 });
 
-test('AuthFlow.me returns seeded dev user when development mode is enabled', async (t) => {
+test('AuthFlow.me requires authentication even when development mode is enabled', async (t) => {
   const authFlow = new AuthFlow();
   const originalIsDev = config.isDev;
-  const devUser = { _id: new Types.ObjectId(), email: 'dev@example.com' };
 
   t.after(() => {
     (config as any).isDev = originalIsDev;
   });
   (config as any).isDev = true;
 
-  stub(t, UserModel as unknown as Record<string, unknown>, 'findOne', (query: any) => {
-    assert.deepEqual(query, {
-      email: 'ivan_stefanyshyn0707@tntu.edu.ua',
-    });
-    return createLeanResult(devUser);
-  });
-
-  const result = await authFlow.me({ headers: {} } as any);
-
-  assert.equal(result, devUser);
+  await assert.rejects(() => authFlow.me({ headers: {} } as any), /Not authenticated/);
 });
 
 test('AuthFlow.me verifies bearer token and loads the user', async (t) => {

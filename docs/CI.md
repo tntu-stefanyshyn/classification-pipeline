@@ -4,8 +4,8 @@
 
 | Check                 | What it verifies                                                                                             |
 | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Tests (backend)       | TypeScript compilation and all backend tests on Node.js 22                                                   |
-| Tests (desktop)       | Portable codegen cleanup and all desktop tests on Node.js 22                                                 |
+| Tests (backend)       | TypeScript compilation and all backend tests on Node.js 24                                                   |
+| Tests (desktop)       | Portable codegen cleanup and all desktop tests on Node.js 24                                                 |
 | Tests (aws-jobs)      | All Python tests on Python 3.11                                                                              |
 | Docker (backend)      | The backend image builds from the repository root                                                            |
 | Docker (aws-jobs)     | The compute/optimization image builds                                                                        |
@@ -18,6 +18,8 @@ To require CI before merging, select **CI passed** as a required status check in
 
 Open a successful **Actions → CI** run and download the **desktop-windows-x64** artifact. Unzip it and run the `Setup.exe` installer. Artifacts include the Squirrel update packages and are retained for 14 days. These builds are unsigned.
 
+The Windows job also starts the Electron 45 runtime in Node mode and verifies that its embedded Node.js major version is 24 before building the installer.
+
 The desktop application uses `http://localhost:4000/graphql` by default. Start the backend with the existing setup instructions before using it.
 
 This workflow does not create GitHub releases, publish container images to ECR, or deploy the backend.
@@ -27,6 +29,8 @@ This workflow does not create GitHub releases, publish container images to ECR, 
 From the repository root:
 
 ```bash
+nvm install
+nvm use
 npm ci
 npm run test:desktop
 npm run test --workspace backend

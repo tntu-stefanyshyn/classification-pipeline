@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=20",
-    "npm": ">=10"
+    "node": "24.x",
+    "npm": ">=11"
   },
   "os": [
     "darwin",
@@ -51,14 +51,15 @@
     "@graphql-codegen/typescript-operations": "^5.0.7",
     "@graphql-codegen/typescript-react-apollo": "^4.3.4",
     "@graphql-tools/code-file-loader": "^8.1.27",
-    "@tsconfig/node22": "^22.0.5",
+    "@tsconfig/node24": "^24.0.5",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "39.2.4",
+    "electron": "45.0.0",
     "electron-reloader": "^1.2.3",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^10.1.8",

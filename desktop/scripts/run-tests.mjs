@@ -32,6 +32,7 @@ if (testFiles.length === 0) {
 }
 
 const coverageArgs = [
+  '--test-reporter=tap',
   '--experimental-test-coverage',
   '--test-coverage-include=.test-dist/src/**/*.js',
   '--test-coverage-exclude=.test-dist/tests/**/*.js',

@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM node:24-slim
 # docker CLI: the backend starts compute containers through the mounted docker.sock
 # chromium: puppeteer renders the PDF report
 RUN apt-get update && apt-get install -y --no-install-recommends docker.io chromium && rm -rf /var/lib/apt/lists/*

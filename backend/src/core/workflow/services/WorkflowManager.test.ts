@@ -25,7 +25,7 @@ test('WorkflowManager.changeStatus updates status history and runs side effects'
     'updateOne',
     async (...args: any[]) => {
       updateCalls.push(args);
-      return {};
+      return { modifiedCount: 1 };
     }
   );
 
@@ -45,7 +45,7 @@ test('WorkflowManager.changeStatus updates status history and runs side effects'
   });
 
   assert.equal(updateCalls.length, 1);
-  assert.deepEqual(updateCalls[0][0], { _id: workflowId });
+  assert.deepEqual(updateCalls[0][0], { _id: workflowId, status: ExperimentStatus.creating });
   assert.equal(updateCalls[0][1].$set.status, ExperimentStatus.configuring);
   assert.equal(
     updateCalls[0][1].$push.history.message,
@@ -68,7 +68,7 @@ test('WorkflowManager.changeStatus trims explicit messages', async (t) => {
     'updateOne',
     async (...args: any[]) => {
       updateCalls.push(args);
-      return {};
+      return { modifiedCount: 1 };
     }
   );
 
@@ -86,6 +86,42 @@ test('WorkflowManager.changeStatus trims explicit messages', async (t) => {
   });
 
   assert.equal(updateCalls[0][1].$push.history.message, 'Launching pipelines');
+});
+
+test('WorkflowManager.changeStatus loses the race when the status already changed', async (t) => {
+  const manager = new WorkflowManager();
+  let sideEffectRan = false;
+
+  stub(t, manager as unknown as Record<string, unknown>, 'getWorkflow', async () => ({
+    _id: new Types.ObjectId(),
+    status: ExperimentStatus.creating,
+  }));
+  stub(
+    t,
+    WorkflowModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async () => ({ modifiedCount: 0 })
+  );
+
+  await assert.rejects(
+    () =>
+      manager.changeStatus({
+        instanceId: new Types.ObjectId(),
+        status: ExperimentStatus.configuring,
+        type: WorkflowType.EXPERIMENT,
+        transitions: [
+          {
+            from: ExperimentStatus.creating,
+            to: ExperimentStatus.configuring,
+            sideEffect: async () => {
+              sideEffectRan = true;
+            },
+          },
+        ],
+      }),
+    /TRANSITION_NOT_FOUND/
+  );
+  assert.equal(sideEffectRan, false);
 });
 
 test('WorkflowManager.changeStatus rejects unsupported transitions', async (t) => {

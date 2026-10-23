@@ -272,10 +272,16 @@ export class ComputationManager {
 
     if (!pipeline) return;
 
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.running,
-    });
+    try {
+      await this.pipelineManager.changeStatus({
+        pipelineId: pipeline._id,
+        status: PipelineStatus.running,
+      });
+    } catch (error) {
+      // Another worker claimed this run first.
+      if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') return;
+      throw error;
+    }
 
     if (normalizedMachineInfo) {
       await PipelineModel.updateOne(

@@ -123,3 +123,7 @@ aws-jobs/.coverage
 aws-jobs/.pytest_cache/
 
 .codex
+
+# Local tooling
+.ua/
+.claude/

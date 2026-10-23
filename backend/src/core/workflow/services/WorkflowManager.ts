@@ -65,8 +65,9 @@ export class WorkflowManager {
         ? message.trim()
         : `Перехід статусу: ${String(workflow.status)} -> ${String(status)}`;
 
-    await WorkflowModel.updateOne(
-      { _id: workflow._id },
+    // Match the previous status so concurrent claimers cannot both win the transition.
+    const { modifiedCount } = await WorkflowModel.updateOne(
+      { _id: workflow._id, status: workflow.status },
       {
         $set: { status },
         $push: {
@@ -79,6 +80,7 @@ export class WorkflowManager {
         },
       }
     );
+    if (!modifiedCount) throw new Error('TRANSITION_NOT_FOUND');
     await transition?.sideEffect?.({ instanceId });
   };
 }

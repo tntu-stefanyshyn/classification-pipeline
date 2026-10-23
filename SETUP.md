@@ -182,7 +182,24 @@ CORS allows the browser request, while IAM permissions authorize the upload.
 See [AWS CORS configuration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/enabling-cors-examples.html)
 and [CORS rule fields](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ManageCorsUsing.html).
 
-## 4. Start locally
+## 4. Start with Docker Compose (recommended)
+
+With Docker running and `backend/.env` created from `backend/.env.example`
+(local mode is the default; set `JWT_SECRET` and the S3 values), run from the root:
+
+```bash
+docker compose up -d
+npm run start:desktop
+```
+
+Compose starts MongoDB (volume `mongo-data`), builds the `aws-jobs` and
+`aws-jobs-optimization` images, and runs the backend on port 4000. The backend
+mounts `/var/run/docker.sock` to start compute containers, which reach it via
+`host.docker.internal` (mapped with `host-gateway`). MongoDB and the host
+installation steps above are then unnecessary; the compose backend overrides
+`MONGODB_URI`.
+
+## 4b. Start manually (without Compose)
 
 From the repository root, start the backend in one terminal:
 
@@ -190,8 +207,12 @@ From the repository root, start the backend in one terminal:
 npm run start:backend
 ```
 
-The backend's `prestart` hook builds the `aws-jobs-optimization` image before
-starting the server. It also attempts to stop existing processes on port 4000.
+The backend needs MongoDB (section 3) and the `aws-jobs` and `aws-jobs-optimization`
+images. Build the images once (and after changes in `aws-jobs/`):
+
+```bash
+docker compose build aws-jobs aws-jobs-optimization
+```
 
 Start the desktop from the repository root in another Linux terminal:
 

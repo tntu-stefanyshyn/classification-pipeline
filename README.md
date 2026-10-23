@@ -12,11 +12,10 @@ Desktop application and backend for building and running classification experime
 ## Quick start
 
 ```bash
-npm install
-npm run start:backend
-npm run start:desktop
+cp backend/.env.example backend/.env   # set JWT_SECRET and the S3 values
+docker compose up -d                   # MongoDB, backend, compute images
+npm install && npm run start:desktop   # Electron runs on the host
 ```
 
-Before starting, complete the [setup guide](SETUP.md), especially the `backend/.env` configuration.
-Run the backend and desktop commands in separate terminals.
+See the [setup guide](SETUP.md) for details (S3 CORS, WSL2, running the backend without Docker).
 The desktop starts the local computation worker and prepares its Docker image automatically.

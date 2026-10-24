@@ -118,29 +118,13 @@ test('FilesPage handles upload, refresh, delete, and column renderers', async (t
   const uploadRequests: any[] = [];
   const createFileCalls: any[] = [];
   const deleteCalls: any[] = [];
+  const usageCalls: any[] = [];
   const refetchCalls: string[] = [];
 
   const previousFetch = globalThis.fetch;
-  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
   globalThis.fetch = (async () => ({ ok: true })) as typeof globalThis.fetch;
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    writable: true,
-    value: {
-      confirm: () => true,
-    },
-  });
   t.after(() => {
     globalThis.fetch = previousFetch;
-    if (previousWindow === undefined) {
-      delete (globalThis as typeof globalThis & { window?: unknown }).window;
-      return;
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      writable: true,
-      value: previousWindow,
-    });
   });
 
   const state = stubReactHooks(t, compiledFile, { refs: [fileInputRef] });
@@ -182,6 +166,23 @@ test('FilesPage handles upload, refresh, delete, and column renderers', async (t
       },
       { loading: false },
     ],
+    useUploadedFileUsageLazyQuery: () => [
+      async (options: any) => {
+        usageCalls.push(options);
+        return {
+          data: {
+            uploadedFileUsage: {
+              experiments: [
+                { _id: 'exp-1', name: 'Iris baseline', status: 'configuring', blocking: false },
+              ],
+              otherExperimentsCount: 2,
+              blocked: false,
+            },
+          },
+        };
+      },
+      { loading: false },
+    ],
   });
 
   const module =
@@ -212,18 +213,116 @@ test('FilesPage handles upload, refresh, delete, and column renderers', async (t
     getValue: () => 'processed',
   });
   const deleteCell = dataTable!.props.columns[4].cell({
-    row: { original: { _id: 'file-1' } },
+    row: { original: { _id: 'file-1', filename: 'signals.csv' } },
   });
-  findElement(deleteCell, (element) => element.type === 'button')!.props.onClick();
+  await findElement(deleteCell, (element) => element.type === 'button')!.props.onClick();
+
+  // Clicking delete only reviews the usage; nothing is deleted before confirmation.
+  assert.deepEqual(usageCalls, [{ variables: { _id: 'file-1' } }]);
+  assert.deepEqual(deleteCalls, []);
+
+  state.reset();
+  const modal = findModal(module.default({ onLogout: () => undefined }));
+  assert.equal(modal.props.open, true);
+  const body = textOf(modal.props.children);
+  assert.match(body, /signals\.csv/);
+  assert.match(body, /Iris baseline/);
+  assert.match(body, /2/);
+  const [, confirmButton] = findElements(
+    modal.props.footer,
+    (element) => element.type === 'button'
+  );
+  assert.equal(confirmButton.props.disabled, false);
+  await confirmButton.props.onClick();
 
   assert.deepEqual(actions, ['pick-file']);
   assert.deepEqual(uploadRequests[0].variables.input.filename, 'signals.csv');
   assert.equal(createFileCalls[0].variables.input.storageKey, 'files/key.csv');
-  assert.deepEqual(deleteCalls, [{ variables: { _id: 'file-1' } }]);
+  assert.deepEqual(deleteCalls, [{ variables: { _id: 'file-1', detachExperimentIds: ['exp-1'] } }]);
+  assert.equal(state.values[2], null);
   assert.ok(refetchCalls.length >= 2);
   assert.ok(refetchCalls.every((value) => value === 'files'));
   assert.equal(fileInputRef.current.value, '');
   assert.ok(state.calls.length >= 4);
+});
+
+const textOf = (node: unknown): string => {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (React.isValidElement(node)) return textOf((node.props as { children?: unknown }).children);
+  return '';
+};
+
+const findModal = (tree: unknown) =>
+  findElement(tree, (element) => getElementName(element) === 'Modal')!;
+
+test('FilesPage blocks deleting a file used by a computing experiment and supports cancel', async (t) => {
+  const compiledFile = path.resolve(__dirname, '../src/components/pages/FilesPage/FilesPage.js');
+  const modulePath = path.resolve(__dirname, '../src/components/pages/FilesPage/FilesPage');
+  const deleteCalls: any[] = [];
+  let usageResult: any = {
+    data: {
+      uploadedFileUsage: {
+        experiments: [{ _id: 'exp-1', name: 'Wine', status: 'computing', blocking: true }],
+        otherExperimentsCount: 0,
+        blocked: true,
+      },
+    },
+  };
+
+  const state = stubReactHooks(t, compiledFile);
+  stubResolvedModule(t, compiledFile, './graphql', {
+    useUploadedFilesQuery: () => ({
+      data: { uploadedFiles: [] },
+      loading: false,
+      error: null,
+      refetch: async () => undefined,
+    }),
+    useSignedUploadUrlLazyQuery: () => [async () => ({})],
+    useCreateUploadedFileMutation: () => [async () => ({})],
+    useDeleteUploadedFileMutation: () => [
+      async (options: any) => deleteCalls.push(options),
+      { loading: false },
+    ],
+    useUploadedFileUsageLazyQuery: () => [async () => usageResult, { loading: false }],
+  });
+
+  const module =
+    loadFreshModule<typeof import('../src/components/pages/FilesPage/FilesPage')>(modulePath);
+  const render = () => {
+    state.reset();
+    return module.default({ onLogout: () => undefined });
+  };
+  const clickDelete = async () => {
+    const dataTable = findElement(render(), (element) => getElementName(element) === 'DataTable');
+    const deleteCell = dataTable!.props.columns[4].cell({
+      row: { original: { _id: 'file-1', filename: 'wine.csv' } },
+    });
+    await findElement(deleteCell, (element) => element.type === 'button')!.props.onClick();
+  };
+
+  await clickDelete();
+  let modal = findModal(render());
+  assert.equal(modal.props.open, true);
+  assert.match(textOf(modal.props.children), /Wine/);
+  const [cancelButton, confirmButton] = findElements(
+    modal.props.footer,
+    (element) => element.type === 'button'
+  );
+  assert.equal(confirmButton.props.disabled, true);
+
+  cancelButton.props.onClick();
+  modal = findModal(render());
+  assert.equal(modal.props.open, false);
+  assert.deepEqual(deleteCalls, []);
+
+  // A failed usage lookup is reported and does not open the modal.
+  usageResult = { error: new Error('Not authenticated') };
+  await clickDelete();
+  assert.equal(findModal(render()).props.open, false);
+  assert.equal(state.values[1], 'Not authenticated');
+  assert.deepEqual(deleteCalls, []);
 });
 
 test('ExperimentsPage opens modal, uploads files, submits creation, and navigates rows', async (t) => {

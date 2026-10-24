@@ -32,4 +32,8 @@ export class UploadedFile {
 
   @prop({ required: true, trim: true })
   storageKey!: string;
+
+  // Set while a deletion is in progress; experiments cannot attach a file marked this way.
+  @prop()
+  deletingAt?: Date;
 }

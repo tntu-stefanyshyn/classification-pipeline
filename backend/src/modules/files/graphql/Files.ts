@@ -1,5 +1,6 @@
 import { Arg, Ctx, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { UploadedFile } from '../classes/UploadedFile';
+import { UploadedFileUsage } from '../classes/UploadedFileUsage';
 import { CreateUploadedFileInput } from '../classes/CreateUploadedFileInput';
 import { fileStore } from '../services/FileStore';
 import { AuthFlow } from '../../auth/services/AuthFlow';
@@ -28,12 +29,23 @@ export class Files {
     });
   }
 
+  @Query(() => UploadedFileUsage)
+  async uploadedFileUsage(
+    @Arg('_id', () => ID) _id: string,
+    @Ctx() context: GraphQLContext
+  ): Promise<UploadedFileUsage> {
+    const user = await authFlow.me(context.req);
+    return fileStore.getUsage(_id, user._id.toString());
+  }
+
   @Mutation(() => UploadedFile)
   async deleteUploadedFile(
     @Arg('_id', () => ID) _id: string,
+    @Arg('detachExperimentIds', () => [ID], { nullable: true })
+    detachExperimentIds: string[] | undefined,
     @Ctx() context: GraphQLContext
   ): Promise<UploadedFile> {
     const user = await authFlow.me(context.req);
-    return fileStore.remove(_id, user._id.toString());
+    return fileStore.remove(_id, user._id.toString(), detachExperimentIds ?? []);
   }
 }

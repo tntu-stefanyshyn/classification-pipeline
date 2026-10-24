@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 
 import { stub, createLeanResult } from '../../test/testUtils';
 import { AuthFlow } from '../auth/services/AuthFlow';
+import { ExperimentModel } from '../experiments/models/ExperimentModel';
 import { CreateUploadedFileInput } from './classes/CreateUploadedFileInput';
 import { UploadedFile } from './classes/UploadedFile';
 import { Files } from './graphql/Files';
@@ -124,10 +125,26 @@ test('FileStore.remove deletes storage object and db record', async (t) => {
       storageCalls.push(key);
     },
   }));
+  const markCalls: any[] = [];
+  stub(
+    t,
+    UploadedFileModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (...args: any[]) => {
+      markCalls.push(args);
+      return {};
+    }
+  );
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'find', (query: any) => {
+    assert.deepEqual(query, { fileId });
+    return { select: () => createLeanResult([]) };
+  });
 
   assert.equal(await store.remove(fileId, userId), file);
   assert.deepEqual(storageCalls, ['uploads/dataset.csv']);
   assert.deepEqual(deleteCalls, [[{ _id: fileId }]]);
+  assert.equal(markCalls.length, 1);
+  assert.ok(markCalls[0][1].$set.deletingAt instanceof Date);
 });
 
 test('Files resolver delegates auth and file store operations', async (t) => {
@@ -157,6 +174,12 @@ test('Files resolver delegates auth and file store operations', async (t) => {
     removeCalls.push(args);
     return removedFile;
   });
+  const usage = { experiments: [], otherExperimentsCount: 0, blocked: false };
+  const usageCalls: any[] = [];
+  stub(t, fileStore as unknown as Record<string, unknown>, 'getUsage', async (...args: any[]) => {
+    usageCalls.push(args);
+    return usage;
+  });
 
   assert.equal(await resolver.uploadedFiles({ req: {} } as any), uploadedFiles);
   assert.equal(
@@ -166,9 +189,21 @@ test('Files resolver delegates auth and file store operations', async (t) => {
     ),
     createdFile
   );
-  assert.equal(await resolver.deleteUploadedFile('file-1', { req: {} } as any), removedFile);
+  assert.equal(await resolver.uploadedFileUsage('file-1', { req: {} } as any), usage);
+  assert.equal(
+    await resolver.deleteUploadedFile('file-1', ['exp-1'], { req: {} } as any),
+    removedFile
+  );
+  assert.equal(
+    await resolver.deleteUploadedFile('file-2', undefined, { req: {} } as any),
+    removedFile
+  );
   assert.deepEqual(listCalls, [[user._id.toString()]]);
   assert.equal(createCalls[0][0].uploadedById, user._id.toString());
   assert.equal(createCalls[0][0].uploadedByName, 'Ivan');
-  assert.deepEqual(removeCalls, [['file-1', user._id.toString()]]);
+  assert.deepEqual(usageCalls, [['file-1', user._id.toString()]]);
+  assert.deepEqual(removeCalls, [
+    ['file-1', user._id.toString(), ['exp-1']],
+    ['file-2', user._id.toString(), []],
+  ]);
 });

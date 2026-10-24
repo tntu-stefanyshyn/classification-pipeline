@@ -217,7 +217,7 @@ type Mutation {
   completePipeline(input: CompletePipelineInput!): Boolean!
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
-  deleteUploadedFile(_id: ID!): UploadedFile!
+  deleteUploadedFile(_id: ID!, detachExperimentIds: [ID!]): UploadedFile!
   enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
@@ -319,6 +319,7 @@ type Query {
   signedDownloadUrl(fileId: ID!): SignedUploadUrl!
   signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
   technologies: [Technology!]!
+  uploadedFileUsage(_id: ID!): UploadedFileUsage!
   uploadedFiles: [UploadedFile!]!
 }
 
@@ -415,6 +416,19 @@ type UploadedFile {
   status: String!
   uploadedAt: DateTimeISO!
   uploadedByName: String
+}
+
+type UploadedFileUsage {
+  blocked: Boolean!
+  experiments: [UploadedFileUsageExperiment!]!
+  otherExperimentsCount: Int!
+}
+
+type UploadedFileUsageExperiment {
+  _id: ID!
+  blocking: Boolean!
+  name: String!
+  status: ExperimentStatus!
 }
 
 type User {

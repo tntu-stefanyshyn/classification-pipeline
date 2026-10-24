@@ -1,5 +1,5 @@
-mutation DeleteUploadedFile($_id: ID!) {
-  deleteUploadedFile(_id: $_id) {
+mutation DeleteUploadedFile($_id: ID!, $detachExperimentIds: [ID!]) {
+  deleteUploadedFile(_id: $_id, detachExperimentIds: $detachExperimentIds) {
     _id
     filename
     sizeMb

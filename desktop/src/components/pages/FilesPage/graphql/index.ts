@@ -5,3 +5,7 @@ export {
 export { useSignedUploadUrlLazyQuery } from '../../../../graphql/queries/generated/signedUpload';
 export { useCreateUploadedFileMutation } from '../../../../graphql/mutations/generated/createUploadedFile';
 export { useDeleteUploadedFileMutation } from '../../../../graphql/mutations/generated/deleteUploadedFile';
+export {
+  type UploadedFileUsageQuery,
+  useUploadedFileUsageLazyQuery,
+} from '../../../../graphql/queries/generated/uploadedFileUsage';

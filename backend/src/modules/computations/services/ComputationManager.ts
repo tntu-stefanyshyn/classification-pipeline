@@ -235,6 +235,8 @@ export class ComputationManager {
     machineInfo?: PipelineMachineInfoInput
   ): Promise<Pipeline | undefined> {
     if (queue === ComputationQueue.local) {
+      // One local run per machine; workers that send no hostname keep the global limit.
+      const hostname = machineInfo?.hostname?.trim();
       const [localRunningPipeline] = await WorkflowModel.aggregate([
         { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.running } },
         {
@@ -246,7 +248,12 @@ export class ComputationManager {
           },
         },
         { $unwind: '$pipeline' },
-        { $match: { 'pipeline.queue': ComputationQueue.local } },
+        {
+          $match: {
+            'pipeline.queue': ComputationQueue.local,
+            ...(hostname ? { 'pipeline.machineInfo.hostname': hostname } : {}),
+          },
+        },
         { $limit: 1 },
       ]);
       if (localRunningPipeline) {
@@ -255,7 +262,7 @@ export class ComputationManager {
     }
 
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
-    const [pipeline] = await WorkflowModel.aggregate<Pipeline | undefined>([
+    const candidates = await WorkflowModel.aggregate<Pipeline>([
       { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.queued } },
       {
         $lookup: {
@@ -271,28 +278,31 @@ export class ComputationManager {
       { $sort: { priority: -1, updatedAt: 1 } },
     ]);
 
-    if (!pipeline) return;
+    // A worker that loses a race moves on to the next queued run instead of waiting a poll.
+    for (const pipeline of candidates) {
+      try {
+        await this.pipelineManager.changeStatus({
+          pipelineId: pipeline._id,
+          status: PipelineStatus.running,
+        });
+      } catch (error) {
+        // Another worker claimed this run first: either the conditional update lost, or the
+        // re-read status was already `running`, which has no transition to `running`.
+        if (error instanceof WorkflowTransitionConflictError) continue;
+        if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') continue;
+        throw error;
+      }
 
-    try {
-      await this.pipelineManager.changeStatus({
-        pipelineId: pipeline._id,
-        status: PipelineStatus.running,
-      });
-    } catch (error) {
-      // Another worker claimed this run first.
-      if (error instanceof WorkflowTransitionConflictError) return;
-      throw error;
+      if (normalizedMachineInfo) {
+        await PipelineModel.updateOne(
+          { _id: pipeline._id },
+          { $set: { machineInfo: normalizedMachineInfo } }
+        );
+        await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
+      }
+
+      return pipeline;
     }
-
-    if (normalizedMachineInfo) {
-      await PipelineModel.updateOne(
-        { _id: pipeline._id },
-        { $set: { machineInfo: normalizedMachineInfo } }
-      );
-      await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
-    }
-
-    return pipeline;
   }
 
   async completePipeline({ payload, pipelineId }: CompletePipelineInput) {

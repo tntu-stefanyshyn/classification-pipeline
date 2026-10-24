@@ -235,7 +235,15 @@ const en = {
     uploadDataFailed: 'Failed to get upload data.',
     uploadFailed: 'File upload failed.',
     uploadUnknown: 'Failed to upload file.',
-    deleteConfirm: 'Delete file?',
+    deleteTitle: 'Delete file',
+    deleteConfirm: (filename: string) => `Delete "${filename}"?`,
+    deleteDetachWarning: 'The file will be detached from these experiments:',
+    deleteBlocked:
+      'The file cannot be deleted while an experiment that uses it is computing or optimizing. Wait until it finishes.',
+    deleteBlockingLabel: 'in progress',
+    deleteOtherExperiments: (count: number) =>
+      `Also used by other users' experiments: ${count}. The file will be detached from them too.`,
+    deleteAction: 'Delete',
     deleteUnknown: 'Failed to delete file.',
     columns: {
       file: 'File',

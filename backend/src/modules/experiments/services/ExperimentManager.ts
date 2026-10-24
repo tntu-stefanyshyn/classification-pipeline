@@ -8,6 +8,7 @@ import { GraphManager } from './GraphManager';
 import { ExperimentStatus } from '../classes/ExperimentStatus';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
 import { WorkflowManager } from '../../../core/workflow/services/WorkflowManager';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { WorkflowType } from '../../../core/workflow/enums';
 import { Transitions } from '../../../core/workflow/services/WorkflowManager.types.';
 import { ChangeExperimentStatusInput } from '../classes/ChangeExperimentStatusInput';
@@ -55,12 +56,21 @@ export class ExperimentManager {
     if (fileId && !Types.ObjectId.isValid(fileId)) {
       throw new Error('File _id is invalid');
     }
+    if (fileId) await this.assertFileAttachable(fileId);
     const experiment = await ExperimentModel.create({
       name,
       description,
       fileId: fileId ? new Types.ObjectId(fileId) : undefined,
       createdById: new Types.ObjectId(userId),
     });
+    if (fileId) {
+      try {
+        await this.assertFileAttachable(fileId);
+      } catch (error) {
+        await ExperimentModel.deleteOne({ _id: experiment._id });
+        throw error;
+      }
+    }
 
     await this.graphManager.createDefaultGraph(experiment._id);
     await this.workflowManager.create({
@@ -121,7 +131,12 @@ export class ExperimentManager {
         if (!Types.ObjectId.isValid(trimmedFileId)) {
           throw new Error('File _id is invalid');
         }
-        update.fileId = new Types.ObjectId(trimmedFileId);
+        // The edit form always resends the current file; only a changed reference is checked, so
+        // experiments whose file is already gone or being deleted stay editable.
+        if (String(existingExperiment.fileId ?? '') !== trimmedFileId) {
+          update.fileId = new Types.ObjectId(trimmedFileId);
+          await this.assertFileAttachable(update.fileId);
+        }
       }
     }
 
@@ -161,7 +176,28 @@ export class ExperimentManager {
       throw new Error('Experiment not found');
     }
 
+    if (update.fileId) {
+      try {
+        await this.assertFileAttachable(update.fileId);
+      } catch (error) {
+        await ExperimentModel.updateOne(
+          { _id: input._id },
+          existingExperiment.fileId
+            ? { $set: { fileId: existingExperiment.fileId } }
+            : { $unset: { fileId: 1 } }
+        );
+        throw error;
+      }
+    }
+
     return experiment;
+  }
+
+  // Pairs with FileStore.remove, which marks the file and then looks for experiments using it.
+  // Callers re-check after writing the reference, so one of the two always sees the other.
+  private async assertFileAttachable(fileId: ObjectIdOrString) {
+    const file = await UploadedFileModel.exists({ _id: fileId, deletingAt: { $exists: false } });
+    if (!file) throw new Error('Файл не знайдено або він зараз видаляється.');
   }
 
   async generateGraph(input: GenerateExperimentGraphInput, userId: string): Promise<Experiment> {
@@ -202,6 +238,27 @@ export class ExperimentManager {
       from: ExperimentStatus.configuring,
       to: ExperimentStatus.computing,
       sideEffect: async ({ instanceId }) => {
+        // Re-check after the status write, before any run exists: pairs with FileStore.remove,
+        // which marks the file and then reads experiment statuses.
+        try {
+          await this.ensureExperimentFileReady(instanceId);
+        } catch (error) {
+          await WorkflowModel.updateOne(
+            { instanceId, type: WorkflowType.EXPERIMENT, status: ExperimentStatus.computing },
+            {
+              $set: { status: ExperimentStatus.configuring },
+              $push: {
+                history: {
+                  previousStatus: ExperimentStatus.computing,
+                  nextStatus: ExperimentStatus.configuring,
+                  message: error instanceof Error ? error.message : 'Файл експерименту недоступний',
+                  createdAt: new Date(),
+                },
+              },
+            }
+          );
+          throw error;
+        }
         await this.pipelineManager.generatePipelinesFromGraphStructure(instanceId);
       },
     },
@@ -241,7 +298,7 @@ export class ExperimentManager {
     }
 
     const file = await UploadedFileModel.findById(experiment.fileId).lean();
-    if (!file?.storageKey) {
+    if (!file?.storageKey || file.deletingAt) {
       throw new Error('Файл експерименту не знайдено або він недоступний для обчислень.');
     }
   }

@@ -187,6 +187,9 @@ test('ExperimentManager handles list, getById and create flows', async (t) => {
       toObject: ({ getters }: { getters: boolean }) => ({ getters, _id: experimentId, ...payload }),
     };
   });
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', async () => ({
+    _id: fileId,
+  }));
   stub(t, manager as unknown as Record<string, unknown>, 'graphManager', {
     createDefaultGraph: async (...args: any[]) => {
       graphCalls.push(args);
@@ -252,6 +255,9 @@ test('ExperimentManager handles update, generateGraph and optimization updates',
     updateCalls.push(args);
     return createLeanResult({ acknowledged: true });
   });
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', async () => ({
+    _id: fileId,
+  }));
   stub(t, manager as unknown as Record<string, unknown>, 'graphManager', {
     updateGraph: async (...args: any[]) => {
       graphCalls.push(['updateGraph', ...args]);

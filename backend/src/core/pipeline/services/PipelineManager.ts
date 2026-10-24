@@ -102,6 +102,17 @@ export class PipelineManager {
       },
     },
     {
+      // Pausing an experiment takes its queued runs out of the queue.
+      from: PipelineStatus.queued,
+      to: PipelineStatus.idle,
+      sideEffect: async ({ instanceId }) => {
+        await PipelineModel.updateOne(
+          { _id: instanceId },
+          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
+        ).exec();
+      },
+    },
+    {
       from: PipelineStatus.queued,
       to: PipelineStatus.running,
       sideEffect: async ({ instanceId }) => {

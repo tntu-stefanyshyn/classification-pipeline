@@ -391,17 +391,36 @@ export class ComputationManager {
       }
     }
 
-    await Promise.all(
-      runs.map((run) =>
-        this.failRun({
-          runId: run._id.toString(),
-          statusMessage: 'Обчислення зупинено',
-        })
-      )
-    );
+    await Promise.all(runs.map((run) => this.pauseRun(run._id)));
 
     const runIds = runs.map((run) => run._id);
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
+  }
+
+  // Queued and running runs both go back to idle, so no worker can claim them after the pause.
+  // If a worker claims the run while it is being paused, re-read the status and stop it instead.
+  private async pauseRun(pipelineId: Types.ObjectId) {
+    // queued -> running is the only change a worker can make first, so two retries suffice.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { status } = await this.workflowManager.getWorkflow({
+        instanceId: pipelineId,
+        type: WorkflowType.PIPELINE,
+      });
+      if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return;
+      try {
+        await this.pipelineManager.changeStatus({
+          pipelineId,
+          status: PipelineStatus.idle,
+          message: 'Обчислення зупинено',
+        });
+        return;
+      } catch (error) {
+        const lostRace =
+          error instanceof WorkflowTransitionConflictError ||
+          (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND');
+        if (!lostRace) throw error;
+      }
+    }
   }
 
   async resumeExperimentRuns(experimentId: string): Promise<Pipeline[]> {
@@ -549,21 +568,6 @@ export class ComputationManager {
         console.warn('Не вдалося скасувати AWS-завдання', innerError);
       }
     }
-  }
-
-  private async syncExperimentStatus(experimentId: string): Promise<void> {
-    // const runs: Pick<Pipeline, 'status'>[] = await PipelineModel.find({ experimentId })
-    //   .select('status')
-    //   .lean();
-    const runs: any[] = [];
-    if (runs.length === 0) return;
-
-    const hasActive = runs.some(
-      (run) => run.status === PipelineStatus.queued || run.status === PipelineStatus.running
-    );
-    const nextStatus = hasActive ? ExperimentStatus.computing : ExperimentStatus.completed;
-
-    await ExperimentModel.updateOne({ _id: experimentId }, { $set: { status: nextStatus } }).exec();
   }
 
   private async getOptimizationResult(experimentId: ObjectIdOrString): Promise<OptimizationResult> {

@@ -289,10 +289,10 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
       calls.push(['cancelCloudJob', ...args]);
     }
   );
-  stub(t, manager as unknown as Record<string, unknown>, 'failRun', async (...args: any[]) => {
-    calls.push(['failRun', ...args]);
-    return { _id: pipelineId };
-  });
+  let workflowStatus = PipelineStatus.running;
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    getWorkflow: async () => ({ status: workflowStatus }),
+  } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async (...args: any[]) => {
       calls.push(['changeStatus', ...args]);
@@ -301,6 +301,15 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
   } as any);
 
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), [{ _id: pipelineId }]);
+  assert.ok(
+    calls.some(
+      (entry) =>
+        entry[0] === 'changeStatus' &&
+        entry[1].pipelineId === pipelineId &&
+        entry[1].status === PipelineStatus.idle
+    )
+  );
+  workflowStatus = PipelineStatus.idle;
   assert.deepEqual(await manager.resumeExperimentRuns(experimentId.toHexString()), [
     { _id: pipelineId },
   ]);

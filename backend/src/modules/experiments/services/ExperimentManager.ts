@@ -180,8 +180,9 @@ export class ExperimentManager {
       try {
         await this.assertFileAttachable(update.fileId);
       } catch (error) {
+        // Only undo our own write: a later edit may already have replaced this reference.
         await ExperimentModel.updateOne(
-          { _id: input._id },
+          { _id: input._id, fileId: update.fileId },
           existingExperiment.fileId
             ? { $set: { fileId: existingExperiment.fileId } }
             : { $unset: { fileId: 1 } }
@@ -196,7 +197,11 @@ export class ExperimentManager {
   // Pairs with FileStore.remove, which marks the file and then looks for experiments using it.
   // Callers re-check after writing the reference, so one of the two always sees the other.
   private async assertFileAttachable(fileId: ObjectIdOrString) {
-    const file = await UploadedFileModel.exists({ _id: fileId, deletingAt: { $exists: false } });
+    const file = await UploadedFileModel.exists({
+      _id: fileId,
+      deletingAt: { $exists: false },
+      deleteCommittedAt: { $exists: false },
+    });
     if (!file) throw new Error('Файл не знайдено або він зараз видаляється.');
   }
 
@@ -298,7 +303,7 @@ export class ExperimentManager {
     }
 
     const file = await UploadedFileModel.findById(experiment.fileId).lean();
-    if (!file?.storageKey || file.deletingAt) {
+    if (!file?.storageKey || file.deletingAt || file.deleteCommittedAt) {
       throw new Error('Файл експерименту не знайдено або він недоступний для обчислень.');
     }
   }

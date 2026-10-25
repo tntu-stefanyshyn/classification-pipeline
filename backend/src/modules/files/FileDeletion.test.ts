@@ -15,6 +15,7 @@ type FakeFile = {
   storageKey: string;
   uploadedById: string;
   deletingAt?: Date;
+  deleteCommittedAt?: Date;
 };
 type FakeExperiment = {
   _id: Types.ObjectId;
@@ -48,11 +49,16 @@ const setup = (t: TestContext) => {
     generatedPipelinesFor: [] as string[],
     failStorage: 0,
     failDbDelete: 0,
+    // Other uploaded files that exist and can be attached.
+    otherFileIds: [] as string[],
     // Hooks for forcing a specific interleaving.
     onReferenceCheck: () => undefined as void,
     onStatusRead: () => undefined as void,
+    onStorageDelete: () => undefined as void,
     beforeExperimentWrite: Promise.resolve(),
     beforeStatusWrite: Promise.resolve(),
+    beforeStorageDelete: Promise.resolve(),
+    beforeExistsCheck: async (_query: any) => undefined as void,
   };
   const isFile = (id: unknown) => state.file && same(state.file._id, id);
   const experimentById = (id: unknown) => state.experiments.find((item) => same(item._id, id));
@@ -84,9 +90,30 @@ const setup = (t: TestContext) => {
         return { matchedCount: 0 };
       }
       if (update.$set?.deletingAt) current.deletingAt = update.$set.deletingAt;
+      if (update.$set?.deleteCommittedAt) current.deleteCommittedAt = update.$set.deleteCommittedAt;
       if (update.$unset && 'deletingAt' in update.$unset) delete current.deletingAt;
       return { matchedCount: 1 };
     }
+  );
+  // The deletion lease: set deletingAt only if it is absent or older than the $lt bound.
+  stub(
+    t,
+    UploadedFileModel as unknown as Record<string, unknown>,
+    'findOneAndUpdate',
+    (filter: any, update: any) => ({
+      lean: async () => {
+        await tick();
+        const current = state.file;
+        if (!current || !isFile(filter._id)) return null;
+        const staleBefore: Date = filter.$or[1].deletingAt.$lt;
+        if (current.deletingAt && current.deletingAt.getTime() >= staleBefore.getTime()) {
+          return null;
+        }
+        const before = { ...current };
+        current.deletingAt = update.$set.deletingAt;
+        return before;
+      },
+    })
   );
   stub(
     t,
@@ -104,8 +131,12 @@ const setup = (t: TestContext) => {
   );
   stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', async (query: any) => {
     await tick();
+    await state.beforeExistsCheck(query);
+    if (state.otherFileIds.some((id) => same(id, query._id))) return { _id: query._id };
     const usable =
-      isFile(query._id) && !(query.deletingAt?.$exists === false && state.file!.deletingAt);
+      isFile(query._id) &&
+      !(query.deletingAt?.$exists === false && state.file!.deletingAt) &&
+      !(query.deleteCommittedAt?.$exists === false && state.file!.deleteCommittedAt);
     return usable ? { _id: state.file!._id } : null;
   });
 
@@ -179,6 +210,22 @@ const setup = (t: TestContext) => {
       },
     })
   );
+  // Used by the attachment rollback; honours a fileId condition in the filter.
+  stub(
+    t,
+    ExperimentModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (filter: any, ops: any) => {
+      await tick();
+      const experiment = experimentById(filter._id) as any;
+      if (!experiment || ('fileId' in filter && !same(experiment.fileId, filter.fileId))) {
+        return { matchedCount: 0 };
+      }
+      Object.assign(experiment, ops.$set ?? {});
+      for (const key of Object.keys(ops.$unset ?? {})) delete experiment[key];
+      return { matchedCount: 1 };
+    }
+  );
 
   // workflows: experiment statuses live here
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'find', (query: any) => ({
@@ -218,6 +265,8 @@ const setup = (t: TestContext) => {
   const store = new FileStore();
   stub(t, store as unknown as Record<string, unknown>, 'getStorage', () => ({
     deleteObject: async (key: string) => {
+      state.onStorageDelete();
+      await state.beforeStorageDelete;
       await tick();
       if (state.failStorage > 0) {
         state.failStorage -= 1;
@@ -323,6 +372,7 @@ test('deleting a referenced file requires confirming the affected experiments', 
 
   assert.ok(state.file);
   assert.equal(state.file?.deletingAt, undefined);
+  assert.equal(state.file?.deleteCommittedAt, undefined, 'a refused delete commits nothing');
   assert.ok(experiment.fileId);
   assert.deepEqual(state.deletedKeys, []);
 });
@@ -409,15 +459,17 @@ test('only the owner can delete a file', async (t) => {
   assert.deepEqual(state.deletedKeys, []);
 });
 
-test('a storage failure keeps the confirmed detach and a retry deletes the file', async (t) => {
-  const { state, remove, addExperiment } = setup(t);
+test('a storage failure after the confirmed detach keeps the file blocked until a retry', async (t) => {
+  const { state, remove, attach, addExperiment } = setup(t);
   const experiment = addExperiment();
   state.failStorage = 1;
 
   await assert.rejects(() => remove([experiment]), /S3 unavailable/);
   assert.ok(state.file);
-  assert.equal(state.file?.deletingAt, undefined);
+  assert.equal(state.file?.deletingAt, undefined, 'lease released');
+  assert.ok(state.file?.deleteCommittedAt instanceof Date, 'deletion stays committed');
   assert.equal(experiment.fileId, undefined);
+  await assert.rejects(() => attach(), /видаляється/);
 
   await remove();
   assert.equal(state.file, undefined);
@@ -429,13 +481,102 @@ test('a database failure after the storage delete keeps the file blocked until a
   state.failDbDelete = 1;
 
   await assert.rejects(() => remove(), /db unavailable/);
-  assert.ok(state.file?.deletingAt instanceof Date);
+  assert.equal(state.file?.deletingAt, undefined, 'lease released');
+  assert.ok(state.file?.deleteCommittedAt instanceof Date);
   await assert.rejects(() => attach(), /видаляється/);
   assert.deepEqual(state.experiments, []);
 
   await remove();
   assert.equal(state.file, undefined);
   assert.deepEqual(state.deletedKeys, ['uploads/dataset.csv', 'uploads/dataset.csv']);
+});
+
+test('a retry that fails after an earlier storage delete keeps the file unusable', async (t) => {
+  const { state, remove, attach, addExperiment, startComputing } = setup(t);
+  // First attempt: the S3 object is deleted, but the record delete fails.
+  state.failDbDelete = 1;
+  await assert.rejects(() => remove(), /db unavailable/);
+  // Retry: storage is unreachable this time.
+  state.failStorage = 1;
+  await assert.rejects(() => remove(), /S3 unavailable/);
+
+  assert.ok(state.file?.deleteCommittedAt instanceof Date);
+  await assert.rejects(() => attach(), /видаляється/);
+  assert.deepEqual(state.experiments, []);
+  // Even an existing reference cannot start computing on it.
+  const legacy = addExperiment({ name: 'Legacy reference' });
+  await assert.rejects(() => startComputing(legacy), /недоступний для обчислень/);
+  assert.equal(legacy.status, ExperimentStatus.configuring);
+  assert.deepEqual(state.generatedPipelinesFor, []);
+
+  await remove([legacy]);
+  assert.equal(state.file, undefined);
+});
+
+// If the second delete is not refused it waits on the held storage call forever; the timeout
+// turns that deadlock into a failure.
+test(
+  'an overlapping delete is refused and cannot release the active deletion',
+  { timeout: 5_000 },
+  async (t) => {
+    const { state, remove, attach } = setup(t);
+    // Hold the first deletion inside its storage call.
+    let reachedStorage!: () => void;
+    const inStorage = new Promise<void>((resolve) => {
+      reachedStorage = resolve;
+    });
+    let releaseStorage!: () => void;
+    state.beforeStorageDelete = new Promise<void>((resolve) => {
+      releaseStorage = resolve;
+    });
+    state.onStorageDelete = () => reachedStorage();
+
+    const first = remove();
+    await inStorage;
+    const lease = state.file?.deletingAt;
+
+    await assert.rejects(() => remove(), /уже видаляється/);
+    assert.equal(state.file?.deletingAt, lease, 'the active lease is untouched');
+    await assert.rejects(() => attach(), /видаляється/);
+
+    releaseStorage();
+    await first;
+    assert.equal(state.file, undefined);
+    assert.deepEqual(state.experiments, []);
+    assert.deepEqual(state.deletedKeys, ['uploads/dataset.csv']);
+  }
+);
+
+test('a failed attachment rollback never overwrites a later successful edit', async (t) => {
+  const { state, fileId, addExperiment, edit } = setup(t);
+  const [fileX, fileZ] = [new Types.ObjectId().toHexString(), new Types.ObjectId().toHexString()];
+  state.otherFileIds.push(fileX, fileZ);
+  const experiment = addExperiment({ fileId: fileX });
+  // Pause edit A in its post-write check of file Y (its second existence check of Y).
+  let checksOfY = 0;
+  let paused!: () => void;
+  const isPaused = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
+  let resume!: () => void;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  state.beforeExistsCheck = async (query) => {
+    if (same(query._id, fileId) && ++checksOfY === 2) {
+      paused();
+      await resumed;
+    }
+  };
+
+  const editA = edit(experiment, { fileId }); // X -> Y
+  await isPaused;
+  await edit(experiment, { fileId: fileZ }); // B: Y -> Z succeeds
+  state.file!.deletingAt = new Date(); // Y starts being deleted, so A's re-check fails
+  resume();
+
+  await assert.rejects(() => editA, /видаляється/);
+  assert.equal(String(experiment.fileId), fileZ, "B's accepted file is kept");
 });
 
 for (const order of ['delete first', 'attach first'] as const) {

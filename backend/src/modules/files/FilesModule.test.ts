@@ -139,12 +139,24 @@ test('FileStore.remove deletes storage object and db record', async (t) => {
     assert.deepEqual(query, { fileId });
     return { select: () => createLeanResult([]) };
   });
+  const leaseCalls: any[] = [];
+  stub(
+    t,
+    UploadedFileModel as unknown as Record<string, unknown>,
+    'findOneAndUpdate',
+    (...args: any[]) => {
+      leaseCalls.push(args);
+      return createLeanResult(file);
+    }
+  );
 
   assert.equal(await store.remove(fileId, userId), file);
   assert.deepEqual(storageCalls, ['uploads/dataset.csv']);
   assert.deepEqual(deleteCalls, [[{ _id: fileId }]]);
+  assert.equal(leaseCalls.length, 1);
+  assert.ok(leaseCalls[0][1].$set.deletingAt instanceof Date);
   assert.equal(markCalls.length, 1);
-  assert.ok(markCalls[0][1].$set.deletingAt instanceof Date);
+  assert.ok(markCalls[0][1].$set.deleteCommittedAt instanceof Date);
 });
 
 test('Files resolver delegates auth and file store operations', async (t) => {

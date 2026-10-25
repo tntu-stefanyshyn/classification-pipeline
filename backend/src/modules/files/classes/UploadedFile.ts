@@ -33,7 +33,11 @@ export class UploadedFile {
   @prop({ required: true, trim: true })
   storageKey!: string;
 
-  // Set while a deletion is in progress; experiments cannot attach a file marked this way.
+  // Lease of the deletion in progress; experiments cannot attach a file marked this way.
   @prop()
   deletingAt?: Date;
+
+  // Set once a deletion has passed its point of no return; never cleared.
+  @prop()
+  deleteCommittedAt?: Date;
 }

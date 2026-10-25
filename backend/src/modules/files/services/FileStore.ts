@@ -10,6 +10,11 @@ import { UploadedFileModel } from '../models/UploadedFileModel';
 
 const BLOCKING_EXPERIMENT_STATUSES = [ExperimentStatus.computing, ExperimentStatus.optimization];
 
+// shortcut: a deletion lease expires after 15 minutes so a crashed deletion does not block the
+// file forever; a deletion still running past that could be taken over. Add an owner heartbeat
+// if a single deletion can ever take that long.
+const DELETION_LEASE_MS = 15 * 60 * 1000;
+
 type FileUsageEntry = {
   _id: Types.ObjectId;
   name: string;
@@ -113,10 +118,22 @@ export class FileStore {
       throw new Error('Storage key is missing for file');
     }
 
-    // Mark first, then read usages: an experiment attaching this file or starting to compute
-    // concurrently either sees the mark (ExperimentManager) or is seen here.
-    const mark = new Date();
-    await UploadedFileModel.updateOne({ _id: fileId }, { $set: { deletingAt: mark } });
+    // Take an exclusive lease before reading usages: only one deletion of a file runs at a time,
+    // only its owner releases it, and an experiment attaching this file or starting to compute
+    // concurrently either sees the lease (ExperimentManager) or is seen here.
+    const lease = new Date();
+    const leased = await UploadedFileModel.findOneAndUpdate(
+      {
+        _id: fileId,
+        $or: [
+          { deletingAt: { $exists: false } },
+          { deletingAt: { $lt: new Date(lease.getTime() - DELETION_LEASE_MS) } },
+        ],
+      },
+      { $set: { deletingAt: lease } }
+    ).lean();
+    if (!leased) throw new Error('Файл уже видаляється. Спробуйте пізніше.');
+
     try {
       const usages = await this.collectUsages(fileId, ownerId);
       assertDetachAllowed(usages, detachExperimentIds);
@@ -126,18 +143,22 @@ export class FileStore {
           { $unset: { fileId: 1 } }
         );
       }
-      await this.getStorage().deleteObject(file.storageKey);
-    } catch (error) {
-      // Only clear our own mark; a concurrent retry may have replaced it.
+      // Point of no return: from here the file never becomes attachable again, even if the
+      // storage or record delete below fails; a retry finishes the deletion.
       await UploadedFileModel.updateOne(
-        { _id: fileId, deletingAt: mark },
+        { _id: fileId },
+        { $set: { deleteCommittedAt: new Date() } }
+      );
+      // Deleting an already missing S3 object succeeds, so retries are safe.
+      await this.getStorage().deleteObject(file.storageKey);
+      await UploadedFileModel.deleteOne({ _id: fileId });
+    } catch (error) {
+      await UploadedFileModel.updateOne(
+        { _id: fileId, deletingAt: lease },
         { $unset: { deletingAt: '' } }
       );
       throw error;
     }
-    // If this fails the object is already gone and the file stays marked as deleting;
-    // a retry finishes the job because deleting a missing S3 key succeeds.
-    await UploadedFileModel.deleteOne({ _id: fileId });
     return file;
   }
 

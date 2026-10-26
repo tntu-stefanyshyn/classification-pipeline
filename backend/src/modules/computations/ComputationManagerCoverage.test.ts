@@ -522,7 +522,6 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     true
   );
 
-  await (manager as any).syncExperimentStatus(experimentId.toHexString());
   experimentDoc = { optimization: {} };
   await assert.rejects(
     () => (manager as any).getOptimizationResult(experimentId),

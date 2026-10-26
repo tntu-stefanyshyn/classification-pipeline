@@ -1,0 +1,12 @@
+query UploadedFileUsage($_id: ID!) {
+  uploadedFileUsage(_id: $_id) {
+    experiments {
+      _id
+      name
+      status
+      blocking
+    }
+    otherExperimentsCount
+    blocked
+  }
+}

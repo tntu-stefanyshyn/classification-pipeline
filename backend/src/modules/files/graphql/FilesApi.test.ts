@@ -10,6 +10,7 @@ import {
 } from '../../../test/graphqlTestUtils';
 import { stub } from '../../../test/testUtils';
 import { AuthFlow } from '../../auth/services/AuthFlow';
+import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { fileStore } from '../services/FileStore';
 import { Files } from './Files';
 
@@ -100,7 +101,75 @@ test('Files GraphQL executes uploadedFiles and deleteUploadedFile via the schema
   });
   assert.deepEqual(calls, [
     ['listByUser', userId.toHexString()],
-    ['remove', fileId.toHexString(), userId.toHexString()],
+    ['remove', fileId.toHexString(), userId.toHexString(), []],
+  ]);
+});
+
+test('Files GraphQL exposes file usage and a confirmed delete via the schema', async (t) => {
+  const schema = buildGraphqlSchema([Files]);
+  const userId = new Types.ObjectId();
+  const fileId = new Types.ObjectId();
+  const experimentId = new Types.ObjectId();
+  const calls: any[] = [];
+  const context = createGraphqlContext({
+    req: { headers: { authorization: 'Bearer token' } } as any,
+  });
+
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => ({
+    _id: userId,
+  }));
+  stub(t, fileStore as unknown as Record<string, unknown>, 'getUsage', async (...args: any[]) => {
+    calls.push(['getUsage', ...args]);
+    return {
+      experiments: [
+        { _id: experimentId, name: 'Iris', status: ExperimentStatus.configuring, blocking: false },
+      ],
+      otherExperimentsCount: 1,
+      blocked: false,
+    };
+  });
+  stub(t, fileStore as unknown as Record<string, unknown>, 'remove', async (...args: any[]) => {
+    calls.push(['remove', ...args]);
+    return { _id: fileId, filename: 'dataset.csv', sizeMb: 1, status: 'uploaded' };
+  });
+
+  const usageResult = await executeGraphql(
+    schema,
+    `
+      query Usage($id: ID!) {
+        uploadedFileUsage(_id: $id) {
+          experiments { _id name status blocking }
+          otherExperimentsCount
+          blocked
+        }
+      }
+    `,
+    { variables: { id: fileId.toHexString() }, context }
+  );
+  const deleteResult = await executeGraphql(
+    schema,
+    `
+      mutation DeleteFile($id: ID!, $detach: [ID!]) {
+        deleteUploadedFile(_id: $id, detachExperimentIds: $detach) { _id }
+      }
+    `,
+    { variables: { id: fileId.toHexString(), detach: [experimentId.toHexString()] }, context }
+  );
+
+  assert.equal(usageResult.errors, undefined);
+  assert.deepEqual(toPlainValue(usageResult.data), {
+    uploadedFileUsage: {
+      experiments: [
+        { _id: experimentId.toHexString(), name: 'Iris', status: 'configuring', blocking: false },
+      ],
+      otherExperimentsCount: 1,
+      blocked: false,
+    },
+  });
+  assert.equal(deleteResult.errors, undefined);
+  assert.deepEqual(calls, [
+    ['getUsage', fileId.toHexString(), userId.toHexString()],
+    ['remove', fileId.toHexString(), userId.toHexString(), [experimentId.toHexString()]],
   ]);
 });
 

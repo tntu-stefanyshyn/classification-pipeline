@@ -235,7 +235,15 @@ const uk = {
     uploadDataFailed: 'Не вдалося отримати дані для завантаження.',
     uploadFailed: 'Помилка завантаження файла.',
     uploadUnknown: 'Не вдалося завантажити файл.',
-    deleteConfirm: 'Видалити файл?',
+    deleteTitle: 'Видалення файла',
+    deleteConfirm: (filename: string) => `Видалити «${filename}»?`,
+    deleteDetachWarning: 'Файл буде відʼєднано від цих експериментів:',
+    deleteBlocked:
+      'Файл не можна видалити, поки експеримент, що його використовує, обчислюється або оптимізується. Дочекайтеся завершення.',
+    deleteBlockingLabel: 'виконується',
+    deleteOtherExperiments: (count: number) =>
+      `Також використовується в експериментах інших користувачів: ${count}. Від них файл теж буде відʼєднано.`,
+    deleteAction: 'Видалити',
     deleteUnknown: 'Не вдалося видалити файл.',
     columns: {
       file: 'Файл',

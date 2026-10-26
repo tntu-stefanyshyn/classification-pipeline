@@ -137,18 +137,24 @@ export class FileStore {
     try {
       const usages = await this.collectUsages(fileId, ownerId);
       assertDetachAllowed(usages, detachExperimentIds);
+      // Point of no return, taken only while we still own the lease: an expired lease does not
+      // stop this request, so a request that lost it must not act on its old usage list. From
+      // here the file never becomes attachable again, even if a later step fails; a retry
+      // finishes the deletion.
+      const committed = await UploadedFileModel.updateOne(
+        { _id: fileId, deletingAt: lease },
+        { $set: { deleteCommittedAt: new Date() } }
+      );
+      if (!committed.matchedCount) {
+        throw new Error('Видалення файла перехопив інший запит. Повторіть видалення.');
+      }
+      // Safe after the commit: no experiment can attach the file or start computing on it now.
       if (usages.length > 0) {
         await ExperimentModel.updateMany(
           { _id: { $in: usages.map((usage) => usage._id) }, fileId },
           { $unset: { fileId: 1 } }
         );
       }
-      // Point of no return: from here the file never becomes attachable again, even if the
-      // storage or record delete below fails; a retry finishes the deletion.
-      await UploadedFileModel.updateOne(
-        { _id: fileId },
-        { $set: { deleteCommittedAt: new Date() } }
-      );
       // Deleting an already missing S3 object succeeds, so retries are safe.
       await this.getStorage().deleteObject(file.storageKey);
       await UploadedFileModel.deleteOne({ _id: fileId });

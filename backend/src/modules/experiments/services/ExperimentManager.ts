@@ -180,18 +180,40 @@ export class ExperimentManager {
       try {
         await this.assertFileAttachable(update.fileId);
       } catch (error) {
-        // Only undo our own write: a later edit may already have replaced this reference.
-        await ExperimentModel.updateOne(
-          { _id: input._id, fileId: update.fileId },
-          existingExperiment.fileId
-            ? { $set: { fileId: existingExperiment.fileId } }
-            : { $unset: { fileId: 1 } }
-        );
+        await this.rollbackAttachment(input._id, update.fileId, existingExperiment.fileId);
         throw error;
       }
     }
 
     return experiment;
+  }
+
+  // Undo a failed attachment of `failedFileId`. Restoring the previous file is an attachment too:
+  // write it, then check it, and clear the reference if that file is gone or being deleted.
+  // Every write is conditional on the reference still being ours, so a later edit is kept.
+  private async rollbackAttachment(
+    experimentId: ObjectIdOrString,
+    failedFileId: Types.ObjectId,
+    previousFileId?: Types.ObjectId
+  ) {
+    let ownFileId = failedFileId;
+    if (previousFileId) {
+      const restored = await ExperimentModel.updateOne(
+        { _id: experimentId, fileId: failedFileId },
+        { $set: { fileId: previousFileId } }
+      );
+      if (!restored.matchedCount) return;
+      try {
+        await this.assertFileAttachable(previousFileId);
+        return;
+      } catch {
+        ownFileId = previousFileId;
+      }
+    }
+    await ExperimentModel.updateOne(
+      { _id: experimentId, fileId: ownFileId },
+      { $unset: { fileId: 1 } }
+    );
   }
 
   // Pairs with FileStore.remove, which marks the file and then looks for experiments using it.

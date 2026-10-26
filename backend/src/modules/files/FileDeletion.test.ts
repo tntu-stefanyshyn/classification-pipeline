@@ -49,10 +49,14 @@ const setup = (t: TestContext) => {
     generatedPipelinesFor: [] as string[],
     failStorage: 0,
     failDbDelete: 0,
-    // Other uploaded files that exist and can be attached.
-    otherFileIds: [] as string[],
+    // Other uploaded files by id; a missing id means the record is gone.
+    otherFiles: new Map<string, { deletingAt?: Date }>(),
+    // Fail the next usage query (the experiments lookup of a deletion).
+    failReferenceCheck: 0,
     // Hooks for forcing a specific interleaving.
     onReferenceCheck: () => undefined as void,
+    // Awaited after a usage query has computed its result, before returning it.
+    beforeReferenceResult: async () => undefined as void,
     onStatusRead: () => undefined as void,
     onStorageDelete: () => undefined as void,
     beforeExperimentWrite: Promise.resolve(),
@@ -132,7 +136,11 @@ const setup = (t: TestContext) => {
   stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', async (query: any) => {
     await tick();
     await state.beforeExistsCheck(query);
-    if (state.otherFileIds.some((id) => same(id, query._id))) return { _id: query._id };
+    if (!isFile(query._id)) {
+      const other = state.otherFiles.get(String(query._id));
+      const usableOther = other && !(query.deletingAt?.$exists === false && other.deletingAt);
+      return usableOther ? { _id: query._id } : null;
+    }
     const usable =
       isFile(query._id) &&
       !(query.deletingAt?.$exists === false && state.file!.deletingAt) &&
@@ -145,10 +153,15 @@ const setup = (t: TestContext) => {
     select: () => ({
       lean: async () => {
         await tick();
+        if (state.failReferenceCheck > 0) {
+          state.failReferenceCheck -= 1;
+          throw new Error('usage query failed');
+        }
         const found = state.experiments
           .filter((item) => item.fileId !== undefined && same(item.fileId, query.fileId))
           .map(({ _id, name, createdById }) => ({ _id, name, createdById }));
         state.onReferenceCheck();
+        await state.beforeReferenceResult();
         return found;
       },
     }),
@@ -547,13 +560,9 @@ test(
   }
 );
 
-test('a failed attachment rollback never overwrites a later successful edit', async (t) => {
-  const { state, fileId, addExperiment, edit } = setup(t);
-  const [fileX, fileZ] = [new Types.ObjectId().toHexString(), new Types.ObjectId().toHexString()];
-  state.otherFileIds.push(fileX, fileZ);
-  const experiment = addExperiment({ fileId: fileX });
-  // Pause edit A in its post-write check of file Y (its second existence check of Y).
-  let checksOfY = 0;
+// Pause the edit that attaches `fileId` in its post-write check (its second check of that file).
+const pauseInPostWriteCheck = (state: ReturnType<typeof setup>['state'], fileId: string) => {
+  let checks = 0;
   let paused!: () => void;
   const isPaused = new Promise<void>((resolve) => {
     paused = resolve;
@@ -563,11 +572,21 @@ test('a failed attachment rollback never overwrites a later successful edit', as
     resume = resolve;
   });
   state.beforeExistsCheck = async (query) => {
-    if (same(query._id, fileId) && ++checksOfY === 2) {
+    if (same(query._id, fileId) && ++checks === 2) {
       paused();
       await resumed;
     }
   };
+  return { isPaused, resume };
+};
+
+test('a failed attachment rollback never overwrites a later successful edit', async (t) => {
+  const { state, fileId, addExperiment, edit } = setup(t);
+  const [fileX, fileZ] = [new Types.ObjectId().toHexString(), new Types.ObjectId().toHexString()];
+  state.otherFiles.set(fileX, {});
+  state.otherFiles.set(fileZ, {});
+  const experiment = addExperiment({ fileId: fileX });
+  const { isPaused, resume } = pauseInPostWriteCheck(state, fileId);
 
   const editA = edit(experiment, { fileId }); // X -> Y
   await isPaused;
@@ -577,6 +596,72 @@ test('a failed attachment rollback never overwrites a later successful edit', as
 
   await assert.rejects(() => editA, /видаляється/);
   assert.equal(String(experiment.fileId), fileZ, "B's accepted file is kept");
+});
+
+for (const previous of ['still available', 'deleted meanwhile', 'being deleted'] as const) {
+  test(`a failed attachment rollback never restores a deleted previous file (${previous})`, async (t) => {
+    const { state, fileId, addExperiment, edit } = setup(t);
+    const oldFile = new Types.ObjectId().toHexString();
+    state.otherFiles.set(oldFile, {});
+    const experiment = addExperiment({ fileId: oldFile });
+    const { isPaused, resume } = pauseInPostWriteCheck(state, fileId);
+
+    const editing = edit(experiment, { fileId }); // old.csv -> new.csv, paused in its final check
+    await isPaused;
+    // The experiment no longer references old.csv, so another request may delete it.
+    if (previous === 'deleted meanwhile') state.otherFiles.delete(oldFile);
+    if (previous === 'being deleted') state.otherFiles.get(oldFile)!.deletingAt = new Date();
+    state.file!.deletingAt = new Date(); // deletion of new.csv starts: the final check fails
+    resume();
+
+    await assert.rejects(() => editing, /видаляється/);
+    if (previous === 'still available') {
+      assert.equal(String(experiment.fileId), oldFile, 'the safe previous file is restored');
+    } else {
+      assert.equal(experiment.fileId, undefined, 'no reference to an unusable file is left');
+    }
+  });
+}
+
+test('a deletion that lost its expired lease stops before committing', async (t) => {
+  const { state, remove, attach, startComputing } = setup(t);
+  // Pause deletion A after its usage query returned an empty result, before it commits.
+  let usageQueries = 0;
+  let paused!: () => void;
+  const isPaused = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
+  let resume!: () => void;
+  const resumed = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  state.beforeReferenceResult = async () => {
+    if (++usageQueries === 1) {
+      paused();
+      await resumed;
+    }
+  };
+
+  const deletionA = remove();
+  await isPaused;
+  // A's lease expires; deletion B takes over, fails its usage query and releases its lease.
+  state.file!.deletingAt = new Date(Date.now() - 16 * 60 * 1000);
+  state.failReferenceCheck = 1;
+  await assert.rejects(() => remove(), /usage query failed/);
+  assert.equal(state.file?.deletingAt, undefined);
+  // The file is free again: an experiment attaches it and starts computing.
+  const created = await attach();
+  const experiment = state.experiments.find((item) => same(item._id, created._id))!;
+  experiment.status = ExperimentStatus.configuring;
+  await startComputing(experiment);
+  assert.equal(experiment.status, ExperimentStatus.computing);
+
+  resume();
+  await assert.rejects(() => deletionA, /перехопив інший запит/);
+  assert.ok(state.file, 'the file used by the computing experiment still exists');
+  assert.equal(state.file?.deleteCommittedAt, undefined);
+  assert.deepEqual(state.deletedKeys, []);
+  assert.equal(String(experiment.fileId), String(state.file?._id));
 });
 
 for (const order of ['delete first', 'attach first'] as const) {

@@ -132,7 +132,7 @@ test('FileStore.remove deletes storage object and db record', async (t) => {
     'updateOne',
     async (...args: any[]) => {
       markCalls.push(args);
-      return {};
+      return { matchedCount: 1 };
     }
   );
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'find', (query: any) => {

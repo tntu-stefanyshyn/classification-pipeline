@@ -312,3 +312,31 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
     { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
   ]);
 });
+
+test('PipelineManager.changeStatus moves a queued run back to idle', async (t) => {
+  const manager = new PipelineManager();
+  const updateCalls: any[] = [];
+  const pipelineId = new Types.ObjectId();
+
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
+    updateCalls.push(args);
+    return createExecResult();
+  });
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    changeStatus: async (payload: any) => {
+      const transition = payload.transitions.find(
+        (entry: any) => entry.from === PipelineStatus.queued && entry.to === PipelineStatus.idle
+      );
+      assert.ok(transition, 'queued -> idle transition exists');
+      await transition.sideEffect({ instanceId: payload.instanceId });
+      return true;
+    },
+  } as any);
+
+  await manager.changeStatus({ pipelineId, status: PipelineStatus.idle } as any);
+
+  assert.deepEqual(updateCalls[0], [
+    { _id: pipelineId },
+    { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
+  ]);
+});

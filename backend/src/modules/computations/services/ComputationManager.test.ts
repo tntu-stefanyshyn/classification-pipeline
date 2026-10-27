@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { Types } from 'mongoose';
 
 import PipelineBaseService from '../../../core/pipeline/services/PipelineBaseService';
+import { PipelineModel } from '../../../core/pipeline/models/PipelineModel';
 import { PipelineStatus } from '../../../core/pipeline/enums';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
@@ -156,4 +157,85 @@ test('ComputationManager.claimNextRun skips a run that another worker claimed fi
   } as any);
 
   assert.equal(await manager.claimNextRun(ComputationQueue.cloud), undefined);
+});
+
+test('ComputationManager.claimNextRun takes the next queued run after losing a race', async (t) => {
+  const manager = new ComputationManager();
+  const takenByConflict = { _id: new Types.ObjectId(), queue: ComputationQueue.cloud };
+  const takenAlready = { _id: new Types.ObjectId(), queue: ComputationQueue.cloud };
+  const free = { _id: new Types.ObjectId(), queue: ComputationQueue.cloud };
+  const attempts: string[] = [];
+
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
+    takenByConflict,
+    takenAlready,
+    free,
+  ]);
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatus: async ({ pipelineId }: { pipelineId: Types.ObjectId }) => {
+      attempts.push(String(pipelineId));
+      if (pipelineId === takenByConflict._id) throw new WorkflowTransitionConflictError();
+      // Re-read after another worker already moved it to `running`.
+      if (pipelineId === takenAlready._id) throw new Error('TRANSITION_NOT_FOUND');
+      return true;
+    },
+  } as any);
+  stub(
+    t,
+    manager as unknown as Record<string, unknown>,
+    'registerMachineInfo',
+    async () => undefined
+  );
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
+
+  assert.equal(await manager.claimNextRun(ComputationQueue.cloud), free);
+  assert.deepEqual(
+    attempts,
+    [takenByConflict, takenAlready, free].map((run) => String(run._id))
+  );
+});
+
+test('ComputationManager.claimNextRun rethrows errors that are not lost races', async (t) => {
+  const manager = new ComputationManager();
+
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
+    { _id: new Types.ObjectId(), queue: ComputationQueue.cloud },
+  ]);
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatus: async () => {
+      throw new Error('database unavailable');
+    },
+  } as any);
+
+  await assert.rejects(() => manager.claimNextRun(ComputationQueue.cloud), /database unavailable/);
+});
+
+test('ComputationManager.claimNextRun limits local runs per machine', async (t) => {
+  const manager = new ComputationManager();
+  const guardMatches: any[] = [];
+
+  stub(
+    t,
+    WorkflowModel as unknown as Record<string, unknown>,
+    'aggregate',
+    async (stages: any[]) => {
+      const guard = stages.find((stage) => stage.$match?.['pipeline.queue']);
+      if (guard) {
+        guardMatches.push(guard.$match);
+        return [{ _id: new Types.ObjectId() }];
+      }
+      return [];
+    }
+  );
+
+  assert.equal(
+    await manager.claimNextRun(ComputationQueue.local, { hostname: ' host-a ' } as any),
+    undefined
+  );
+  assert.equal(await manager.claimNextRun(ComputationQueue.local), undefined);
+
+  assert.deepEqual(guardMatches, [
+    { 'pipeline.queue': ComputationQueue.local, 'pipeline.machineInfo.hostname': 'host-a' },
+    { 'pipeline.queue': ComputationQueue.local },
+  ]);
 });

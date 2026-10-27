@@ -21,6 +21,16 @@
 - `enqueueExperimentRuns` checks graph settings and classification stage coverage.
 - `PipelineStatus.idle` is reserved for UI path status with no runs (runs should not be stored as `idle`).
 
+## Claiming runs
+
+Workers take queued runs with `claimExperimentRun(queue, machineInfo)` (`ComputationManager.claimNextRun`):
+
+- Candidates are queued runs of the requested queue, ordered by `priority` (descending) and `updatedAt` (ascending).
+- The `queued` -> `running` change is atomic: `WorkflowManager.changeStatus` updates the workflow only if its status is still the one it read, and throws `WorkflowTransitionConflictError` otherwise. Each run is therefore taken by exactly one worker.
+- A worker that loses a run to another worker immediately tries the next candidate in the same call instead of waiting for its next poll.
+- `local` runs are limited to one at a time **per machine**: a worker is skipped while a `local` run with the same `machineInfo.hostname` is running. Runs on other machines do not block it. A worker that sends no hostname keeps the old global limit (any running `local` run blocks it).
+- The concurrency test `ClaimConcurrency.mongo.test.ts` runs against a real MongoDB when `MONGODB_TEST_URI` is set (the CI test container sets it) and is skipped otherwise.
+
 ## REST report
 
 - `GET /experiments/:experimentId/report` returns a PDF with graph paths.

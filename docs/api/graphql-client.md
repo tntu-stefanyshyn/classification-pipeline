@@ -1,8 +1,9 @@
-# Правила для GraphQL у десктопі
+# GraphQL in the desktop app
 
-- Використовуй лише згенеровані хуки/документи (`src/graphql/**/generated/*`). Не прописуй `gql` інлайном у компонентах.
-- Якщо потрібна нова квері/мутація і її немає у generated, створи `.graphql` файл у відповідній папці (`src/graphql/queries` або `src/graphql/mutations`). Потім запусти `npm run codegen --workspace desktop` (він сам підтягне схему з бекенду).
-- Схема на десктопі синхронізується з бекенду через `npm run sync:schema --workspace desktop` (автоматично входить у `codegen`).
-- У компонентах імпортуй лише `useXYZQuery`/`useXYZMutation` з `generated` та працюй через них.
-- Використовуй `_id` для ідентифікаторів у запитах/мутаціях та моделях, не `id`.
-- Для нових дій із запусками (наприклад, `stopExperimentRun`) додавай окремий `.graphql` файл і оновлюй generated типи.
+- Use only generated hooks and documents (`src/graphql/**/generated/*`). Do not write inline `gql` in components.
+- If you need a new query or mutation that is not generated yet, create a `.graphql` file in the matching folder (`src/graphql/queries` or `src/graphql/mutations`), then run `npm run codegen --workspace desktop`. Codegen pulls the schema from the backend automatically.
+- The desktop schema is synchronized from the backend with `npm run sync:schema --workspace desktop`, which is part of `codegen`.
+- In components import only `useXYZQuery` and `useXYZMutation` from `generated` and work through them.
+- Use `_id` for identifiers in queries, mutations and models, not `id`.
+- For new run actions (for example `stopExperimentRun`) add a separate `.graphql` file and update the generated types.
+- The root `npm install` runs codegen in its `postinstall` step, so the generated files exist after installation.

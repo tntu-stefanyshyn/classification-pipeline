@@ -1,8 +1,7 @@
-# Інструкції для проєкту
+# Desktop documentation has moved
 
-- Зберігай усі внутрішні гайди в цій папці `instructions/`, щоб їх було легко знайти.
-- Поточні файли:
-  - `COMPONENTS.md` — правила структури/додавання компонентів.
-  - `EXPERIMENTS.md` — правила конструктора та запусків експериментів.
-  - `GRAPHQL.md` — правила роботи з GraphQL (тільки generated, нові запити через `.graphql` + codegen).
-- Коли потрібен новий гайд, додавай окремий `.md` тут і онови цей список.
+The desktop guides now live in [`docs/`](../../docs/index.md):
+
+- [Desktop component structure](../../docs/architecture/desktop-components.md)
+- [GraphQL in the desktop app](../../docs/api/graphql-client.md)
+- [Experiments and computations](../../docs/domain/experiments.md)

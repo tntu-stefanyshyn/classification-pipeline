@@ -4,11 +4,17 @@ Desktop application and backend for building and running classification experime
 
 ## Documentation
 
-- [Continuous integration](docs/CI.md) - automated checks and Windows x64 installer artifacts.
+Start with the [documentation index](docs/index.md). Documentation is written in English; Ukrainian
+translations of user-facing pages use the `.uk.md` suffix (for example `README.uk.md`).
+
 - [Setup guide](SETUP.md) - local setup for WSL/Linux, Docker computations, and S3 uploads.
-- [Backend documentation](backend/instructions/README.md)
-- [Desktop documentation](desktop/instructions/README.md)
-- [AWS jobs documentation](aws-jobs/README.md)
+- [Getting started](docs/getting-started/index.md)
+- [Architecture](docs/architecture/backend-structure.md) - backend structure, database and desktop component conventions.
+- [Experiments and computations](docs/domain/experiments.md) - statuses, validations and graph rules.
+- [API](docs/api/index.md) - GraphQL and REST endpoints.
+- [Continuous integration](docs/operations/ci.md) - automated checks and Windows x64 installer artifacts.
+- [AWS Batch](docs/operations/aws-batch.md) - running computations in AWS.
+- [aws-jobs](aws-jobs/README.md) - Python jobs and Docker images.
 
 ## Quick start
 

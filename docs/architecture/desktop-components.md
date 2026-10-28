@@ -1,42 +1,42 @@
-# Довідка: структура компонентів у десктопному застосунку
+# Desktop component structure
 
-## Базові правила
+## Basic rules
 
-- Кожен компонент живе у власній папці з назвою компонента.
-- Файл компонента називається так само, як і компонент (`SomeComponent.tsx`).
-- У папці компонента має бути `index.ts`, який реекспортує компонент та потрібні типи/утиліти.
-- У файлі компонента має бути лише сам компонент — без типів, хелперів або констант.
-- Типи компонента зберігай у `SomeComponent.types.ts`.
-- Допоміжні функції зберігай у папці `utils/`.
-- Константи зберігай у папці `constants/`.
-- Хуки зберігай у папці `hooks/`.
-- Якщо компонент розбитий на підкомпоненти — клади їх у папку `components/` (і дотримуйся тієї ж структури для кожного).
-- Якщо компонент використовує GraphQL — додай папку `graphql/` (для локальних реекспортів/обгорток над generated).
-- Якщо щось повторюється у кількох місцях — винось у спільний компонент/утиліту/константу і перевикористовуй, а не дублюй.
-- Для інпутів (input/textarea/checkbox/file) використовуй компоненти з `src/components/inputs`.
+- Every component lives in its own folder named after the component.
+- The component file has the same name as the component (`SomeComponent.tsx`).
+- The component folder has an `index.ts` that re-exports the component and any types or utilities needed outside.
+- The component file contains only the component itself: no types, helpers or constants.
+- Keep component types in `SomeComponent.types.ts`.
+- Keep helper functions in a `utils/` folder.
+- Keep constants in a `constants/` folder.
+- Keep hooks in a `hooks/` folder.
+- If a component is split into subcomponents, put them in a `components/` folder and follow the same structure for each.
+- If a component uses GraphQL, add a `graphql/` folder for local re-exports and wrappers over the generated code.
+- If something is repeated in several places, extract it into a shared component, utility or constant instead of duplicating it.
+- For inputs (input, textarea, checkbox, file) use the components from `src/components/inputs`.
 
-## Експорти компонентів
+## Component exports
 
-- Компонент експортуй лише через `default`:  
+- Export components only as `default`:
   `const SomeComponent: FC<SomeComponentProps> = (...) => ...; export default SomeComponent;`
-- У `index.ts` завжди роби реекспорт:  
+- Always re-export in `index.ts`:
   `export { default as SomeComponent } from './SomeComponent';`
-- Додатково реекспортуй типи/утиліти, які потрібні зовні (наприклад `export type { SomeComponentProps } ...`).
-- Не використовуй `export const SomeComponent` або `export function SomeComponent` для компонентів.
-- Якщо `FC` недоречний (generic компоненти або `forwardRef`), залишай `const` + `default export` і явно типізуй параметри.
+- Also re-export the types and utilities needed outside (for example `export type { SomeComponentProps } ...`).
+- Do not use `export const SomeComponent` or `export function SomeComponent` for components.
+- If `FC` does not fit (generic components or `forwardRef`), keep `const` with a `default export` and type the parameters explicitly.
 
-## Де створювати компоненти
+## Where to create components
 
-- `src/components/` — усі повторно використовувані компоненти (групуй за призначенням: `inputs/`, `layout/`, `auth/`, `ui/`, тощо).
-- `src/pages/` — лише прості сторінкові обгортки (зазвичай один файл), без логіки.
-- `src/components/pages/` — "розумні" сторінкові компоненти з логікою (GraphQL, стейт, мутації). Сторінки в `src/pages/` — лише тонкі обгортки над ними.
+- `src/components/`: all reusable components, grouped by purpose (`inputs/`, `layout/`, `auth/`, `ui/`, and so on).
+- `src/pages/`: simple page wrappers only (usually one file), without logic.
+- `src/components/pages/`: "smart" page components with logic (GraphQL, state, mutations). Pages in `src/pages/` are thin wrappers around them.
 
-## Правило для pages
+## Pages rule
 
-- Файли у `src/pages/**` мають бути максимально простими: без хукiв, бізнес-логіки чи складних обчислень.
-- Сторінки повинні лише рендерити компонент із `src/components/pages/**` і передавати пропси.
+- Files in `src/pages/**` must stay as simple as possible: no hooks, business logic or complex calculations.
+- Pages only render a component from `src/components/pages/**` and pass props.
 
-## Приклад структури
+## Example structure
 
 ```
 SomeComponent/
@@ -49,12 +49,12 @@ SomeComponent/
   hooks/
 ```
 
-## Таблиці
+## Tables
 
-- Для табличних даних використовуй `DataTable` (`src/components/ui/DataTable`) замість власного `<table>`.
-- У таблицях дії в рядках оформлюй як іконки без тексту (але з `aria-label`/`title` для доступності).
+- For tabular data use `DataTable` (`src/components/ui/DataTable`) instead of a custom `<table>`.
+- Render row actions as icons without text, but with `aria-label` or `title` for accessibility.
 
-## Типи
+## Types
 
-- Компоненти типізуй через `FC` (окрім винятків вище).
-- Не використовуй `as` для примусового приведення типів — краще тип-гарди або уточнення типів.
+- Type components with `FC` (except for the cases above).
+- Do not use `as` to force type casts; prefer type guards or narrowing.

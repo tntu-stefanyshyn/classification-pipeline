@@ -329,9 +329,7 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
   );
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => {
     aggregateCall += 1;
-    if (aggregateCall === 1) return [{}];
-    if (aggregateCall === 2) return [];
-    if (aggregateCall === 3) return [];
+    if (aggregateCall === 1) return [];
     return [
       {
         _id: queuedPipelineId,
@@ -374,8 +372,11 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
     true
   );
 
-  assert.equal(await manager.claimNextRun(ComputationQueue.local), undefined);
-  assert.equal(await manager.claimNextRun(ComputationQueue.local), undefined);
+  await assert.rejects(() => manager.claimNextRun(ComputationQueue.local), /machineInfo.hostname/);
+  assert.equal(
+    await manager.claimNextRun(ComputationQueue.local, { hostname: 'host' } as any),
+    undefined
+  );
 
   const claimed = await manager.claimNextRun(ComputationQueue.cloud, {
     hostname: ' host ',

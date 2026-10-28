@@ -33,6 +33,10 @@ import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 import { OptimizationResult } from '../classes/OptimizationResult';
+import { LocalRunSlotModel } from '../models/LocalRunSlotModel';
+
+// A claim takes milliseconds between reserving the slot and the status change.
+const LOCAL_SLOT_CLAIM_TIMEOUT_MS = 60_000;
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -234,31 +238,10 @@ export class ComputationManager {
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
   ): Promise<Pipeline | undefined> {
-    if (queue === ComputationQueue.local) {
-      // One local run per machine; workers that send no hostname keep the global limit.
-      const hostname = machineInfo?.hostname?.trim();
-      const [localRunningPipeline] = await WorkflowModel.aggregate([
-        { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.running } },
-        {
-          $lookup: {
-            from: pipelinesCollectionName,
-            localField: 'instanceId',
-            foreignField: '_id',
-            as: 'pipeline',
-          },
-        },
-        { $unwind: '$pipeline' },
-        {
-          $match: {
-            'pipeline.queue': ComputationQueue.local,
-            ...(hostname ? { 'pipeline.machineInfo.hostname': hostname } : {}),
-          },
-        },
-        { $limit: 1 },
-      ]);
-      if (localRunningPipeline) {
-        return;
-      }
+    // One local run per machine, reserved atomically in its slot, so the hostname is required.
+    const hostname = queue === ComputationQueue.local ? machineInfo?.hostname?.trim() : undefined;
+    if (queue === ComputationQueue.local && !hostname) {
+      throw new Error('Для локальних запусків потрібна назва машини (machineInfo.hostname)');
     }
 
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
@@ -280,12 +263,14 @@ export class ComputationManager {
 
     // A worker that loses a race moves on to the next queued run instead of waiting a poll.
     for (const pipeline of candidates) {
+      if (hostname && !(await this.reserveMachine(hostname, pipeline._id))) return;
       try {
         await this.pipelineManager.changeStatus({
           pipelineId: pipeline._id,
           status: PipelineStatus.running,
         });
       } catch (error) {
+        if (hostname) await this.releaseMachine(hostname, pipeline._id);
         // Another worker claimed this run first: either the conditional update lost, or the
         // re-read status was already `running`, which has no transition to `running`.
         if (error instanceof WorkflowTransitionConflictError) continue;
@@ -469,6 +454,46 @@ export class ComputationManager {
     );
 
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
+  }
+
+  /**
+   * Points the machine's slot at `pipelineId` unless another run holds it. The update matches the
+   * slot as it was read, so of two parallel workers on one machine only one wins; the other's upsert
+   * hits the `_id` unique index. A holder that is not `running` long after reserving was left by a
+   * crashed claim or a deleted run, so it is taken over instead of blocking the machine forever.
+   */
+  private async reserveMachine(hostname: string, pipelineId: Types.ObjectId): Promise<boolean> {
+    const slot = await LocalRunSlotModel.findById(hostname).lean();
+    const filter: Record<string, unknown> = { _id: hostname, pipelineId: null };
+    if (slot?.pipelineId) {
+      const holder = await WorkflowModel.findOne({
+        instanceId: slot.pipelineId,
+        type: WorkflowType.PIPELINE,
+      }).lean();
+      const reservedLongAgo =
+        !slot.reservedAt || Date.now() - slot.reservedAt.getTime() > LOCAL_SLOT_CLAIM_TIMEOUT_MS;
+      if (holder?.status === PipelineStatus.running || !reservedLongAgo) return false;
+      Object.assign(filter, { pipelineId: slot.pipelineId, reservedAt: slot.reservedAt ?? null });
+    }
+
+    try {
+      await LocalRunSlotModel.updateOne(
+        filter,
+        { $set: { pipelineId, reservedAt: new Date() } },
+        { upsert: true }
+      );
+      return true;
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) return false;
+      throw error;
+    }
+  }
+
+  private async releaseMachine(hostname: string, pipelineId: Types.ObjectId) {
+    await LocalRunSlotModel.updateOne(
+      { _id: hostname, pipelineId },
+      { $set: { pipelineId: null } }
+    );
   }
 
   private normalizeMachineInfo(

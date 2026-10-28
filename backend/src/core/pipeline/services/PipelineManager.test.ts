@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { PipelineStatus } from '../enums';
 import { PipelineModel } from '../models/PipelineModel';
+import { LocalRunSlotModel } from '../../../modules/computations/models/LocalRunSlotModel';
 import { createExecResult, stub } from '../../../test/testUtils';
 import { PipelineManager } from './PipelineManager';
 import { config } from '../../../config/config';
@@ -184,6 +185,17 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
   const manager = new PipelineManager();
   const updateCalls: any[] = [];
   const pipelineId = new Types.ObjectId();
+  const slotReleases: any[] = [];
+
+  stub(
+    t,
+    LocalRunSlotModel as unknown as Record<string, unknown>,
+    'updateMany',
+    (...args: any[]) => {
+      slotReleases.push(args);
+      return createExecResult();
+    }
+  );
 
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
     updateCalls.push(args);
@@ -209,6 +221,8 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
     { _id: pipelineId },
     { $set: { progress: 100, statusMessage: 'Завершено' } },
   ]);
+  // Leaving `running` frees the machine for the next local claim.
+  assert.deepEqual(slotReleases, [[{ pipelineId }, { $set: { pipelineId: null } }]]);
 });
 
 test('PipelineManager.changeStatus executes idle to queued side effects', async (t) => {
@@ -287,6 +301,17 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
   const manager = new PipelineManager();
   const updateCalls: any[] = [];
   const pipelineId = new Types.ObjectId();
+  const slotReleases: any[] = [];
+
+  stub(
+    t,
+    LocalRunSlotModel as unknown as Record<string, unknown>,
+    'updateMany',
+    (...args: any[]) => {
+      slotReleases.push(args);
+      return createExecResult();
+    }
+  );
 
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
     updateCalls.push(args);
@@ -311,6 +336,8 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
     { _id: pipelineId },
     { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
   ]);
+  // Leaving `running` frees the machine for the next local claim.
+  assert.deepEqual(slotReleases, [[{ pipelineId }, { $set: { pipelineId: null } }]]);
 });
 
 test('PipelineManager.changeStatus moves a queued run back to idle', async (t) => {

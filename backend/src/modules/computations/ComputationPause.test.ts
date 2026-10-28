@@ -8,6 +8,7 @@ import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { createLeanResult, stub } from '../../test/testUtils';
 import { ExperimentModel } from '../experiments/models/ExperimentModel';
 import { ComputationQueue } from './classes/ComputationQueue';
+import { LocalRunSlotModel } from './models/LocalRunSlotModel';
 import { ComputationManager } from './services/ComputationManager';
 
 type FakeRun = {
@@ -17,6 +18,8 @@ type FakeRun = {
   status: PipelineStatus;
   cloudJobId?: string;
 };
+
+const machine = { hostname: 'host-a' } as any;
 
 const createRun = (overrides: Partial<FakeRun> = {}): FakeRun => ({
   _id: new Types.ObjectId(),
@@ -63,15 +66,14 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
       return docs;
     }
   );
-  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', (query: any) => ({
-    sort: () => ({
-      lean: async () => {
-        await tick();
-        const run = byId(query.instanceId);
-        return run ? { _id: run._id, status: run.status } : null;
-      },
-    }),
-  }));
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', (query: any) => {
+    const lean = async () => {
+      await tick();
+      const run = byId(query.instanceId);
+      return run ? { _id: run._id, status: run.status } : null;
+    };
+    return { lean, sort: () => ({ lean }) };
+  });
   stub(
     t,
     WorkflowModel as unknown as Record<string, unknown>,
@@ -102,6 +104,39 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(null)
   );
+
+  // Machine slots with the `_id` unique index: an upsert that matches nothing and finds the
+  // `_id` taken fails with a duplicate key error, as in MongoDB.
+  const slots: any[] = [];
+  const slotMatches = (slot: any, filter: any) =>
+    Object.entries(filter).every(([key, value]) => String(slot[key] ?? null) === String(value));
+  stub(t, LocalRunSlotModel as unknown as Record<string, unknown>, 'findById', (id: string) => ({
+    lean: async () => {
+      await tick();
+      return slots.find((slot) => slot._id === id) ?? null;
+    },
+  }));
+  stub(
+    t,
+    LocalRunSlotModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (filter: any, update: any, options: any) => {
+      await tick();
+      const slot = slots.find((entry) => slotMatches(entry, filter));
+      if (slot) Object.assign(slot, update.$set);
+      else if (options?.upsert) {
+        if (slots.some((entry) => entry._id === filter._id)) throw { code: 11000 };
+        slots.push({ _id: filter._id, ...update.$set });
+      }
+      return {};
+    }
+  );
+  stub(t, LocalRunSlotModel as unknown as Record<string, unknown>, 'updateMany', (filter: any) => ({
+    exec: async () => {
+      slots.filter((slot) => slotMatches(slot, filter)).forEach((slot) => (slot.pipelineId = null));
+      return {};
+    },
+  }));
 };
 
 const managerWithCancelLog = (t: TestContext) => {
@@ -139,7 +174,7 @@ test('pausing moves queued and running runs to idle and cancels cloud jobs', asy
   assert.deepEqual(cancelledJobs, ['job-1']);
   assert.equal(otherExperiment.status, PipelineStatus.queued);
   // The paused queued run is no longer claimable; the other experiment's run still is.
-  const claimed = await new ComputationManager().claimNextRun(ComputationQueue.local);
+  const claimed = await new ComputationManager().claimNextRun(ComputationQueue.local, machine);
   assert.equal(String(claimed?._id), String(otherExperiment._id));
   assert.equal(queued.status, PipelineStatus.idle);
 });
@@ -152,14 +187,17 @@ test('resuming re-queues the paused runs so workers can claim them again', async
   const { manager } = managerWithCancelLog(t);
 
   await manager.pauseExperimentRuns(experimentId);
-  assert.equal(await new ComputationManager().claimNextRun(ComputationQueue.local), undefined);
+  assert.equal(
+    await new ComputationManager().claimNextRun(ComputationQueue.local, machine),
+    undefined
+  );
 
   const resumed = await manager.resumeExperimentRuns(experimentId.toHexString());
 
   assert.equal(resumed.length, 2);
   assert.equal(first.status, PipelineStatus.queued);
   assert.equal(second.status, PipelineStatus.queued);
-  const claimed = await new ComputationManager().claimNextRun(ComputationQueue.local);
+  const claimed = await new ComputationManager().claimNextRun(ComputationQueue.local, machine);
   assert.ok(claimed);
   assert.equal([first, second].filter((run) => run.status === PipelineStatus.running).length, 1);
 });
@@ -169,7 +207,7 @@ for (const order of ['pause first', 'claim first'] as const) {
     const run = createRun();
     installStore(t, [run]);
     const pause = () => managerWithCancelLog(t).manager.pauseExperimentRuns(run.experimentId);
-    const claim = () => new ComputationManager().claimNextRun(ComputationQueue.local);
+    const claim = () => new ComputationManager().claimNextRun(ComputationQueue.local, machine);
 
     await Promise.all(order === 'pause first' ? [pause(), claim()] : [claim(), pause()]);
 

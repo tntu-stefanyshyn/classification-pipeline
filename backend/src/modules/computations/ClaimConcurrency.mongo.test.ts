@@ -4,6 +4,7 @@ import mongoose, { Types } from 'mongoose';
 
 import { PipelineStatus } from '../../core/pipeline/enums';
 import { PipelineModel } from '../../core/pipeline/models/PipelineModel';
+import { PipelineManager } from '../../core/pipeline/services/PipelineManager';
 import { WorkflowType } from '../../core/workflow/enums';
 import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { ComputationQueue } from './classes/ComputationQueue';
@@ -92,4 +93,31 @@ test('local runs are limited per machine, not across machines', { skip }, async 
     status: PipelineStatus.queued,
   });
   assert.equal(stillQueued, 1);
+});
+
+test('parallel workers on one machine take one local run at a time', { skip }, async (t) => {
+  await useDatabase(t);
+  const runIds = await seedQueuedRuns(4, ComputationQueue.local);
+  const claim = () =>
+    new ComputationManager().claimNextRun(ComputationQueue.local, { hostname: 'host-a' } as any);
+  const finished: string[] = [];
+
+  for (let round = 0; round < runIds.length; round += 1) {
+    const claimed = (await Promise.all(Array.from({ length: 6 }, claim))).filter(Boolean);
+
+    assert.equal(claimed.length, 1);
+    const running = await WorkflowModel.countDocuments({
+      instanceId: { $in: runIds },
+      status: PipelineStatus.running,
+    });
+    assert.equal(running, 1);
+    // Finishing the run frees the machine for the next round.
+    await new PipelineManager().changeStatus({
+      pipelineId: claimed[0]!._id,
+      status: PipelineStatus.completed,
+    } as any);
+    finished.push(String(claimed[0]!._id));
+  }
+
+  assert.deepEqual([...finished].sort(), [...runIds].sort());
 });

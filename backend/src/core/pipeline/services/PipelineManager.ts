@@ -11,6 +11,12 @@ import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput'
 import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { config } from '../../../config/config';
+import { ObjectIdOrString } from '../../../types/context';
+import { LocalRunSlotModel } from '../../../modules/computations/models/LocalRunSlotModel';
+
+// A run that leaves `running` frees its machine for the next local claim.
+const releaseLocalRunSlot = (pipelineId: ObjectIdOrString) =>
+  LocalRunSlotModel.updateMany({ pipelineId }, { $set: { pipelineId: null } }).exec();
 
 const PIPELINE_STATUS_LOG_MESSAGES: Record<PipelineStatus, string> = {
   [PipelineStatus.idle]: 'Перехід у стан очікування',
@@ -135,6 +141,7 @@ export class PipelineManager {
           { _id: instanceId },
           { $set: { progress: 100, statusMessage: 'Завершено' } }
         ).exec();
+        await releaseLocalRunSlot(instanceId);
       },
     },
     {
@@ -145,6 +152,7 @@ export class PipelineManager {
           { _id: instanceId },
           { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
+        await releaseLocalRunSlot(instanceId);
       },
     },
   ];

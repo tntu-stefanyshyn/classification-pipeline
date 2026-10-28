@@ -1,34 +1,36 @@
-# Інструкція для AWS Jobs (Batch)
+# AWS Jobs (AWS Batch)
 
-## Швидкий setup для попередження про вимкнений cloud worker
+This guide covers running computations in AWS Batch. For local development you do not need it:
+see the [setup guide](../../SETUP.md), which runs compute containers on your machine.
 
-Повідомлення
+## Quick setup for the "cloud worker disabled" warning
+
+The backend logs this warning (in Ukrainian) at startup:
 `Хмарний воркер вимкнено: AWS Batch або bucket для результатів не налаштовано.`
-з'являється під час старту бекенду, коли `BACKEND_CLOUD_WORKER_ENABLED` увімкнений,
-але бракує хоча б одного обов'язкового параметра:
+("Cloud worker is disabled: AWS Batch or the results bucket is not configured.")
+It appears when `BACKEND_CLOUD_WORKER_ENABLED` is on (the default in code is `true`) but at least one
+required setting is missing:
 
 - `AWS_BATCH_JOB_QUEUE`
 - `AWS_BATCH_JOB_DEFINITION`
-- `AWS_COMPUTATION_RESULTS_BUCKET` або fallback `AWS_S3_BUCKET`
+- `AWS_COMPUTATION_RESULTS_BUCKET`, or the fallback `AWS_S3_BUCKET`
 
-Якщо AWS Batch не потрібен у поточному середовищі, але backend має сам виконувати
-запуски з `cloud` черги через локальний Docker image, вимкни AWS Batch worker,
-увімкни backend Docker worker і перезапусти бекенд:
+If you do not need AWS Batch in your environment but want the backend to run `cloud` queue runs itself
+through a local Docker image, disable the AWS Batch worker, enable the backend Docker worker and
+restart the backend:
 
 ```dotenv
 BACKEND_CLOUD_WORKER_ENABLED=false
 BACKEND_LOCAL_WORKER_ENABLED=true
 ```
 
-Якщо cloud compute потрібен, мінімальний setup такий:
+If you need cloud compute, the minimal setup is:
 
-1. Створи або вибери S3 bucket для вхідних файлів експериментів.
-   Його назва йде в `AWS_S3_BUCKET`.
-2. Створи або вибери S3 bucket для результатів cloud-запусків.
-   Його назва йде в `AWS_COMPUTATION_RESULTS_BUCKET`. Для dev можна використати той самий bucket, що й `AWS_S3_BUCKET`.
-3. Опублікуй Docker image з `aws-jobs/` в ECR, як описано нижче в секції 2.
-4. Створи AWS Batch `Compute Environment`, `Job Queue` і compute `Job Definition`, як описано нижче в секції 3.
-5. Додай мінімальні змінні в `backend/.env`:
+1. Create or choose an S3 bucket for the experiment input files. Its name goes into `AWS_S3_BUCKET`.
+2. Create or choose an S3 bucket for the cloud run results. Its name goes into `AWS_COMPUTATION_RESULTS_BUCKET`. For development you can use the same bucket as `AWS_S3_BUCKET`.
+3. Publish the Docker image from `aws-jobs/` to ECR, as described in section 2.
+4. Create an AWS Batch compute environment, job queue and compute job definition, as described in section 3.
+5. Add the minimal variables to `backend/.env`:
 
 ```dotenv
 BACKEND_CLOUD_WORKER_ENABLED=true
@@ -49,40 +51,39 @@ AWS_BATCH_JOB_NAME_PREFIX=experiment-run
 CLOUD_WORKER_POLL_MS=5000
 ```
 
-6. У compute `Job Definition` додай змінні контейнера:
+6. Add the container variables to the compute job definition:
 
 ```dotenv
 COMPUTE_BACKEND_URL=https://<backend-host>/graphql
 COMPUTE_BACKEND_TOKEN=<service-token>
 ```
 
-`COMPUTE_BACKEND_TOKEN` потрібен тільки якщо GraphQL endpoint захищений service-token-ом.
-Для AWS не використовуй `host.docker.internal`, бо Batch контейнер не побачить локальний backend.
+`COMPUTE_BACKEND_TOKEN` is needed when the GraphQL endpoint requires the service token.
+Do not use `host.docker.internal` for AWS: a Batch container cannot reach your local backend.
 
-7. Перевір права доступу:
+7. Check the permissions:
 
-- credentials бекенду мають мати `batch:SubmitJob` для job queue/job definition і `s3:GetObject` для results bucket;
-- Batch job role має мати `s3:GetObject` для `AWS_S3_BUCKET`;
-- якщо використовується S3-based result flow, Batch job role також має мати `s3:PutObject` у `AWS_COMPUTATION_RESULTS_BUCKET/AWS_COMPUTATION_RESULTS_PREFIX/*`.
+- the backend credentials need `batch:SubmitJob` for the job queue and job definition, and `s3:GetObject` for the results bucket;
+- the Batch job role needs `s3:GetObject` for `AWS_S3_BUCKET`;
+- when you use the S3-based result flow, the Batch job role also needs `s3:PutObject` for `AWS_COMPUTATION_RESULTS_BUCKET/AWS_COMPUTATION_RESULTS_PREFIX/*`.
 
-Після зміни `.env` перезапусти backend. Попередження має зникнути, а cloud-запуски з UI
-будуть відправлятись у `AWS_BATCH_JOB_QUEUE`.
+After changing `.env`, restart the backend. The warning disappears and cloud runs started from the UI
+are submitted to `AWS_BATCH_JOB_QUEUE`.
 
-## 1. Які скрипти треба публікувати в AWS
+## 1. Which scripts to publish to AWS
 
-У репозиторії є два окремі entrypoint-и всередині `aws-jobs/`:
+The repository has two separate entrypoints inside `aws-jobs/`:
 
-- Обчислення конвеєра:
-  - `aws-jobs/src/aws_jobs/compute_handler.py`
-- Оптимізація експерименту:
-  - `aws-jobs/src/aws_jobs/optimization_handler/optimization_handler.py`
+- Pipeline computation: `aws-jobs/src/aws_jobs/compute_handler.py`
+- Experiment optimization: `aws-jobs/src/aws_jobs/optimization_handler/optimization_handler.py`
 
-Обидва скрипти можна запускати з одного й того ж Docker-образу, який збирається з `aws-jobs/Dockerfile`.
-Різниця між ними лише в команді запуску або в `AWS Batch Job Definition`.
+Both can run from the same Docker image, built from `aws-jobs/Dockerfile`. The only difference is the
+command, set on the container or in the AWS Batch job definition. The Dockerfile's default command is
+the compute handler.
 
-## 2. Збірка та пуш образу в ECR
+## 2. Build and push the image to ECR
 
-Приклад нижче використовує один ECR repository і два теги: один для compute, другий для optimization.
+The example below uses one ECR repository and two tags: one for compute and one for optimization.
 
 ```bash
 export AWS_REGION=eu-central-1
@@ -91,7 +92,7 @@ export ECR_REPOSITORY=aws-jobs
 export ECR_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}
 ```
 
-Створити repository, якщо його ще немає:
+Create the repository if it does not exist:
 
 ```bash
 aws ecr describe-repositories \
@@ -102,7 +103,7 @@ aws ecr create-repository \
   --region "$AWS_REGION"
 ```
 
-Увійти в ECR:
+Log in to ECR:
 
 ```bash
 aws ecr get-login-password --region "$AWS_REGION" | \
@@ -110,7 +111,7 @@ docker login --username AWS --password-stdin \
   "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 ```
 
-Зібрати образ і запушити два теги:
+Build the image and push both tags:
 
 ```bash
 docker build -t aws-jobs:latest aws-jobs
@@ -122,60 +123,58 @@ docker push "${ECR_URI}:compute-latest"
 docker push "${ECR_URI}:optimization-latest"
 ```
 
-Нотатки:
+Notes:
 
-- Якщо змінили `requirements.txt`, `Dockerfile` або Python-код у `aws-jobs/src/`, образ треба перебудувати і знову запушити.
-- Якщо потрібен жорстко версіонований rollout, використовуй теги на кшталт `compute-2026-04-13-1` замість `latest`.
+- If you change `requirements.txt`, the `Dockerfile` or the Python code in `aws-jobs/src/`, rebuild and push the image again.
+- For a strictly versioned rollout, use tags such as `compute-2026-04-13-1` instead of `latest`.
 
-## 3. AWS Batch ресурси
+## 3. AWS Batch resources
 
-Мінімально потрібні:
+The minimum you need:
 
-- `Compute Environment`
-- `Job Queue`
-- окремі `Job Definition` для compute і optimization
+- a compute environment
+- a job queue
+- separate job definitions for compute and optimization
 
-### 3.1 Job Definition для compute
+### 3.1 Compute job definition
 
-Рекомендована конфігурація:
+Recommended configuration:
 
 - Image: `${ECR_URI}:compute-latest`
-- Command:
-  - `python -u src/aws_jobs/compute_handler.py`
+- Command: `python -u src/aws_jobs/compute_handler.py`
 - Environment:
   - `COMPUTE_BACKEND_URL=https://<backend-host>/graphql`
-  - `COMPUTE_BACKEND_TOKEN=<service-token>` якщо GraphQL endpoint захищений токеном
+  - `COMPUTE_BACKEND_TOKEN=<service-token>` when the GraphQL endpoint requires a token
 
-Права контейнера:
+Container permissions:
 
-- читання з `AWS_S3_BUCKET`, якщо датасети лежать у S3
-- мережевий доступ до backend GraphQL URL
+- read access to `AWS_S3_BUCKET` when datasets are stored in S3
+- network access to the backend GraphQL URL
 
-Важливо:
+Important:
 
-- Для AWS не можна залишати `host.docker.internal` як backend URL. Потрібен реальний URL, доступний з VPC або з публічної мережі.
-- `compute_handler.py` очікує `COMPUTE_BACKEND_URL` навіть тоді, коли payload приходить через `COMPUTE_PAYLOAD_JSON`.
+- Do not leave `host.docker.internal` as the backend URL for AWS. Use a real URL reachable from your VPC or the public network.
+- `compute_handler.py` requires `COMPUTE_BACKEND_URL` even when the payload arrives through `COMPUTE_PAYLOAD_JSON`.
 
-### 3.2 Job Definition для optimization
+### 3.2 Optimization job definition
 
-Рекомендована конфігурація:
+Recommended configuration:
 
 - Image: `${ECR_URI}:optimization-latest`
-- Command:
-  - `python -u src/aws_jobs/optimization_handler/optimization_handler.py`
+- Command: `python -u src/aws_jobs/optimization_handler/optimization_handler.py`
 
-Права контейнера:
+Container permissions:
 
-- мережевий доступ до backend GraphQL URL
+- network access to the backend GraphQL URL
 
-Важливо:
+Important:
 
-- Основний payload для optimization передається через `OPTIMIZATION_PAYLOAD_JSON`.
-- Окремий `COMPUTE_BACKEND_URL` для цього handler не потрібен, бо `backend_url` вже входить у payload.
+- The main optimization payload is passed through `OPTIMIZATION_PAYLOAD_JSON`.
+- This handler does not need a separate `COMPUTE_BACKEND_URL`, because `backend_url` is part of the payload.
 
-## 4. Змінні оточення бекенду для cloud compute
+## 4. Backend environment variables for cloud compute
 
-Додай у `.env` бекенду:
+Add to the backend `.env`:
 
 ```dotenv
 AWS_BATCH_JOB_QUEUE=...
@@ -198,20 +197,22 @@ BACKEND_LOCAL_DOCKER_IMAGE=aws-jobs
 OPTIMIZATION_DOCKER_IMAGE=aws-jobs-optimization
 ```
 
-Пояснення:
+Notes:
 
-- `AWS_BATCH_JOB_DEFINITION` має вказувати саме на compute job definition.
-- `BACKEND_CLOUD_WORKER_ENABLED=true` вмикає відправку запусків з черги `cloud` в AWS Batch.
-- `BACKEND_LOCAL_WORKER_ENABLED=true` вмикає backend Docker worker, який бере запуски з черги `cloud` і виконує їх через `BACKEND_LOCAL_DOCKER_IMAGE`.
-- Черга `local` призначена для desktop local worker.
-- `BACKEND_LOCAL_DOCKER_IMAGE` задає Docker image для backend-виконання cloud-запусків без AWS Batch.
-- `OPTIMIZATION_DOCKER_IMAGE` використовується локальним `OptimizationRunner`, а не AWS Batch.
+- `AWS_BATCH_JOB_DEFINITION` must point to the compute job definition.
+- `BACKEND_CLOUD_WORKER_ENABLED=true` submits runs from the `cloud` queue to AWS Batch.
+- `BACKEND_LOCAL_WORKER_ENABLED=true` enables the backend Docker worker, which takes runs from the `cloud` queue and runs them with `BACKEND_LOCAL_DOCKER_IMAGE`.
+- The `local` queue is served by the desktop local worker.
+- `BACKEND_LOCAL_DOCKER_IMAGE` sets the Docker image for running `cloud` queue runs on the backend host without AWS Batch (default `aws-jobs`).
+- `OPTIMIZATION_DOCKER_IMAGE` is used by the local `OptimizationRunner`, not by AWS Batch (default `aws-jobs-optimization`).
+- With Docker Compose the `aws-jobs` and `aws-jobs-optimization` images are built by the one-shot services of the same names in `docker-compose.yml`.
 
-## 5. Ручний запуск job-ів у AWS Batch
+## 5. Manually running jobs in AWS Batch
 
 ### 5.1 Compute
 
-Для smoke test достатньо передати `pipelineId`, а сам шлях конвеєра handler дочитає з бекенду через `COMPUTE_BACKEND_URL`.
+For a smoke test it is enough to pass `pipelineId`; the handler reads the pipeline path from the
+backend through `COMPUTE_BACKEND_URL`.
 
 ```bash
 export COMPUTE_PAYLOAD_JSON='{
@@ -246,24 +247,24 @@ aws batch submit-job \
   --container-overrides "environment=[{name=OPTIMIZATION_PAYLOAD_JSON,value=$OPTIMIZATION_PAYLOAD_JSON}]"
 ```
 
-Якщо command уже зафіксований у job definition, `container-overrides` достатньо лише для environment variables.
+If the command is already fixed in the job definition, `container-overrides` only needs the environment variables.
 
-## 6. Поточні обмеження реалізації
+## 6. Current limitations
 
-На рівні поточного коду важливо не змішувати два різні сценарії:
+Do not mix up the two scenarios:
 
-- Бекенд автоматично відправляє в AWS тільки compute jobs через `CloudComputationWorker`.
-- Оптимізація зараз запускається локально через Docker у `OptimizationRunner` і використовує `OPTIMIZATION_DOCKER_IMAGE`.
-- Тобто публікація optimization image в ECR робить optimization runnable в AWS, але бекенд сам по собі ще не почне відправляти її в AWS Batch без окремої доробки.
+- The backend automatically submits only compute jobs to AWS, through `CloudComputationWorker`.
+- Optimization currently runs locally through Docker in `OptimizationRunner` and uses `OPTIMIZATION_DOCKER_IMAGE`.
+- Publishing the optimization image to ECR makes optimization runnable in AWS, but the backend does not submit it to AWS Batch without further development.
 
-Окрема технічна примітка:
+Technical note:
 
-- `CloudComputationWorker` уже резервує `result_s3_bucket` і `result_s3_key` у payload для cloud-запусків.
-- Водночас поточний `compute_handler.py` завершує pipeline через GraphQL callback-и і потребує `COMPUTE_BACKEND_URL`.
-- Якщо хочеш повністю S3-based completion flow, це треба окремо доробити в Python handler або в механізмі reconciliation на бекенді.
+- `CloudComputationWorker` already reserves `result_s3_bucket` and `result_s3_key` in the payload of cloud runs.
+- However, the current `compute_handler.py` completes the pipeline through GraphQL callbacks and requires `COMPUTE_BACKEND_URL`.
+- A fully S3-based completion flow needs separate work in the Python handler or in a reconciliation mechanism on the backend.
 
-## 7. Вибір середовища в UI
+## 7. Choosing the environment in the UI
 
-- У налаштуваннях графа ввімкни потрібні черги: `Локально` або `У хмарі`.
-- У картці обчислень доступний перемикач середовища запуску.
-- Якщо ввімкнені обидві черги, той самий шлях можна запускати або локально, або через AWS Batch.
+- In the graph settings, enable the queues you need: **Local** or **Cloud** (the labels follow the UI language).
+- The computation card has a switch for the execution environment.
+- If both queues are enabled, the same path can be run either locally or through AWS Batch.

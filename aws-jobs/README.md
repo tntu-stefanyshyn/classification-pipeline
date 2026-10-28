@@ -1,39 +1,38 @@
-# aws-jobs Docker instructions
+# aws-jobs
 
-Build the image and run the worker service with Docker Compose:
+Python workspace with the machine-learning jobs for classification experiments. It contains the
+compute handler (one pipeline run) and the optimization handler (one experiment), and runs inside the
+Docker images that the backend and the desktop app start.
+
+## Docker images
+
+`aws-jobs/Dockerfile` builds one image (Python 3.11) that serves both handlers. The root
+`docker-compose.yml` builds it twice under two names and exits immediately (`entrypoint: ["true"]`),
+because the backend starts the containers itself through the Docker socket:
+
+| Image                   | Used for                                                |
+| ----------------------- | ------------------------------------------------------- |
+| `aws-jobs`              | Compute runs (the desktop and backend Docker workers)   |
+| `aws-jobs-optimization` | Experiment optimization (`OptimizationRunner`)          |
+
+Build both images from the repository root (and again after changing `aws-jobs/`):
 
 ```bash
-docker-compose build aws-jobs
-docker-compose up -d aws-jobs
+docker compose build aws-jobs aws-jobs-optimization
 ```
 
-Run in the foreground (logs):
+`docker compose up -d` builds them as a part of the full stack (MongoDB, backend and the images).
+Compose does not run a long-lived `aws-jobs` service and does not mount `aws-jobs/` into a container,
+so code changes require rebuilding the images.
 
-```bash
-docker-compose up aws-jobs
-```
+## Local development
 
-Notes:
+1. Create a virtual environment in the `aws-jobs` directory, for example `python -m venv .venv && source .venv/bin/activate`.
+2. Install the dependencies: `pip install -e .[dev]`.
+3. Run the tests from the repository root: `npm run test:aws-jobs`.
+4. Use `aws_jobs.classification_job.TabularClassifier` to train a model.
 
-- The compose file forwards `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` from your host environment. Export them before running, or provide a `.env` file in the repo root.
-- The service mounts the local `aws-jobs/` folder into the container at `/app` so code changes are immediate.
-- If you prefer an immutable image (no mounts), remove the `volumes` section in `docker-compose.yml`.
-
-## Deploy to AWS
-
-For ECR upload steps and AWS Batch job definitions for both computation and optimization handlers, see [backend/instructions/AWS_JOBS.md](../backend/instructions/AWS_JOBS.md).
-
-# AWS jobs (Python)
-
-Міні-воркспейс для ML задач класифікації, сумісний з AWS оточенням.
-
-## Швидкий старт
-
-1. Створити віртуальне оточення у каталозі `aws-jobs` (наприклад, `python -m venv .venv && source .venv/bin/activate`).
-2. Встановити залежності: `pip install -e .[dev]`.
-3. Використати `aws_jobs.classification_job.TabularClassifier` для тренування моделі.
-
-### Приклад
+### Example
 
 ```python
 import pandas as pd
@@ -45,3 +44,8 @@ cfg = ClassificationJobConfig(target_column="label", output_dir=Path("artifacts"
 report = TabularClassifier(cfg).train(df)
 print(report)
 ```
+
+## Deploy to AWS
+
+For the ECR upload steps and the AWS Batch job definitions for the compute and optimization
+handlers, see [AWS Jobs (AWS Batch)](../docs/operations/aws-batch.md).

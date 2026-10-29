@@ -1,3 +1,5 @@
+English | [Українська](index.uk.md)
+
 # Documentation
 
 Documentation for the Classification Pipeline project: a desktop application and a backend for

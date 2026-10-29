@@ -1,3 +1,5 @@
+English | [Українська](SETUP.uk.md)
+
 # Minimal local setup: WSL and Linux
 
 Run the backend, MongoDB, and desktop app locally, with AWS S3 for CSV uploads.
@@ -154,7 +156,8 @@ are unnecessary for this setup.
 Two workers execute runs. The backend's Docker worker
 (`BACKEND_LOCAL_WORKER_ENABLED=true`, the default) consumes the `cloud` queue and
 needs no AWS Batch; the desktop worker executes the `local` queue. Keep
-`BACKEND_CLOUD_WORKER_ENABLED=false` unless you use AWS Batch. The containers that
+`BACKEND_CLOUD_WORKER_ENABLED=false` unless you use AWS Batch (the code default is
+`true`, so a missing value logs the "cloud worker disabled" warning at startup). The containers that
 the backend starts authenticate with `BACKEND_SERVICE_TOKEN`; any long random string
 works. The same values apply to the Compose and the manual start below (Compose sets
 `MONGODB_URI` and `BACKEND_GRAPHQL_URL` itself).
@@ -225,7 +228,8 @@ npm run start:desktop
 ```
 
 The desktop starts its local computation worker automatically and prepares the
-`aws-jobs` Docker image, building it when missing. The worker polls the `local`
+`aws-jobs` Docker image, building it when missing (and rebuilding it on every start in
+development; set `LOCAL_WORKER_REBUILD_IMAGE=false` to skip the rebuild). The worker polls the `local`
 queue and executes runs submitted through the app while the desktop is open.
 Remove any old `LOCAL_WORKER_ENABLED=false` override from your shell or launch
 configuration. No separate worker launch or manual image build is needed.

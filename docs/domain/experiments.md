@@ -10,7 +10,7 @@ stage, path, pipeline, queue, fold) are kept in English across all documents.
 - **Graph**: nodes (technologies) connected by edges; each node belongs to a **stage**.
 - **Stage**: one of `PREPROCESSING`, `DATA_ENHANCEMENT`, `FEATURE_EXTRACTION`, `DIMENSIONALITY_REDUCTION`, `CLASSIFICATION`, in this order.
 - **Path**: a chain of nodes from a root node to a leaf.
-- **Pipeline** (run): the computation of one path. One pipeline is generated for every path when the experiment moves to `computing`.
+- **Pipeline** (run): the computation of one path in one queue. One pipeline is generated for every combination of path and selected queue when the experiment moves to `computing`. With both `local` and `cloud` selected there are two pipelines per path.
 - **Queue**: where a pipeline is executed: `local` (the desktop worker) or `cloud` (the backend Docker worker or AWS Batch).
 - **Fold**: the number of cross-validation folds, set in the graph settings.
 
@@ -20,7 +20,7 @@ stage, path, pipeline, queue, fold) are kept in English across all documents.
 | --------------- | ---------------------------------------------------------------------------------------------------- |
 | `creating`      | Default state after creation.                                                                        |
 | `configuring`   | Set when graph nodes, graph settings or the computation mode are updated.                            |
-| `computing`     | Set when computations are started. Pipelines are generated from the graph paths.                     |
+| `computing`     | Set when computations are started. One pipeline is generated per path and selected queue.             |
 | `optimization`  | Set while the optimization job runs, after the pipelines are computed.                               |
 | `completed`     | Set when optimization has finished.                                                                  |
 
@@ -51,7 +51,7 @@ status message "Зупинено користувачем". The pipeline history
 - Graph settings require at least one allowed computation queue, and a run is accepted only for an allowed queue.
 - The computation mode of the graph (`local`, `cloud`, `both`) restricts which queue can be used.
 - Experiment updates and graph changes are blocked after computations start (statuses `computing`, `optimization` and `completed`).
-- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines must be `completed`.
+- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`.
 
 ## GraphQL behavior
 

@@ -14,4 +14,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `docs/index.md`, `docs/getting-started`, `docs/architecture`, `docs/domain`, `docs/api` and `docs/operations` sections.
-- Empty `LICENSE` placeholder; the license text is to be added after the team confirms the choice.

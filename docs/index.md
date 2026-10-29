@@ -8,8 +8,28 @@ building and running classification experiments.
 - English is the primary language of all documentation.
 - Ukrainian translations of the user-facing pages live next to the English file with the suffix
   `.uk.md` (for example `README.uk.md`). Developer-only pages are English only.
-- Keep technical terms in English in every language: experiment, graph, stage, path, pipeline, run, fold, queue.
+- In Ukrainian texts use the established Ukrainian terms from the glossary below and avoid unnecessary English borrowings (for example, write «конвеєр», not «пайплайн»). The same terms are used in the desktop UI (`desktop/src/i18n/uk.ts`).
+- Write the English term in parentheses on its first use in a Ukrainian page when the Ukrainian term could be ambiguous. Code identifiers, file names, commands and status values (`idle`, `queued`) stay in English everywhere.
 - When you change an English page that has a Ukrainian translation, update the translation too.
+
+## Glossary
+
+| English        | Ukrainian                      |
+| -------------- | ------------------------------ |
+| experiment     | експеримент                    |
+| graph          | граф                           |
+| node           | вузол                          |
+| stage          | етап                           |
+| path           | шлях                           |
+| pipeline       | конвеєр                        |
+| run            | запуск                         |
+| queue          | черга                          |
+| fold           | крок перехресної валідації     |
+| computation    | обчислення                     |
+| optimization   | оптимізація                    |
+| dataset        | набір даних                    |
+| worker         | виконавець (worker)            |
+| report         | звіт                           |
 
 ## Where to find things
 

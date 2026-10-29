@@ -1,8 +1,8 @@
 # Experiments and computations
 
 This page collects the rules for experiments, graphs and runs. It covers both the backend rules and
-how the desktop constructor and the experiment details page apply them. Terms (experiment, graph,
-stage, path, pipeline, queue, fold) are kept in English across all documents.
+how the desktop constructor and the experiment details page apply them. The Ukrainian equivalents
+of the terms are listed in the [glossary](../index.md#glossary).
 
 ## Terms
 

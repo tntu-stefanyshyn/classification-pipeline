@@ -220,6 +220,7 @@ export class ComputationManager {
     if (workflow.status !== PipelineStatus.running) {
       return pipeline;
     }
+    const jobId = await this.markStopped(pipeline._id, workflow.executionId);
     try {
       await this.pipelineManager.changeStatus(
         { pipelineId: pipeline._id, status: PipelineStatus.idle, message: 'Зупинено користувачем' },
@@ -234,23 +235,22 @@ export class ComputationManager {
       if (!lostRace) throw error;
       return PipelineBaseService.getById(pipelineId);
     }
-    await this.cancelExecutionJob(pipeline._id, workflow.executionId);
+    if (jobId) await this.cancelCloudJob(jobId);
     return PipelineBaseService.getById(pipelineId);
   }
 
   /**
-   * Cancels the AWS job of an execution that a user has just ended. It runs after the status
-   * change, and `CloudComputationWorker.submitRun` re-checks the status after recording a job id,
-   * so a job submitted around the Stop is cancelled by one side or the other.
+   * Marks the execution as stopped and returns the AWS job id it recorded, in one update made
+   * before the status change. `CloudComputationWorker.submitRun` records a job id only for an
+   * unmarked execution and cancels the job itself otherwise, so the job is cancelled by one side
+   * whatever a requeue or a new claim changes on the pipeline in between.
    */
-  private async cancelExecutionJob(pipelineId: Types.ObjectId, executionId?: number) {
-    const pipeline = await PipelineModel.findOne({
-      _id: pipelineId,
-      executionId: executionId ?? null,
-    }).lean();
-    if (pipeline?.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
-      await this.cancelCloudJob(pipeline.cloudJobId);
-    }
+  private async markStopped(pipelineId: Types.ObjectId, executionId?: number) {
+    const before = await PipelineModel.findOneAndUpdate(
+      { _id: pipelineId, executionId: executionId ?? null },
+      { $set: { stoppedExecutionId: executionId ?? 0 } }
+    ).lean();
+    return before?.queue === ComputationQueue.cloud ? before.cloudJobId : undefined;
   }
 
   async claimNextRun(
@@ -335,11 +335,7 @@ export class ComputationManager {
     message: string
   ): Promise<boolean> {
     try {
-      await this.pipelineManager.changeStatus(
-        { pipelineId, status, message },
-        undefined,
-        execution
-      );
+      await this.pipelineManager.endExecution({ pipelineId, status, message }, execution);
       return true;
     } catch (error) {
       if (error instanceof WorkflowTransitionConflictError) return false;
@@ -452,14 +448,17 @@ export class ComputationManager {
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return;
+      const jobId =
+        status === PipelineStatus.running
+          ? await this.markStopped(pipelineId, executionId)
+          : undefined;
       try {
         await this.pipelineManager.changeStatus(
           { pipelineId, status: PipelineStatus.idle, message: 'Обчислення зупинено' },
           undefined,
           { executionId: executionId ?? null }
         );
-        if (status === PipelineStatus.running)
-          await this.cancelExecutionJob(pipelineId, executionId);
+        if (jobId) await this.cancelCloudJob(jobId);
         return;
       } catch (error) {
         const lostRace =

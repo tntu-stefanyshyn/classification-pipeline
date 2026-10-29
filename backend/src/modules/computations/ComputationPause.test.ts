@@ -108,12 +108,18 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
       return { exec: async () => ({}) };
     }
   );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOne', (query: any) => ({
-    lean: async () => {
-      const run = byId(query._id);
-      return run && (run.executionId ?? null) === query.executionId ? run : null;
-    },
-  }));
+  // The stop mark: returns the run as it was before the update.
+  stub(
+    t,
+    PipelineModel as unknown as Record<string, unknown>,
+    'findOneAndUpdate',
+    (query: any) => ({
+      lean: async () => {
+        const run = byId(query._id);
+        return run && (run.executionId ?? null) === query.executionId ? { ...run } : null;
+      },
+    })
+  );
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'find', (query: any) => ({
     lean: async () => runs.filter((run) => matches(run, { _id: query._id })),
   }));

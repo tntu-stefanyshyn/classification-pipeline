@@ -219,7 +219,7 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
     experimentId,
   }));
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async (...args: any[]) => {
+    endExecution: async (...args: any[]) => {
       managerCalls.push(['changePipelineStatus', ...args]);
       return true;
     },
@@ -250,7 +250,7 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
   // Each report changes the status only for its own execution, and stores its result for it.
   const statusChanges = managerCalls.filter((entry) => entry[0] === 'changePipelineStatus');
   assert.deepEqual(
-    statusChanges.map((entry) => [entry[1].status, entry[3]]),
+    statusChanges.map((entry) => [entry[1].status, entry[2]]),
     [
       [PipelineStatus.completed, { executionId: 2 }],
       [PipelineStatus.completed, { executionId: 2 }],
@@ -318,14 +318,19 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
       calls.push(['cancelCloudJob', ...args]);
     }
   );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOne', (filter: any) => {
-    calls.push(['findPipeline', filter]);
-    return createLeanResult({
-      _id: pipelineId,
-      queue: ComputationQueue.cloud,
-      cloudJobId: 'job-1',
-    });
-  });
+  stub(
+    t,
+    PipelineModel as unknown as Record<string, unknown>,
+    'findOneAndUpdate',
+    (...args: any[]) => {
+      calls.push(['markStopped', ...args]);
+      return createLeanResult({
+        _id: pipelineId,
+        queue: ComputationQueue.cloud,
+        cloudJobId: 'job-1',
+      });
+    }
+  );
   let workflowStatus = PipelineStatus.running;
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
     getWorkflow: async () => ({ status: workflowStatus, executionId: 4 }),
@@ -338,13 +343,15 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
   } as any);
 
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), [{ _id: pipelineId }]);
-  // The job is cancelled after the status change, for the execution that was paused.
+  // The paused execution is marked (and its job id read) before the status change; the job is
+  // cancelled after it.
   const names = calls.map((entry) => entry[0]);
+  assert.ok(names.indexOf('markStopped') < names.indexOf('changeStatus'));
   assert.ok(names.indexOf('changeStatus') < names.indexOf('cancelCloudJob'));
-  assert.deepEqual(calls.find((entry) => entry[0] === 'findPipeline')?.[1], {
-    _id: pipelineId,
-    executionId: 4,
-  });
+  assert.deepEqual(calls.find((entry) => entry[0] === 'markStopped')?.slice(1), [
+    { _id: pipelineId, executionId: 4 },
+    { $set: { stoppedExecutionId: 4 } },
+  ]);
   assert.deepEqual(calls.find((entry) => entry[0] === 'changeStatus')?.[3], { executionId: 4 });
   assert.ok(
     calls.some(

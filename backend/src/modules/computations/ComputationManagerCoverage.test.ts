@@ -327,7 +327,7 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
       calls.push(['cancelCloudJob', ...args]);
     }
   );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOne', () =>
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
     createLeanResult(currentPipeline)
   );
   // claimNextRun reads each candidate's workflow before claiming it.
@@ -463,7 +463,7 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     getWorkflow: async () => ({ status: PipelineStatus.completed }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async (...args: any[]) => {
+    endExecution: async (...args: any[]) => {
       calls.push(['changeStatus', ...args]);
       // The run is already completed, so no transition out of `running` applies.
       throw new Error('TRANSITION_NOT_FOUND');

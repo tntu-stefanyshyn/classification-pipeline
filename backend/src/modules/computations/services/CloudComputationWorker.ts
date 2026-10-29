@@ -292,9 +292,10 @@ export class CloudComputationWorker {
 
     const jobId = submitResponse.jobId ?? '';
     const statusMessage = jobId ? `AWS: ${jobId}` : 'Відправлено в AWS';
-    // A job submitted for an execution that has since ended must not label the newer one.
-    await PipelineModel.findOneAndUpdate(
-      { _id: runId, executionId },
+    // Record the job only for this execution, and only if no Stop/Pause marked it first (they
+    // take the recorded id with their mark); otherwise nobody else will cancel it, so do it here.
+    const recorded = await PipelineModel.findOneAndUpdate(
+      { _id: runId, executionId, stoppedExecutionId: { $ne: executionId } },
       {
         $set: {
           statusMessage,
@@ -302,19 +303,7 @@ export class CloudComputationWorker {
         },
       }
     ).lean();
-
-    // A Stop or Pause that ended this execution before the job id was recorded could not cancel
-    // the job; it re-checks after the status change, this side after recording the id.
-    const current = await this.workflowManager.getWorkflow({
-      instanceId: pipeline._id,
-      type: WorkflowType.PIPELINE,
-    });
-    if (
-      jobId &&
-      (current.status !== PipelineStatus.running || current.executionId !== executionId)
-    ) {
-      await this.manager.cancelCloudJob(jobId);
-    }
+    if (!recorded && jobId) await this.manager.cancelCloudJob(jobId);
   }
 
   private buildPayload(

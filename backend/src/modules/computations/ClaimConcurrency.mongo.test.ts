@@ -688,3 +688,117 @@ test(
     assert.deepEqual(cancelled, ['job-late']);
   }
 );
+
+test('a late failure report does not take a requeued run out of the queue', { skip }, async (t) => {
+  await useDatabase(t);
+  const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+  const { manager } = managerWithCancelLog(t);
+  await manager.claimNextRun(ComputationQueue.cloud);
+  await manager.stopRun(runId!);
+  await new PipelineManager().changeStatus({
+    pipelineId: runId,
+    status: PipelineStatus.queued,
+  } as any);
+
+  // Execution 1's failure arrives while the retry waits in the queue, still under executionId 1.
+  await manager.failRun({ runId: runId!, executionId: '1', statusMessage: 'late failure' });
+
+  assert.equal(await statusOf(runId!), PipelineStatus.queued);
+  const retry = await manager.claimNextRun(ComputationQueue.cloud);
+  assert.equal(retry?.executionId, 2);
+  assert.equal(await statusOf(runId!), PipelineStatus.running);
+});
+
+// Between the stop's status change and the rest of the stop, the run is queued again and claimed
+// by execution 2, which clears the pipeline's cloudJobId and raises its execution fence.
+const requeueAndReclaimAfterStop = (t: TestContext, manager: ComputationManager, runId: string) => {
+  const pipelineManager = new PipelineManager();
+  let done = false;
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatus: async (...args: Parameters<PipelineManager['changeStatus']>) => {
+      const changed = await pipelineManager.changeStatus(...args);
+      if (!done && args[0].status === PipelineStatus.idle) {
+        done = true;
+        await pipelineManager.changeStatus({
+          pipelineId: runId,
+          status: PipelineStatus.queued,
+        } as any);
+        const pipeline = await PipelineModel.findById(runId).lean();
+        assert.equal(pipeline?.cloudJobId, undefined, 'the requeue cleared execution 1 job id');
+        await new ComputationManager().claimNextRun(ComputationQueue.cloud);
+        await recordJob(runId, 2, 'job-2');
+      }
+      return changed;
+    },
+  } as any);
+};
+
+for (const action of ['Stop', 'Pause'] as const) {
+  test(
+    `${action} cancels the stopped job although the run is requeued and reclaimed meanwhile`,
+    { skip },
+    async (t) => {
+      await useDatabase(t);
+      const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+      const { manager, cancelled } = managerWithCancelLog(t);
+      await manager.claimNextRun(ComputationQueue.cloud);
+      await recordJob(runId!, 1, 'job-1');
+      requeueAndReclaimAfterStop(t, manager, runId!);
+
+      if (action === 'Stop') await manager.stopRun(runId!);
+      else
+        await manager.pauseExperimentRuns(
+          (await PipelineModel.findById(runId).lean())!.experimentId
+        );
+
+      assert.deepEqual(cancelled, ['job-1']);
+      // Execution 2 keeps running with its own job; only execution 1's job was cancelled.
+      const workflow = await WorkflowModel.findOne({ instanceId: runId }).lean();
+      assert.equal(workflow?.status, PipelineStatus.running);
+      assert.equal(workflow?.executionId, 2);
+      assert.equal((await PipelineModel.findById(runId).lean())?.cloudJobId, 'job-2');
+    }
+  );
+}
+
+test(
+  'a submission and a Stop racing: a submitted job is cancelled exactly once',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
+      createLeanResult({ _id: new Types.ObjectId() })
+    );
+    stub(t, GraphStructureModel as unknown as Record<string, unknown>, 'findOne', () =>
+      createLeanResult({
+        nodes: [{ _id: new Types.ObjectId(), stage: 'CLASSIFICATION', settings: [] }],
+      })
+    );
+    for (let round = 0; round < 20; round += 1) {
+      const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+      const cancelled: string[] = [];
+      const submitted: string[] = [];
+      const worker = new CloudComputationWorker() as any;
+      const { manager: stopper, cancelled: stopperCancelled } = managerWithCancelLog(t);
+      stub(t, worker.manager, 'cancelCloudJob', async (jobId: string) => {
+        cancelled.push(jobId);
+      });
+      stub(t, worker, 'batch', {
+        send: async () => {
+          submitted.push(`job-${round}`);
+          return { jobId: `job-${round}` };
+        },
+      });
+      const run = await worker.manager.claimNextRun(ComputationQueue.cloud);
+
+      // submitRun checks that the execution runs, submits and records the job; Stop marks the
+      // execution, ends it and cancels the job it found. Their steps interleave freely here.
+      await Promise.all([worker.submitRun(runId, run.executionId), stopper.stopRun(runId!)]);
+
+      assert.equal(await statusOf(runId!), PipelineStatus.idle);
+      // Either nothing was submitted (Stop ended the run before the check), or the job is cancelled
+      // by exactly one side: by Stop if it was recorded first, otherwise by the submitter.
+      assert.deepEqual([...cancelled, ...stopperCancelled], submitted);
+    }
+  }
+);

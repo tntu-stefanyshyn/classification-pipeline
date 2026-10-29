@@ -63,6 +63,10 @@ export class Pipeline extends TimeStamps {
   @prop({ type: () => Number })
   executionId?: number;
 
+  /** Set by Stop/Pause before ending an execution; its job id is then recorded no more. */
+  @prop({ type: () => Number })
+  stoppedExecutionId?: number;
+
   @prop({ trim: true })
   cloudJobId?: string;
 

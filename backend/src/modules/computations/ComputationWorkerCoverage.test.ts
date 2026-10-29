@@ -748,10 +748,11 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     ),
     true
   );
-  // The job id is recorded only for the execution that submitted it.
+  // The job id is recorded only for the execution that submitted it, unless a Stop marked it.
   assert.deepEqual(calls.find((entry) => entry[0] === 'findOneAndUpdate')?.[1], {
     _id: runId,
     executionId: 1,
+    stoppedExecutionId: { $ne: 1 },
   });
 
   // A newer execution has started since this one was claimed: nothing is submitted.

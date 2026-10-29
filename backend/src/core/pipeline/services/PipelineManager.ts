@@ -202,4 +202,17 @@ export class PipelineManager {
   private readonly apiTransitions = this.transitions.filter(
     (transition) => transition.from !== PipelineStatus.running
   );
+
+  /**
+   * Ends an execution on its worker's report. Only transitions out of `running` apply: a run that
+   * was stopped and queued again keeps its executionId, so a late failure report would otherwise
+   * take the retry out of the queue. The transition follows the status the update matches.
+   */
+  endExecution(input: ChangePipelineStatusInput, expected: Record<string, unknown>) {
+    return this.changeStatus(input, undefined, expected, this.executionTransitions);
+  }
+
+  private readonly executionTransitions = this.transitions.filter(
+    (transition) => transition.from === PipelineStatus.running
+  );
 }

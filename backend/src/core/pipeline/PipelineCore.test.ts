@@ -13,6 +13,7 @@ import { UpdatePipelineProgressInput } from './classes/UpdatePipelineProgressInp
 import { PipelineStatus } from './enums';
 import { PipelineResolver } from './graphql/pipeline';
 import { createLeanResult, stub } from '../../test/testUtils';
+import { config } from '../../config/config';
 
 test('core pipeline classes keep assigned values and exports remain available', () => {
   const now = new Date();
@@ -142,13 +143,15 @@ test('PipelineBaseService.updatePipelineProgress updates progress and optional h
 
   const result = await PipelineBaseService.updatePipelineProgress({
     pipelineId: 'pipeline-1',
+    executionId: '2',
     progress: 55,
     message: 'Halfway',
     status: PipelineStatus.running,
   } as any);
 
   assert.equal(result, pipeline);
-  assert.deepEqual(updateCalls[0][0], { _id: 'pipeline-1' });
+  // Only the execution that sent the progress is updated.
+  assert.deepEqual(updateCalls[0][0], { _id: 'pipeline-1', executionId: 2 });
   assert.equal(updateCalls[0][1].$set.progress, 55);
   assert.equal(updateCalls[0][1].$push.history.message, 'Halfway');
   assert.equal(updateCalls[0][1].$push.history.status, PipelineStatus.running);
@@ -167,9 +170,45 @@ test('PipelineBaseService.updatePipelineProgress skips history when message and 
 
   await PipelineBaseService.updatePipelineProgress({
     pipelineId: 'pipeline-1',
+    executionId: '1',
   } as any);
 
   assert.deepEqual(updateCalls[0][1], { $set: {} });
+});
+
+test('PipelineBaseService.updatePipelineProgress requires an executionId outside the rollout mode', async (t) => {
+  const updateCalls: any[] = [];
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
+    updateCalls.push(args);
+    return createLeanResult({ acknowledged: true });
+  });
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({}));
+
+  for (const executionId of [undefined, null, '', '0', 'abc']) {
+    await assert.rejects(
+      () =>
+        PipelineBaseService.updatePipelineProgress({
+          pipelineId: 'pipeline-1',
+          executionId,
+          progress: 10,
+        } as any),
+      /executionId/
+    );
+  }
+  assert.equal(updateCalls.length, 0);
+
+  // The rollout setting accepts reports from clients that predate executionId.
+  stub(
+    t,
+    config.computations as unknown as Record<string, unknown>,
+    'acceptLegacyExecutionReports',
+    true
+  );
+  await PipelineBaseService.updatePipelineProgress({
+    pipelineId: 'pipeline-1',
+    progress: 10,
+  } as any);
+  assert.deepEqual(updateCalls[0][0], { _id: 'pipeline-1' });
 });
 
 test('PipelineBaseService.updatePipelineOptimization appends optimization scores', async (t) => {
@@ -273,7 +312,7 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
     }
   );
   stub(t, resolver as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async (...args: any[]) => {
+    changeStatusFromApi: async (...args: any[]) => {
       statusCalls.push(args);
       return true;
     },
@@ -304,10 +343,20 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
     true
   );
 
+  await assert.rejects(
+    () =>
+      resolver.changePipelineStatus({
+        pipelineId: 'pipeline-1',
+        status: PipelineStatus.running,
+      } as any),
+    /claimExperimentRun/
+  );
+
   assert.deepEqual(listCalls[0], ['exp-1', ComputationQueue.cloud]);
   assert.deepEqual(getByIdCalls[0], ['pipeline-1']);
   assert.deepEqual(progressCalls[0], [{ pipelineId: 'pipeline-1' }]);
   assert.deepEqual(optimizationCalls[0], [{ pipelineId: 'pipeline-1', score: 0.9 }]);
   assert.deepEqual(statusCalls[0], [{ pipelineId: 'pipeline-1', status: PipelineStatus.queued }]);
+  assert.equal(statusCalls.length, 1);
   assert.deepEqual(workflowCalls[0], [{ instanceId: pipeline._id, type: 'PIPELINE' }]);
 });

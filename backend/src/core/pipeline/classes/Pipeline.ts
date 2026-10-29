@@ -55,6 +55,14 @@ export class Pipeline extends TimeStamps {
   @prop({ min: 0, default: 0 })
   priority?: number;
 
+  /**
+   * Execution fence: the number of the latest execution a claim started. It is raised before the
+   * claim's status change, so reports carrying an older number are rejected by their update filter.
+   */
+  @Field(() => ID, { nullable: true })
+  @prop({ type: () => Number })
+  executionId?: number;
+
   @prop({ trim: true })
   cloudJobId?: string;
 

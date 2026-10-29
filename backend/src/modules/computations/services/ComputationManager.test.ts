@@ -13,7 +13,22 @@ import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { createLeanResult, stub } from '../../../test/testUtils';
 import { ComputationManager } from './ComputationManager';
 import { WorkflowTransitionConflictError } from '../../../core/workflow/errors';
-import { LocalRunSlotModel } from '../models/LocalRunSlotModel';
+
+// claimNextRun reads each candidate's workflow before claiming it.
+const stubQueuedWorkflows = (t: any, executionId?: number) =>
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () =>
+    createLeanResult({ status: PipelineStatus.queued, executionId })
+  );
+const stubPipelineUpdates = (t: any, calls: any[] = []) =>
+  stub(
+    t,
+    PipelineModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (...args: any[]) => {
+      calls.push(args);
+      return {};
+    }
+  );
 
 const validMetrics = {
   accuracy: 0.25,
@@ -151,6 +166,8 @@ test('ComputationManager.claimNextRun skips a run that another worker claimed fi
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
     claimedRun,
   ]);
+  stubQueuedWorkflows(t);
+  stubPipelineUpdates(t);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async () => {
       throw new WorkflowTransitionConflictError();
@@ -187,9 +204,10 @@ test('ComputationManager.claimNextRun takes the next queued run after losing a r
     'registerMachineInfo',
     async () => undefined
   );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
+  stubQueuedWorkflows(t);
+  stubPipelineUpdates(t);
 
-  assert.equal(await manager.claimNextRun(ComputationQueue.cloud), free);
+  assert.deepEqual(await manager.claimNextRun(ComputationQueue.cloud), { ...free, executionId: 1 });
   assert.deepEqual(
     attempts,
     [takenByConflict, takenAlready, free].map((run) => String(run._id))
@@ -202,6 +220,8 @@ test('ComputationManager.claimNextRun rethrows errors that are not lost races', 
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
     { _id: new Types.ObjectId(), queue: ComputationQueue.cloud },
   ]);
+  stubQueuedWorkflows(t);
+  stubPipelineUpdates(t);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async () => {
       throw new Error('database unavailable');
@@ -228,37 +248,65 @@ test('ComputationManager.claimNextRun requires a hostname for local runs', async
   assert.equal(aggregated, false);
 });
 
-// Mocked slot collection: records every call and answers `findById` with `slot`.
-const stubSlots = (t: any, slot: any, onUpdate: (filter: any) => void = () => undefined) => {
-  const updates: any[] = [];
-  stub(t, LocalRunSlotModel as unknown as Record<string, unknown>, 'findById', () =>
-    createLeanResult(slot)
-  );
+test('ComputationManager.claimNextRun starts a new execution and writes the hostname with a local claim', async (t) => {
+  const manager = new ComputationManager();
+  const run = { _id: new Types.ObjectId(), queue: ComputationQueue.local };
+  const statusChanges: any[] = [];
+  const pipelineUpdates: any[] = [];
+
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [run]);
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatus: async (...args: any[]) => {
+      statusChanges.push(args);
+      return true;
+    },
+  } as any);
   stub(
     t,
-    LocalRunSlotModel as unknown as Record<string, unknown>,
-    'updateOne',
-    async (filter: any, update: any, options: any) => {
-      updates.push([filter, update.$set, options]);
-      onUpdate(filter);
-      return {};
-    }
+    manager as unknown as Record<string, unknown>,
+    'registerMachineInfo',
+    async () => undefined
   );
-  return updates;
-};
+  // The run's previous execution was number 4.
+  stubQueuedWorkflows(t, 4);
+  stubPipelineUpdates(t, pipelineUpdates);
 
-test('ComputationManager.claimNextRun leaves a busy machine alone', async (t) => {
+  const claimed = await manager.claimNextRun(ComputationQueue.local, {
+    hostname: ' host-a ',
+  } as any);
+  await manager.claimNextRun(ComputationQueue.cloud, { hostname: 'host-a' } as any);
+
+  assert.equal(claimed?.executionId, 5);
+  // The status change takes the run only if no other claim gave it number 5 first.
+  assert.deepEqual(statusChanges, [
+    [
+      { pipelineId: run._id, status: PipelineStatus.running },
+      { executionId: 5, machineHostname: 'host-a' },
+      { executionId: 4 },
+    ],
+    [
+      { pipelineId: run._id, status: PipelineStatus.running },
+      { executionId: 5 },
+      { executionId: 4 },
+    ],
+  ]);
+  // The fence is raised before the status change; machine info is written for this execution only.
+  assert.deepEqual(pipelineUpdates[0], [
+    { _id: run._id, executionId: { $not: { $gte: 5 } } },
+    { $set: { executionId: 5 } },
+  ]);
+  assert.deepEqual(pipelineUpdates[1][0], { _id: run._id, executionId: 5 });
+});
+
+test('ComputationManager.claimNextRun skips a candidate that is no longer queued', async (t) => {
   const manager = new ComputationManager();
-  const holderId = new Types.ObjectId();
-  let holderStatus = PipelineStatus.running;
-  let reservedAt = new Date(0);
   let statusChanges = 0;
 
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
-    { _id: new Types.ObjectId(), queue: ComputationQueue.local },
+    { _id: new Types.ObjectId(), queue: ComputationQueue.cloud },
   ]);
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () =>
-    createLeanResult({ status: holderStatus })
+    createLeanResult({ status: PipelineStatus.running, executionId: 2 })
   );
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async () => {
@@ -266,120 +314,32 @@ test('ComputationManager.claimNextRun leaves a busy machine alone', async (t) =>
       return true;
     },
   } as any);
-  const updates = stubSlots(t, {
-    _id: 'host-a',
-    pipelineId: holderId,
-    get reservedAt() {
-      return reservedAt;
-    },
-  });
-  const claim = () => manager.claimNextRun(ComputationQueue.local, { hostname: 'host-a' } as any);
 
-  // The holder is running.
-  assert.equal(await claim(), undefined);
-  // The holder is still between its reservation and its status change.
-  holderStatus = PipelineStatus.queued;
-  reservedAt = new Date();
-  assert.equal(await claim(), undefined);
-
-  assert.deepEqual(updates, []);
+  assert.equal(await manager.claimNextRun(ComputationQueue.cloud), undefined);
   assert.equal(statusChanges, 0);
 });
 
-test('ComputationManager.claimNextRun loses the machine to a parallel reservation', async (t) => {
+test('ComputationManager.claimNextRun stops when the machine already runs a local run', async (t) => {
   const manager = new ComputationManager();
-  let statusChanges = 0;
+  let attempts = 0;
 
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
     { _id: new Types.ObjectId(), queue: ComputationQueue.local },
+    { _id: new Types.ObjectId(), queue: ComputationQueue.local },
   ]);
+  stubQueuedWorkflows(t);
+  stubPipelineUpdates(t);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async () => {
-      statusChanges += 1;
-      return true;
+      attempts += 1;
+      // The workflows unique index rejected a second running run for this hostname.
+      throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
     },
   } as any);
-  // Another worker on the machine reserved the free slot between the read and the upsert.
-  stubSlots(t, null, () => {
-    throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
-  });
 
   assert.equal(
     await manager.claimNextRun(ComputationQueue.local, { hostname: 'host-a' } as any),
     undefined
   );
-  assert.equal(statusChanges, 0);
-});
-
-test('ComputationManager.claimNextRun moves the machine slot to the next run after a lost race', async (t) => {
-  const manager = new ComputationManager();
-  const taken = { _id: new Types.ObjectId(), queue: ComputationQueue.local };
-  const free = { _id: new Types.ObjectId(), queue: ComputationQueue.local };
-
-  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
-    taken,
-    free,
-  ]);
-  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async ({ pipelineId }: { pipelineId: Types.ObjectId }) => {
-      if (pipelineId === taken._id) throw new WorkflowTransitionConflictError();
-      return true;
-    },
-  } as any);
-  stub(
-    t,
-    manager as unknown as Record<string, unknown>,
-    'registerMachineInfo',
-    async () => undefined
-  );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
-  const updates = stubSlots(t, null);
-
-  assert.equal(
-    await manager.claimNextRun(ComputationQueue.local, { hostname: ' host-a ' } as any),
-    free
-  );
-  assert.deepEqual(
-    updates.map(([filter, set]) => [filter, set.pipelineId]),
-    [
-      [{ _id: 'host-a', pipelineId: null }, taken._id],
-      [{ _id: 'host-a', pipelineId: taken._id }, null],
-      [{ _id: 'host-a', pipelineId: null }, free._id],
-    ]
-  );
-  assert.deepEqual(
-    updates.map(([, , options]) => options?.upsert === true),
-    [true, false, true]
-  );
-});
-
-test('ComputationManager.claimNextRun takes over a slot left by a crashed claim', async (t) => {
-  const manager = new ComputationManager();
-  const run = { _id: new Types.ObjectId(), queue: ComputationQueue.local };
-  const stale = { _id: 'host-a', pipelineId: new Types.ObjectId(), reservedAt: new Date(0) };
-
-  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [run]);
-  // The holder never reached `running` (or its workflow is gone).
-  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () =>
-    createLeanResult(null)
-  );
-  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async () => true,
-  } as any);
-  stub(
-    t,
-    manager as unknown as Record<string, unknown>,
-    'registerMachineInfo',
-    async () => undefined
-  );
-  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
-  const updates = stubSlots(t, stale);
-
-  assert.equal(
-    await manager.claimNextRun(ComputationQueue.local, { hostname: 'host-a' } as any),
-    run
-  );
-  // The takeover matches the stale reservation exactly, so only one worker can win it.
-  assert.deepEqual(updates[0][0], stale);
-  assert.equal(updates[0][1].pipelineId, run._id);
+  assert.equal(attempts, 1);
 });

@@ -48,6 +48,8 @@ export const config = {
     cloudWorkerEnabled: toBool(process.env.BACKEND_CLOUD_WORKER_ENABLED, true),
     localWorkerEnabled: toBool(process.env.BACKEND_LOCAL_WORKER_ENABLED, true),
     localDockerImage: process.env.BACKEND_LOCAL_DOCKER_IMAGE ?? 'aws-jobs',
+    // Rollout only: accept execution reports without an executionId (from clients older than it).
+    acceptLegacyExecutionReports: toBool(process.env.COMPUTATIONS_ACCEPT_LEGACY_REPORTS, false),
   },
 };
 

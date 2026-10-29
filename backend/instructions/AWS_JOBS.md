@@ -258,7 +258,7 @@ aws batch submit-job \
 
 Окрема технічна примітка:
 
-- `CloudComputationWorker` уже резервує `result_s3_bucket` і `result_s3_key` у payload для cloud-запусків.
+- `CloudComputationWorker` уже резервує `result_s3_bucket` і `result_s3_key` у payload для cloud-запусків. Ключ окремий для кожного виконання: `<prefix>/<runId>/<executionId>.json`; writer має використовувати саме `result_s3_key` з payload (див. `EXPERIMENTS.md`, «Execution identity»).
 - Водночас поточний `compute_handler.py` завершує pipeline через GraphQL callback-и і потребує `COMPUTE_BACKEND_URL`.
 - Якщо хочеш повністю S3-based completion flow, це треба окремо доробити в Python handler або в механізмі reconciliation на бекенді.
 

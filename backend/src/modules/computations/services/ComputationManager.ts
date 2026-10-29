@@ -33,10 +33,7 @@ import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 import { OptimizationResult } from '../classes/OptimizationResult';
-import { LocalRunSlotModel } from '../models/LocalRunSlotModel';
-
-// A claim takes milliseconds between reserving the slot and the status change.
-const LOCAL_SLOT_CLAIM_TIMEOUT_MS = 60_000;
+import { executionFilter } from '../../../core/pipeline/executionFilter';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -223,22 +220,44 @@ export class ComputationManager {
     if (workflow.status !== PipelineStatus.running) {
       return pipeline;
     }
-    if (pipeline.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
+    try {
+      await this.pipelineManager.changeStatus(
+        { pipelineId: pipeline._id, status: PipelineStatus.idle, message: 'Зупинено користувачем' },
+        undefined,
+        { executionId: workflow.executionId ?? null }
+      );
+    } catch (error) {
+      // It completed, failed or was stopped meanwhile: there is nothing left to stop.
+      const lostRace =
+        error instanceof WorkflowTransitionConflictError ||
+        (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND');
+      if (!lostRace) throw error;
+      return PipelineBaseService.getById(pipelineId);
+    }
+    await this.cancelExecutionJob(pipeline._id, workflow.executionId);
+    return PipelineBaseService.getById(pipelineId);
+  }
+
+  /**
+   * Cancels the AWS job of an execution that a user has just ended. It runs after the status
+   * change, and `CloudComputationWorker.submitRun` re-checks the status after recording a job id,
+   * so a job submitted around the Stop is cancelled by one side or the other.
+   */
+  private async cancelExecutionJob(pipelineId: Types.ObjectId, executionId?: number) {
+    const pipeline = await PipelineModel.findOne({
+      _id: pipelineId,
+      executionId: executionId ?? null,
+    }).lean();
+    if (pipeline?.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
       await this.cancelCloudJob(pipeline.cloudJobId);
     }
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.idle,
-      message: 'Зупинено користувачем',
-    });
-    return PipelineBaseService.getById(pipelineId);
   }
 
   async claimNextRun(
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
   ): Promise<Pipeline | undefined> {
-    // One local run per machine, reserved atomically in its slot, so the hostname is required.
+    // One local run per machine (unique index on the workflow), so the hostname is required.
     const hostname = queue === ComputationQueue.local ? machineInfo?.hostname?.trim() : undefined;
     if (queue === ComputationQueue.local && !hostname) {
       throw new Error('Для локальних запусків потрібна назва машини (machineInfo.hostname)');
@@ -263,14 +282,29 @@ export class ComputationManager {
 
     // A worker that loses a race moves on to the next queued run instead of waiting a poll.
     for (const pipeline of candidates) {
-      if (hostname && !(await this.reserveMachine(hostname, pipeline._id))) return;
+      const workflow = await WorkflowModel.findOne({
+        instanceId: pipeline._id,
+        type: WorkflowType.PIPELINE,
+      }).lean();
+      if (workflow?.status !== PipelineStatus.queued) continue;
+      const previousExecutionId = workflow.executionId;
+      const executionId = (previousExecutionId ?? 0) + 1;
+
+      // Raise the pipeline's execution fence first: from here on, reports of earlier executions
+      // match nothing. The status change below then gives this number to exactly one claimant.
+      await PipelineModel.updateOne(
+        { _id: pipeline._id, executionId: { $not: { $gte: executionId } } },
+        { $set: { executionId } }
+      );
       try {
-        await this.pipelineManager.changeStatus({
-          pipelineId: pipeline._id,
-          status: PipelineStatus.running,
-        });
+        await this.pipelineManager.changeStatus(
+          { pipelineId: pipeline._id, status: PipelineStatus.running },
+          { executionId, ...(hostname ? { machineHostname: hostname } : {}) },
+          { executionId: previousExecutionId ?? null }
+        );
       } catch (error) {
-        if (hostname) await this.releaseMachine(hostname, pipeline._id);
+        // Duplicate key: a run is already `running` on this machine.
+        if ((error as { code?: number }).code === 11000) return;
         // Another worker claimed this run first: either the conditional update lost, or the
         // re-read status was already `running`, which has no transition to `running`.
         if (error instanceof WorkflowTransitionConflictError) continue;
@@ -280,79 +314,102 @@ export class ComputationManager {
 
       if (normalizedMachineInfo) {
         await PipelineModel.updateOne(
-          { _id: pipeline._id },
+          { _id: pipeline._id, executionId },
           { $set: { machineInfo: normalizedMachineInfo } }
         );
         await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
       }
 
-      return pipeline;
+      return { ...pipeline, executionId };
     }
   }
 
-  async completePipeline({ payload, pipelineId }: CompletePipelineInput) {
+  /**
+   * Moves the run out of `running` only if `executionId` is still its current execution; the
+   * condition is part of the status update. Returns false for a stale or repeated report.
+   */
+  private async finishExecution(
+    pipelineId: Types.ObjectId,
+    execution: ReturnType<typeof executionFilter>,
+    status: PipelineStatus.completed | PipelineStatus.idle,
+    message: string
+  ): Promise<boolean> {
+    try {
+      await this.pipelineManager.changeStatus(
+        { pipelineId, status, message },
+        undefined,
+        execution
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof WorkflowTransitionConflictError) return false;
+      if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') return false;
+      throw error;
+    }
+  }
+
+  // The status changes first, so a stale report never stores its result.
+  private async saveResult(
+    pipelineId: Types.ObjectId,
+    executionId: string | number | null | undefined,
+    result: unknown,
+    message: string
+  ) {
+    const execution = executionFilter(executionId);
+    const completed = await this.finishExecution(
+      pipelineId,
+      execution,
+      PipelineStatus.completed,
+      message
+    );
+    if (completed) {
+      await PipelineModel.updateOne(
+        { _id: pipelineId, ...execution },
+        { $set: { computingResult: result } }
+      );
+    }
+    return completed;
+  }
+
+  /** Returns false when the report belongs to an execution that is no longer current. */
+  async completePipeline({ payload, pipelineId, executionId }: CompletePipelineInput) {
     const pipeline = await PipelineBaseService.getById(pipelineId);
-
-    await PipelineModel.updateOne({ _id: pipeline._id }, { $set: { computingResult: payload } });
-
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.completed,
-      message: 'Завершено',
-    });
+    return this.saveResult(pipeline._id, executionId, payload, 'Завершено');
   }
 
   async completeRun({
     runId,
+    executionId,
     resultJson,
     statusMessage,
   }: {
     runId: string;
+    executionId?: string | number | null;
     resultJson: string;
     statusMessage?: string;
   }): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(runId);
     const parsedResult = JSON.parse(resultJson) as Record<string, unknown>;
-    await PipelineModel.updateOne(
-      { _id: pipeline._id },
-      { $set: { computingResult: parsedResult } }
-    );
-
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: pipeline._id,
-      type: WorkflowType.PIPELINE,
-    });
-    if (workflow.status === PipelineStatus.running) {
-      await this.pipelineManager.changeStatus({
-        pipelineId: pipeline._id,
-        status: PipelineStatus.completed,
-        message: statusMessage ?? 'Завершено',
-      });
-    }
-
+    await this.saveResult(pipeline._id, executionId, parsedResult, statusMessage ?? 'Завершено');
     return PipelineBaseService.getById(runId);
   }
 
   async failRun({
     runId,
+    executionId,
     statusMessage,
   }: {
     runId: string;
+    executionId?: string | number | null;
     statusMessage?: string;
   }): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(runId);
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: pipeline._id,
-      type: WorkflowType.PIPELINE,
-    });
-    if (workflow.status !== PipelineStatus.running) {
-      return pipeline;
-    }
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.idle,
-      message: statusMessage ?? 'Некоректне завершення обчислення',
-    });
+    await this.finishExecution(
+      pipeline._id,
+      executionFilter(executionId),
+      PipelineStatus.idle,
+      statusMessage ?? 'Некоректне завершення обчислення'
+    );
     return PipelineBaseService.getById(runId);
   }
 
@@ -379,13 +436,6 @@ export class ComputationManager {
 
     if (runs.length === 0) return [];
 
-    const cloudJobs = runs.filter((run) => run.queue === ComputationQueue.cloud && run.cloudJobId);
-    for (const run of cloudJobs) {
-      if (run.cloudJobId) {
-        await this.cancelCloudJob(run.cloudJobId);
-      }
-    }
-
     await Promise.all(runs.map((run) => this.pauseRun(run._id)));
 
     const runIds = runs.map((run) => run._id);
@@ -397,17 +447,19 @@ export class ComputationManager {
   private async pauseRun(pipelineId: Types.ObjectId) {
     // queued -> running is the only change a worker can make first, so two retries suffice.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const { status } = await this.workflowManager.getWorkflow({
+      const { status, executionId } = await this.workflowManager.getWorkflow({
         instanceId: pipelineId,
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return;
       try {
-        await this.pipelineManager.changeStatus({
-          pipelineId,
-          status: PipelineStatus.idle,
-          message: 'Обчислення зупинено',
-        });
+        await this.pipelineManager.changeStatus(
+          { pipelineId, status: PipelineStatus.idle, message: 'Обчислення зупинено' },
+          undefined,
+          { executionId: executionId ?? null }
+        );
+        if (status === PipelineStatus.running)
+          await this.cancelExecutionJob(pipelineId, executionId);
         return;
       } catch (error) {
         const lostRace =
@@ -454,46 +506,6 @@ export class ComputationManager {
     );
 
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
-  }
-
-  /**
-   * Points the machine's slot at `pipelineId` unless another run holds it. The update matches the
-   * slot as it was read, so of two parallel workers on one machine only one wins; the other's upsert
-   * hits the `_id` unique index. A holder that is not `running` long after reserving was left by a
-   * crashed claim or a deleted run, so it is taken over instead of blocking the machine forever.
-   */
-  private async reserveMachine(hostname: string, pipelineId: Types.ObjectId): Promise<boolean> {
-    const slot = await LocalRunSlotModel.findById(hostname).lean();
-    const filter: Record<string, unknown> = { _id: hostname, pipelineId: null };
-    if (slot?.pipelineId) {
-      const holder = await WorkflowModel.findOne({
-        instanceId: slot.pipelineId,
-        type: WorkflowType.PIPELINE,
-      }).lean();
-      const reservedLongAgo =
-        !slot.reservedAt || Date.now() - slot.reservedAt.getTime() > LOCAL_SLOT_CLAIM_TIMEOUT_MS;
-      if (holder?.status === PipelineStatus.running || !reservedLongAgo) return false;
-      Object.assign(filter, { pipelineId: slot.pipelineId, reservedAt: slot.reservedAt ?? null });
-    }
-
-    try {
-      await LocalRunSlotModel.updateOne(
-        filter,
-        { $set: { pipelineId, reservedAt: new Date() } },
-        { upsert: true }
-      );
-      return true;
-    } catch (error) {
-      if ((error as { code?: number }).code === 11000) return false;
-      throw error;
-    }
-  }
-
-  private async releaseMachine(hostname: string, pipelineId: Types.ObjectId) {
-    await LocalRunSlotModel.updateOne(
-      { _id: hostname, pipelineId },
-      { $set: { pipelineId: null } }
-    );
   }
 
   private normalizeMachineInfo(
@@ -581,7 +593,7 @@ export class ComputationManager {
     return this.batchClient;
   }
 
-  private async cancelCloudJob(jobId: string) {
+  async cancelCloudJob(jobId: string) {
     if (!jobId) return;
     const client = this.getBatchClient();
     try {

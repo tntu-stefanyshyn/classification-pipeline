@@ -122,6 +122,33 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
         )
         self.assertIn("pipe-2", stdout.getvalue())
 
+    def test_compute_wrappers_forward_the_execution_id(self):
+        progress_module = load_graphql_wrapper(
+            "src/aws_jobs/graphql/updatePipelineProgress.py",
+            "test_update_pipeline_progress_execution_module",
+        )
+        complete_module = load_graphql_wrapper(
+            "src/aws_jobs/graphql/completePipeline.py",
+            "test_complete_pipeline_execution_module",
+        )
+
+        with patch.object(progress_module, "graphqlRequest", return_value={}) as progress_request:
+            progress_module.updatePipelineProgress(
+                backend_url="http://backend/graphql", pipelineId="pipe-1", executionId="7"
+            )
+        with patch.object(complete_module, "graphqlRequest", return_value={}) as complete_request, patch(
+            "sys.stdout", new_callable=io.StringIO
+        ):
+            complete_module.completePipeline(
+                backend_url="http://backend/graphql",
+                pipelineId="pipe-1",
+                payload={},
+                executionId="7",
+            )
+
+        self.assertEqual(progress_request.call_args.args[2]["input"]["executionId"], "7")
+        self.assertEqual(complete_request.call_args.args[2]["input"]["executionId"], "7")
+
 
 if __name__ == "__main__":
     unittest.main()

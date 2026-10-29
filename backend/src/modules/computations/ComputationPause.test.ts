@@ -8,7 +8,6 @@ import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { createLeanResult, stub } from '../../test/testUtils';
 import { ExperimentModel } from '../experiments/models/ExperimentModel';
 import { ComputationQueue } from './classes/ComputationQueue';
-import { LocalRunSlotModel } from './models/LocalRunSlotModel';
 import { ComputationManager } from './services/ComputationManager';
 
 type FakeRun = {
@@ -17,6 +16,8 @@ type FakeRun = {
   queue: ComputationQueue;
   status: PipelineStatus;
   cloudJobId?: string;
+  machineHostname?: string;
+  executionId?: number;
 };
 
 const machine = { hostname: 'host-a' } as any;
@@ -70,7 +71,7 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
     const lean = async () => {
       await tick();
       const run = byId(query.instanceId);
-      return run ? { _id: run._id, status: run.status } : null;
+      return run ? { _id: run._id, status: run.status, executionId: run.executionId } : null;
     };
     return { lean, sort: () => ({ lean }) };
   });
@@ -81,10 +82,19 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
     async (filter: any, update: any) => {
       await tick();
       const run = byId(filter._id);
-      if (!run || (filter.status !== undefined && run.status !== filter.status)) {
+      const sameExecution =
+        !('executionId' in filter) || (run?.executionId ?? null) === filter.executionId;
+      if (!run || (filter.status !== undefined && run.status !== filter.status) || !sameExecution) {
         return { modifiedCount: 0 };
       }
-      run.status = update.$set.status;
+      // The workflows unique index: one running run per machine hostname.
+      const host = update.$set.machineHostname;
+      const busy = runs.some(
+        (other) =>
+          other !== run && other.status === PipelineStatus.running && other.machineHostname === host
+      );
+      if (host && update.$set.status === PipelineStatus.running && busy) throw { code: 11000 };
+      Object.assign(run, update.$set);
       return { modifiedCount: 1 };
     }
   );
@@ -98,45 +108,18 @@ const installStore = (t: TestContext, runs: FakeRun[]) => {
       return { exec: async () => ({}) };
     }
   );
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOne', (query: any) => ({
+    lean: async () => {
+      const run = byId(query._id);
+      return run && (run.executionId ?? null) === query.executionId ? run : null;
+    },
+  }));
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'find', (query: any) => ({
     lean: async () => runs.filter((run) => matches(run, { _id: query._id })),
   }));
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(null)
   );
-
-  // Machine slots with the `_id` unique index: an upsert that matches nothing and finds the
-  // `_id` taken fails with a duplicate key error, as in MongoDB.
-  const slots: any[] = [];
-  const slotMatches = (slot: any, filter: any) =>
-    Object.entries(filter).every(([key, value]) => String(slot[key] ?? null) === String(value));
-  stub(t, LocalRunSlotModel as unknown as Record<string, unknown>, 'findById', (id: string) => ({
-    lean: async () => {
-      await tick();
-      return slots.find((slot) => slot._id === id) ?? null;
-    },
-  }));
-  stub(
-    t,
-    LocalRunSlotModel as unknown as Record<string, unknown>,
-    'updateOne',
-    async (filter: any, update: any, options: any) => {
-      await tick();
-      const slot = slots.find((entry) => slotMatches(entry, filter));
-      if (slot) Object.assign(slot, update.$set);
-      else if (options?.upsert) {
-        if (slots.some((entry) => entry._id === filter._id)) throw { code: 11000 };
-        slots.push({ _id: filter._id, ...update.$set });
-      }
-      return {};
-    }
-  );
-  stub(t, LocalRunSlotModel as unknown as Record<string, unknown>, 'updateMany', (filter: any) => ({
-    exec: async () => {
-      slots.filter((slot) => slotMatches(slot, filter)).forEach((slot) => (slot.pipelineId = null));
-      return {};
-    },
-  }));
 };
 
 const managerWithCancelLog = (t: TestContext) => {

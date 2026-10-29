@@ -35,6 +35,10 @@ STAGE_LABELS_UA: Dict[str, str] = {
 
 MAX_FOLDS = 20
 
+# The claimed execution this process reports for (payload "executionId"); the backend ignores
+# reports from an execution that is no longer the run's current one.
+_execution_id: Optional[str] = None
+
 
 def _vector_length(values: List[float]) -> float:
     return math.sqrt(sum(value * value for value in values))
@@ -52,7 +56,8 @@ def _emit(
     pipelineId=pipelineId,
     token=token,
     message=message,
-    progress=progress
+    progress=progress,
+    executionId=_execution_id,
   )
 
 
@@ -641,6 +646,8 @@ def _run_classifier(
 
 
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
+    global _execution_id
+    _execution_id = payload.get("executionId")
     backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
     pipelineId = payload.get("pipelineId")
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
@@ -745,9 +752,11 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
+    global _execution_id
     payload: Dict[str, Any] = {}
     try:
         payload = _load_payload()
+        _execution_id = payload.get("executionId")
 
         token = payload.get("backend_token")
         backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
@@ -762,7 +771,8 @@ def main() -> None:
             backend_url=backend_url,
             payload=result,
             pipelineId=pipelineId,
-            token=token
+            token=token,
+            executionId=_execution_id,
         )
         print((json.dumps(result, indent=2)))
     except Exception as exc:

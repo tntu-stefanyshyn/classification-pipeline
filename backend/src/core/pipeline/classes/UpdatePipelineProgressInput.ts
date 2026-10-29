@@ -11,4 +11,8 @@ export class UpdatePipelineProgressInput {
 
   @Field({ nullable: true })
   message?: string;
+
+  /** The claimed execution sending the report; see `Pipeline.executionId`. */
+  @Field(() => ID, { nullable: true })
+  executionId?: string;
 }

@@ -270,7 +270,7 @@ class ComputeHandlerTests(unittest.TestCase):
 
     def test_main_completes_pipeline_with_result(self):
         module = load_compute_handler()
-        payload = {"pipelineId": "pipe-1", "backend_token": "svc-token"}
+        payload = {"pipelineId": "pipe-1", "executionId": "3", "backend_token": "svc-token"}
         result = {"accuracyScores": [0.9], "sampleCount": 8, "duration": 1.5}
 
         with patch.dict(
@@ -289,8 +289,25 @@ class ComputeHandlerTests(unittest.TestCase):
             payload=result,
             pipelineId="pipe-1",
             token="svc-token",
+            executionId="3",
         )
         self.assertIn('"sampleCount": 8', stdout.getvalue())
+
+    def test_emit_reports_progress_for_the_claimed_execution(self):
+        module = load_compute_handler()
+        module._execution_id = "4"
+
+        with patch.object(module, "updatePipelineProgress") as update_progress:
+            module._emit("http://backend/graphql", "pipe-1", message="Working", progress=10)
+
+        update_progress.assert_called_once_with(
+            backend_url="http://backend/graphql",
+            pipelineId="pipe-1",
+            token=None,
+            message="Working",
+            progress=10,
+            executionId="4",
+        )
 
     def test_main_emits_progress_error_and_reraises(self):
         module = load_compute_handler()

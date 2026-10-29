@@ -5,7 +5,6 @@ import { Types } from 'mongoose';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { PipelineStatus } from '../enums';
 import { PipelineModel } from '../models/PipelineModel';
-import { LocalRunSlotModel } from '../../../modules/computations/models/LocalRunSlotModel';
 import { createExecResult, stub } from '../../../test/testUtils';
 import { PipelineManager } from './PipelineManager';
 import { config } from '../../../config/config';
@@ -185,17 +184,6 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
   const manager = new PipelineManager();
   const updateCalls: any[] = [];
   const pipelineId = new Types.ObjectId();
-  const slotReleases: any[] = [];
-
-  stub(
-    t,
-    LocalRunSlotModel as unknown as Record<string, unknown>,
-    'updateMany',
-    (...args: any[]) => {
-      slotReleases.push(args);
-      return createExecResult();
-    }
-  );
 
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
     updateCalls.push(args);
@@ -207,7 +195,7 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
         (entry: any) =>
           entry.from === PipelineStatus.running && entry.to === PipelineStatus.completed
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -218,11 +206,9 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: 3 },
     { $set: { progress: 100, statusMessage: 'Завершено' } },
   ]);
-  // Leaving `running` frees the machine for the next local claim.
-  assert.deepEqual(slotReleases, [[{ pipelineId }, { $set: { pipelineId: null } }]]);
 });
 
 test('PipelineManager.changeStatus executes idle to queued side effects', async (t) => {
@@ -250,7 +236,7 @@ test('PipelineManager.changeStatus executes idle to queued side effects', async 
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: null },
     {
       $set: {
         progress: 0,
@@ -276,7 +262,7 @@ test('PipelineManager.changeStatus executes queued to running side effects', asy
       const transition = payload.transitions.find(
         (entry: any) => entry.from === PipelineStatus.queued && entry.to === PipelineStatus.running
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -287,7 +273,7 @@ test('PipelineManager.changeStatus executes queued to running side effects', asy
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: 3 },
     {
       $set: {
         progress: 0,
@@ -301,17 +287,6 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
   const manager = new PipelineManager();
   const updateCalls: any[] = [];
   const pipelineId = new Types.ObjectId();
-  const slotReleases: any[] = [];
-
-  stub(
-    t,
-    LocalRunSlotModel as unknown as Record<string, unknown>,
-    'updateMany',
-    (...args: any[]) => {
-      slotReleases.push(args);
-      return createExecResult();
-    }
-  );
 
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
     updateCalls.push(args);
@@ -322,7 +297,7 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
       const transition = payload.transitions.find(
         (entry: any) => entry.from === PipelineStatus.running && entry.to === PipelineStatus.idle
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -333,11 +308,9 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
-    { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
+    { _id: pipelineId, executionId: 3 },
+    { $unset: { machineInfo: '', progress: '', statusMessage: '' } },
   ]);
-  // Leaving `running` frees the machine for the next local claim.
-  assert.deepEqual(slotReleases, [[{ pipelineId }, { $set: { pipelineId: null } }]]);
 });
 
 test('PipelineManager.changeStatus moves a queued run back to idle', async (t) => {
@@ -363,7 +336,42 @@ test('PipelineManager.changeStatus moves a queued run back to idle', async (t) =
   await manager.changeStatus({ pipelineId, status: PipelineStatus.idle } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: null },
     { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
   ]);
+});
+
+test('PipelineManager.changeStatusFromApi never ends a running execution, even in the rollout mode', async (t) => {
+  const manager = new PipelineManager();
+  const transitionSets: any[] = [];
+
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', () =>
+    createExecResult()
+  );
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    changeStatus: async (payload: any) => {
+      transitionSets.push(payload.transitions.map((entry: any) => `${entry.from}->${entry.to}`));
+      return true;
+    },
+  } as any);
+
+  await manager.changeStatusFromApi({
+    pipelineId: new Types.ObjectId(),
+    status: PipelineStatus.idle,
+  });
+  // Accepting reports without executionId does not turn this anonymous status change back on.
+  stub(
+    t,
+    config.computations as unknown as Record<string, unknown>,
+    'acceptLegacyExecutionReports',
+    true
+  );
+  await manager.changeStatusFromApi({
+    pipelineId: new Types.ObjectId(),
+    status: PipelineStatus.idle,
+  });
+
+  for (const transitions of transitionSets) {
+    assert.deepEqual(transitions, ['idle->queued', 'queued->idle', 'queued->running']);
+  }
 });

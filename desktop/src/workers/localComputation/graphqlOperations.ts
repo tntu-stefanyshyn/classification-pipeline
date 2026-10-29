@@ -1,6 +1,6 @@
 import type {
-  ChangePipelineStatusInput,
   ComputationQueue,
+  FailExperimentRunInput,
   PipelineMachineInfoInput,
 } from '../../graphql/types.generated';
 import {
@@ -20,10 +20,10 @@ import {
 } from '../../graphql/queries/generated/pipeline';
 import { GraphqlClient } from './graphqlClient';
 import {
-  ChangePipelineStatusDocument,
-  ChangePipelineStatusMutation,
-  ChangePipelineStatusMutationVariables,
-} from '../../components/experiments/ComputationCard/components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus';
+  FailExperimentRunDocument,
+  type FailExperimentRunMutation,
+  type FailExperimentRunMutationVariables,
+} from '../../graphql/mutations/generated/failExperimentRun';
 
 export const claimExperimentRun = async (
   client: GraphqlClient,
@@ -52,12 +52,10 @@ export const fetchExperimentRun = async (client: GraphqlClient, pipelineId: stri
   return data.pipeline ?? null;
 };
 
-export const changePipelineStatus = async (
-  client: GraphqlClient,
-  input: ChangePipelineStatusInput
-) => {
-  await client.request<ChangePipelineStatusMutation, ChangePipelineStatusMutationVariables>(
-    ChangePipelineStatusDocument,
+// The backend ignores the failure if `input.executionId` is no longer the run's execution.
+export const failExperimentRun = async (client: GraphqlClient, input: FailExperimentRunInput) => {
+  await client.request<FailExperimentRunMutation, FailExperimentRunMutationVariables>(
+    FailExperimentRunDocument,
     { input }
   );
 };

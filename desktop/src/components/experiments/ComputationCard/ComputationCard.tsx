@@ -34,6 +34,7 @@ import {
   type PipelinesQueryVariables,
 } from '../../../graphql/queries/generated/pipelines';
 import { ChangePipelineStatusButton } from './components';
+import { Button } from '../../ui/Button';
 import { useChangePipelineStatusMutation } from './components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus';
 import { useI18n } from '../../../i18n';
 import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
@@ -335,11 +336,16 @@ const ComputationCard: FC = () => {
               </ChangePipelineStatusButton>
             )}
             {canStop && (
-              <ChangePipelineStatusButton status={PipelineStatus.idle} pipelineId={_id}>
+              // An explicit Stop: the backend no longer ends a running run via changePipelineStatus.
+              <Button
+                className="icon"
+                onClick={() => stopRun({ variables: { input: { runId: _id } } })}
+                loading={stopping}
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="7" y="7" width="10" height="10" fill="currentColor" />
                 </svg>
-              </ChangePipelineStatusButton>
+              </Button>
             )}
           </div>
         );

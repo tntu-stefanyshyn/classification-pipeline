@@ -327,6 +327,13 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
       calls.push(['cancelCloudJob', ...args]);
     }
   );
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOne', () =>
+    createLeanResult(currentPipeline)
+  );
+  // claimNextRun reads each candidate's workflow before claiming it.
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () =>
+    createLeanResult({ status: PipelineStatus.queued })
+  );
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => {
     aggregateCall += 1;
     if (aggregateCall === 1) return [];
@@ -400,12 +407,14 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
     ),
     true
   );
-  assert.deepEqual(calls.find((entry) => entry[0] === 'updateOne')?.[2], {
+  const machineInfoUpdate = calls.find(
+    (entry) => entry[0] === 'updateOne' && entry[2]?.$set?.machineInfo
+  );
+  assert.deepEqual(machineInfoUpdate?.[2], {
     $set: {
       machineInfo: {
         queue: ComputationQueue.cloud,
-        lastSeenAt: calls.find((entry) => entry[0] === 'updateOne')?.[2].$set.machineInfo
-          .lastSeenAt,
+        lastSeenAt: machineInfoUpdate?.[2].$set.machineInfo.lastSeenAt,
         hostname: 'host',
         platform: 'linux',
         arch: 'x64',
@@ -456,7 +465,8 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async (...args: any[]) => {
       calls.push(['changeStatus', ...args]);
-      return true;
+      // The run is already completed, so no transition out of `running` applies.
+      throw new Error('TRANSITION_NOT_FOUND');
     },
   } as any);
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => []);
@@ -481,15 +491,21 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     calls.push(['warn', ...args]);
   });
 
-  await manager.completeRun({ runId: pipelineId.toHexString(), resultJson: '{"score":1}' });
+  await manager.completeRun({
+    runId: pipelineId.toHexString(),
+    executionId: '1',
+    resultJson: '{"score":1}',
+  });
+  // The completion was rejected, so its result is not stored.
   assert.equal(
-    calls.some(
-      (entry) => entry[0] === 'changeStatus' && entry[1].status === PipelineStatus.completed
-    ),
+    calls.some((entry) => entry[0] === 'updateOne' && entry[2]?.$set?.computingResult),
     false
   );
 
-  assert.equal(await manager.failRun({ runId: pipelineId.toHexString() }), pipeline);
+  assert.equal(
+    await manager.failRun({ runId: pipelineId.toHexString(), executionId: '1' }),
+    pipeline
+  );
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), []);
   assert.deepEqual(await manager.resumeExperimentRuns(experimentId.toHexString()), []);
   await assert.rejects(() => manager.resumeExperimentRuns('   '), /Experiment _id is required/);

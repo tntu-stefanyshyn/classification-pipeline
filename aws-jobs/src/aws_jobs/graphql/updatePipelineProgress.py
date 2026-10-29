@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 from graphql.graphqlRequest import graphqlRequest
 
 def updatePipelineProgress(
@@ -7,6 +7,7 @@ def updatePipelineProgress(
   message: Optional[str] = None,
   progress: Optional[float] = None,
   token: Optional[str] = None,
+  executionId: Optional[str] = None,
 ):
   mutation = """
     mutation UpdatePipelineProgress($input: UpdatePipelineProgressInput!) {
@@ -15,15 +16,14 @@ def updatePipelineProgress(
       }
     }
   """
-  return graphqlRequest(
-    backend_url,
-    mutation,
-      {
-      "input": {
-        "progress": progress,
-        "message": message,
-        "pipelineId": pipelineId
-      }
-    },
-    token,
-  )
+  variables: Dict[str, Any] = {
+    "input": {
+      "progress": progress,
+      "message": message,
+      "pipelineId": pipelineId,
+    }
+  }
+  # Sent only when the backend gave one, so payloads from older backends keep working.
+  if executionId:
+    variables["input"]["executionId"] = executionId
+  return graphqlRequest(backend_url, mutation, variables, token)

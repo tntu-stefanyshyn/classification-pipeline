@@ -1,7 +1,11 @@
 import type { Migration } from './types';
 import { pipelineLegacyStatusesToIdleMigration } from './pipelineLegacyStatusesToIdleMigration';
+import { localRunMachineHostnameMigration } from './localRunMachineHostnameMigration';
 
-const migrations: Migration[] = [pipelineLegacyStatusesToIdleMigration];
+const migrations: Migration[] = [
+  pipelineLegacyStatusesToIdleMigration,
+  localRunMachineHostnameMigration,
+];
 
 export const runMigrations = async (): Promise<number> => {
   let totalUpdated = 0;

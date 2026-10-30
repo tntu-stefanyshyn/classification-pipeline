@@ -293,7 +293,7 @@ test('ComputationManager.claimNextRun starts a new execution and writes the host
   // The fence is raised before the status change; machine info is written for this execution only.
   assert.deepEqual(pipelineUpdates[0], [
     { _id: run._id, executionId: { $not: { $gte: 5 } } },
-    { $set: { executionId: 5 } },
+    { $set: { executionId: 5 }, $unset: { computingResult: '' } },
   ]);
   assert.deepEqual(pipelineUpdates[1][0], { _id: run._id, executionId: 5 });
 });

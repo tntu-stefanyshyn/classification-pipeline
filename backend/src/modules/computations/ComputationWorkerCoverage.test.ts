@@ -643,8 +643,6 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     { pipeline: {} },
     { pipeline: { _id: new Types.ObjectId() }, executionId: 2 },
     { pipeline: { _id: pipelineId }, executionId: 3 },
-    // Claimed before executionId existed: skipped unless legacy reports are allowed.
-    { pipeline: { _id: new Types.ObjectId() } },
   ]);
   let fetchCalls = 0;
   stub(t, worker, 'fetchResultPayload', async () => {

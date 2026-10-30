@@ -13,6 +13,6 @@ export class UpdatePipelineProgressInput {
   message?: string;
 
   /** The claimed execution sending the report; see `Pipeline.executionId`. */
-  @Field(() => ID, { nullable: true })
-  executionId?: string;
+  @Field(() => ID)
+  executionId!: string;
 }

@@ -28,7 +28,7 @@ enum ClassificationStage {
 }
 
 input CompletePipelineInput {
-  executionId: ID
+  executionId: ID!
   payload: ComputationResultPayloadInput!
   pipelineId: ID!
 }
@@ -128,7 +128,7 @@ enum ExperimentStatus {
 }
 
 input FailExperimentRunInput {
-  executionId: ID
+  executionId: ID!
   runId: ID!
   statusMessage: String
 }
@@ -413,7 +413,7 @@ input UpdatePipelineOptimizationInput {
 }
 
 input UpdatePipelineProgressInput {
-  executionId: ID
+  executionId: ID!
   message: String
   pipelineId: ID!
   progress: Float

@@ -263,8 +263,8 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
   assert.deepEqual(
     resultWrites.map((entry) => entry[1]),
     [
-      { _id: pipelineId, executionId: 2 },
-      { _id: pipelineId, executionId: 2 },
+      { _id: pipelineId, executionId: 2, computingResult: { $exists: false } },
+      { _id: pipelineId, executionId: 2, computingResult: { $exists: false } },
     ]
   );
 

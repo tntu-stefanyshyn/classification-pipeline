@@ -189,11 +189,9 @@ export class PipelineManager {
   /**
    * A status change sent through `changePipelineStatus`, which carries no execution identity.
    * It cannot end a running execution: the user stops one with `stopExperimentRun` and a worker
-   * reports one with `failExperimentRun`/`completePipeline`, so a late report from an old worker
-   * that still uses this mutation cannot end a newer execution of the same run. The transition is
-   * chosen from the status the update matches, so a run that starts meanwhile is not affected.
-   * `COMPUTATIONS_ACCEPT_LEGACY_REPORTS` does not lift this: it only admits reports without an
-   * executionId, never an anonymous status change of a running run.
+   * reports one with `failExperimentRun`/`completePipeline`, so a request meant for an earlier
+   * execution cannot end a newer one of the same run. The transition is chosen from the status the
+   * update matches, so a run that starts meanwhile is not affected.
    */
   changeStatusFromApi(input: ChangePipelineStatusInput) {
     return this.changeStatus(input, undefined, undefined, this.apiTransitions);

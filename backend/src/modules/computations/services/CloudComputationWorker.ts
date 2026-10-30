@@ -161,15 +161,12 @@ export class CloudComputationWorker {
 
       if (run) {
         const runId = run._id.toString();
+        const executionId = run.executionId!;
         try {
-          await this.submitRun(runId, run.executionId!);
+          await this.submitRun(runId, executionId);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Не вдалося відправити в AWS';
-          await this.manager.failRun({
-            runId,
-            executionId: run.executionId,
-            statusMessage: message,
-          });
+          await this.manager.failRun({ runId, executionId, statusMessage: message });
         }
       }
 
@@ -201,19 +198,11 @@ export class CloudComputationWorker {
     for (const run of runnings) {
       const runId = String((run as { pipeline?: { _id?: Types.ObjectId } }).pipeline?._id ?? '');
       if (!runId) continue;
-      // Only the current execution's result counts; runs claimed before executionId existed are
-      // read from the old per-run key only while legacy reports are allowed.
-      const executionId = (run as { executionId?: number }).executionId;
-      if (!executionId && !config.computations.acceptLegacyExecutionReports) continue;
+      // Only the current execution's result counts.
+      const { executionId } = run as { executionId: number };
       const resultPayload = await this.fetchResultPayload(runId, executionId);
       if (!resultPayload) continue;
-      if (
-        executionId &&
-        resultPayload.executionId &&
-        resultPayload.executionId !== String(executionId)
-      ) {
-        continue;
-      }
+      if (resultPayload.executionId && resultPayload.executionId !== String(executionId)) continue;
 
       if (resultPayload.status === 'failed') {
         const message = resultPayload.error || 'Помилка виконання в AWS';
@@ -348,7 +337,7 @@ export class CloudComputationWorker {
 
   private async fetchResultPayload(
     runId: string,
-    executionId?: number
+    executionId: number
   ): Promise<ResultPayload | null> {
     const key = this.getResultKey(runId, executionId);
     try {
@@ -368,8 +357,8 @@ export class CloudComputationWorker {
   }
 
   // One key per execution, so a result left by an earlier execution is never read for a later one.
-  private getResultKey(runId: string, executionId?: number) {
-    const name = executionId ? `${runId}/${executionId}.json` : `${runId}.json`;
+  private getResultKey(runId: string, executionId: number) {
+    const name = `${runId}/${executionId}.json`;
     return this.resultsPrefix ? `${this.resultsPrefix}/${name}` : name;
   }
 

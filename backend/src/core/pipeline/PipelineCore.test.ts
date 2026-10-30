@@ -13,7 +13,6 @@ import { UpdatePipelineProgressInput } from './classes/UpdatePipelineProgressInp
 import { PipelineStatus } from './enums';
 import { PipelineResolver } from './graphql/pipeline';
 import { createLeanResult, stub } from '../../test/testUtils';
-import { config } from '../../config/config';
 
 test('core pipeline classes keep assigned values and exports remain available', () => {
   const now = new Date();
@@ -176,7 +175,7 @@ test('PipelineBaseService.updatePipelineProgress skips history when message and 
   assert.deepEqual(updateCalls[0][1], { $set: {} });
 });
 
-test('PipelineBaseService.updatePipelineProgress requires an executionId outside the rollout mode', async (t) => {
+test('PipelineBaseService.updatePipelineProgress requires a valid executionId', async (t) => {
   const updateCalls: any[] = [];
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
     updateCalls.push(args);
@@ -196,19 +195,6 @@ test('PipelineBaseService.updatePipelineProgress requires an executionId outside
     );
   }
   assert.equal(updateCalls.length, 0);
-
-  // The rollout setting accepts reports from clients that predate executionId.
-  stub(
-    t,
-    config.computations as unknown as Record<string, unknown>,
-    'acceptLegacyExecutionReports',
-    true
-  );
-  await PipelineBaseService.updatePipelineProgress({
-    pipelineId: 'pipeline-1',
-    progress: 10,
-  } as any);
-  assert.deepEqual(updateCalls[0][0], { _id: 'pipeline-1' });
 });
 
 test('PipelineBaseService.updatePipelineOptimization appends optimization scores', async (t) => {

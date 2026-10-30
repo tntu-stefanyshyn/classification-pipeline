@@ -5,8 +5,8 @@ def completePipeline(
   backend_url: str,
   pipelineId: str,
   payload: Dict[str, Any],
+  executionId: str,
   token: Optional[str] = None,
-  executionId: Optional[str] = None,
 ):
   mutation = """
   mutation CompletePipeline($input: CompletePipelineInput!) {
@@ -18,11 +18,9 @@ def completePipeline(
     "input": {
       "payload": payload,
       "pipelineId": pipelineId,
+      "executionId": executionId,
     }
   }
-  # Sent only when the backend gave one, so payloads from older backends keep working.
-  if executionId:
-    variables["input"]["executionId"] = executionId
   print(
     {
       "backend_url": backend_url,

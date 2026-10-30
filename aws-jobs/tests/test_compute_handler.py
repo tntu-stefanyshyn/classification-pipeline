@@ -169,6 +169,7 @@ class ComputeHandlerTests(unittest.TestCase):
         module = load_compute_handler()
         payload = {
             "pipelineId": "pipe-1",
+            "executionId": "3",
             "backend_token": "svc-token",
         }
         path = [
@@ -309,9 +310,27 @@ class ComputeHandlerTests(unittest.TestCase):
             executionId="4",
         )
 
-    def test_main_emits_progress_error_and_reraises(self):
+    def test_compute_requires_an_execution_id(self):
         module = load_compute_handler()
         payload = {"pipelineId": "pipe-1", "backend_token": "svc-token"}
+
+        with patch.dict(
+            module.os.environ,
+            {"COMPUTE_BACKEND_URL": "http://backend/graphql"},
+            clear=False,
+        ), patch.object(module, "_load_payload", return_value=payload), patch.object(
+            module, "completePipeline"
+        ) as complete_pipeline:
+            with self.assertRaisesRegex(ValueError, "MISSING_PARAMS"):
+                module.run_compute(dict(payload))
+            with self.assertRaisesRegex(ValueError, "MISSING_PARAMS"):
+                module.main()
+
+        complete_pipeline.assert_not_called()
+
+    def test_main_emits_progress_error_and_reraises(self):
+        module = load_compute_handler()
+        payload = {"pipelineId": "pipe-1", "executionId": "3", "backend_token": "svc-token"}
         emits = []
 
         with patch.dict(

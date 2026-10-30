@@ -15,7 +15,7 @@ export type GraphNode = {
 export type HandlerPayload = {
   pipelineId: string;
   /** Sent back with every report so the backend can ignore an execution that is no longer current. */
-  executionId?: string;
+  executionId: string;
   experiment_id: string;
   queue: ComputationQueue;
   backend_url: string;

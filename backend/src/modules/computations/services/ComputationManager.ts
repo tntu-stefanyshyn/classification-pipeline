@@ -292,9 +292,10 @@ export class ComputationManager {
 
       // Raise the pipeline's execution fence first: from here on, reports of earlier executions
       // match nothing. The status change below then gives this number to exactly one claimant.
+      // A result left by an earlier execution goes too, so the new one cannot inherit it.
       await PipelineModel.updateOne(
         { _id: pipeline._id, executionId: { $not: { $gte: executionId } } },
-        { $set: { executionId } }
+        { $set: { executionId }, $unset: { computingResult: '' } }
       );
       try {
         await this.pipelineManager.changeStatus(
@@ -326,7 +327,7 @@ export class ComputationManager {
 
   /**
    * Moves the run out of `running` only if `executionId` is still its current execution; the
-   * condition is part of the status update. Returns false for a stale or repeated report.
+   * condition is part of the status update. Returns false if it was not running any more.
    */
   private async finishExecution(
     pipelineId: Types.ObjectId,
@@ -344,27 +345,40 @@ export class ComputationManager {
     }
   }
 
-  // The status changes first, so a stale report never stores its result.
+  /**
+   * Saves the result before the run moves to `completed`, so a completed run always has one: a
+   * failed write leaves it `running` and the report can be retried. The fence keeps stale reports
+   * out, and the first report of an execution wins. Returns whether this execution completed the
+   * run, now or with an earlier report.
+   */
   private async saveResult(
     pipelineId: Types.ObjectId,
-    executionId: string | number | null | undefined,
+    executionId: string | number,
     result: unknown,
     message: string
   ) {
     const execution = executionFilter(executionId);
-    const completed = await this.finishExecution(
-      pipelineId,
-      execution,
-      PipelineStatus.completed,
-      message
+    await PipelineModel.updateOne(
+      { _id: pipelineId, ...execution, computingResult: { $exists: false } },
+      { $set: { computingResult: result } }
     );
-    if (completed) {
-      await PipelineModel.updateOne(
-        { _id: pipelineId, ...execution },
-        { $set: { computingResult: result } }
-      );
+    if (await this.finishExecution(pipelineId, execution, PipelineStatus.completed, message)) {
+      return true;
     }
-    return completed;
+    const alreadyCompleted = await WorkflowModel.exists({
+      instanceId: pipelineId,
+      type: WorkflowType.PIPELINE,
+      status: PipelineStatus.completed,
+      ...execution,
+    });
+    if (alreadyCompleted) return true;
+
+    // A Stop or a failure ended this execution first, so its result does not count.
+    await PipelineModel.updateOne(
+      { _id: pipelineId, ...execution },
+      { $unset: { computingResult: '' } }
+    );
+    return false;
   }
 
   /** Returns false when the report belongs to an execution that is no longer current. */
@@ -380,7 +394,7 @@ export class ComputationManager {
     statusMessage,
   }: {
     runId: string;
-    executionId?: string | number | null;
+    executionId: string | number;
     resultJson: string;
     statusMessage?: string;
   }): Promise<Pipeline> {
@@ -396,7 +410,7 @@ export class ComputationManager {
     statusMessage,
   }: {
     runId: string;
-    executionId?: string | number | null;
+    executionId: string | number;
     statusMessage?: string;
   }): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(runId);

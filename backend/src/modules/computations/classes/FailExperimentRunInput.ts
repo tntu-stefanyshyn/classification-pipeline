@@ -9,6 +9,6 @@ export class FailExperimentRunInput {
   statusMessage?: string;
 
   /** The claimed execution sending the report; see `Pipeline.executionId`. */
-  @Field(() => ID, { nullable: true })
-  executionId?: string;
+  @Field(() => ID)
+  executionId!: string;
 }

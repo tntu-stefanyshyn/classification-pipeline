@@ -10,6 +10,6 @@ export class CompletePipelineInput {
   payload!: ComputationResultPayloadInput;
 
   /** The claimed execution sending the report; see `Pipeline.executionId`. */
-  @Field(() => ID, { nullable: true })
-  executionId?: string;
+  @Field(() => ID)
+  executionId!: string;
 }

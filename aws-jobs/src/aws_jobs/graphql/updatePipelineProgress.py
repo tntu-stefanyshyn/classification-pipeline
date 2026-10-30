@@ -4,10 +4,10 @@ from graphql.graphqlRequest import graphqlRequest
 def updatePipelineProgress(
   backend_url: str,
   pipelineId: str,
+  executionId: str,
   message: Optional[str] = None,
   progress: Optional[float] = None,
   token: Optional[str] = None,
-  executionId: Optional[str] = None,
 ):
   mutation = """
     mutation UpdatePipelineProgress($input: UpdatePipelineProgressInput!) {
@@ -21,9 +21,7 @@ def updatePipelineProgress(
       "progress": progress,
       "message": message,
       "pipelineId": pipelineId,
+      "executionId": executionId,
     }
   }
-  # Sent only when the backend gave one, so payloads from older backends keep working.
-  if executionId:
-    variables["input"]["executionId"] = executionId
   return graphqlRequest(backend_url, mutation, variables, token)

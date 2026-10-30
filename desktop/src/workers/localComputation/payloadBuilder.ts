@@ -2,7 +2,9 @@ import type { ClaimExperimentRunMutation } from '../../graphql/mutations/generat
 import type { ExperimentForRunQuery } from '../../graphql/queries/generated/experimentForRun';
 import type { HandlerPayload } from './types';
 
-type ClaimedRun = NonNullable<ClaimExperimentRunMutation['claimExperimentRun']>;
+type ClaimedRun = NonNullable<ClaimExperimentRunMutation['claimExperimentRun']> & {
+  executionId: string;
+};
 type ExperimentSnapshot = NonNullable<ExperimentForRunQuery['experiment']>;
 
 export const buildHandlerPayload = (
@@ -23,7 +25,7 @@ export const buildHandlerPayload = (
   return {
     backend_url: 'http://host.docker.internal:4000/graphql',
     pipelineId: run._id,
-    ...(run.executionId ? { executionId: run.executionId } : {}),
+    executionId: run.executionId,
     experiment_id: run.experimentId,
     queue: run.queue,
     file_id: experiment.fileId ?? null,

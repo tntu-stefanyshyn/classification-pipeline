@@ -130,11 +130,7 @@ export class LocalComputationWorker {
     }
   }
 
-  private startPauseWatcher(
-    runId: string,
-    executionId: string | null | undefined,
-    controller: AbortController
-  ) {
+  private startPauseWatcher(runId: string, executionId: string, controller: AbortController) {
     let stopped = false;
     const pollMs = Number(process.env.LOCAL_WORKER_STATUS_POLL_MS ?? DEFAULT_POLL_MS);
     const loop = async () => {

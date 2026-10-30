@@ -653,7 +653,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
     started_at = time.time()
 
-    if not backend_url or not pipelineId:
+    if not backend_url or not pipelineId or not _execution_id:
         raise ValueError("MISSING_PARAMS")
     
     path = []
@@ -762,7 +762,7 @@ def main() -> None:
         backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
         pipelineId = payload.get("pipelineId")
 
-        if not backend_url or not pipelineId:
+        if not backend_url or not pipelineId or not _execution_id:
             raise ValueError("MISSING_PARAMS")
 
         result = run_compute(payload)
@@ -781,7 +781,7 @@ def main() -> None:
         pipelineId = payload.get("pipelineId")
         message = f"{type(exc).__name__}: {exc}"
 
-        if backend_url and pipelineId:
+        if backend_url and pipelineId and _execution_id:
             try:
                 _emit(backend_url, pipelineId, message=message, token=token)
             except Exception:

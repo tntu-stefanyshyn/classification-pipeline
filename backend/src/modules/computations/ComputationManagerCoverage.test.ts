@@ -470,6 +470,7 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     },
   } as any);
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => []);
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'exists', async () => null);
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(experimentDoc)
   );
@@ -496,11 +497,9 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     executionId: '1',
     resultJson: '{"score":1}',
   });
-  // The completion was rejected, so its result is not stored.
-  assert.equal(
-    calls.some((entry) => entry[0] === 'updateOne' && entry[2]?.$set?.computingResult),
-    false
-  );
+  // The completion lost, so the result saved for it is removed again.
+  const resultUpdates = calls.filter((entry) => entry[0] === 'updateOne');
+  assert.deepEqual(resultUpdates.at(-1)?.[2], { $unset: { computingResult: '' } });
 
   assert.equal(
     await manager.failRun({ runId: pipelineId.toHexString(), executionId: '1' }),

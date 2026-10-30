@@ -341,7 +341,7 @@ test('PipelineManager.changeStatus moves a queued run back to idle', async (t) =
   ]);
 });
 
-test('PipelineManager.changeStatusFromApi never ends a running execution, even in the rollout mode', async (t) => {
+test('PipelineManager.changeStatusFromApi never ends a running execution', async (t) => {
   const manager = new PipelineManager();
   const transitionSets: any[] = [];
 
@@ -359,19 +359,6 @@ test('PipelineManager.changeStatusFromApi never ends a running execution, even i
     pipelineId: new Types.ObjectId(),
     status: PipelineStatus.idle,
   });
-  // Accepting reports without executionId does not turn this anonymous status change back on.
-  stub(
-    t,
-    config.computations as unknown as Record<string, unknown>,
-    'acceptLegacyExecutionReports',
-    true
-  );
-  await manager.changeStatusFromApi({
-    pipelineId: new Types.ObjectId(),
-    status: PipelineStatus.idle,
-  });
 
-  for (const transitions of transitionSets) {
-    assert.deepEqual(transitions, ['idle->queued', 'queued->idle', 'queued->running']);
-  }
+  assert.deepEqual(transitionSets, [['idle->queued', 'queued->idle', 'queued->running']]);
 });

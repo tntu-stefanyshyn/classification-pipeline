@@ -14,7 +14,6 @@ import { ExperimentModel } from '../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../experiments/models/GraphStructureModel';
 import { localRunMachineHostnameMigration } from '../../migrations/localRunMachineHostnameMigration';
 import { PipelineBaseService } from '../../core/pipeline';
-import { config } from '../../config/config';
 import { CloudComputationWorker } from './services/CloudComputationWorker';
 import { PipelineResolver } from '../../core/pipeline/graphql/pipeline';
 import { Readable } from 'node:stream';
@@ -353,14 +352,14 @@ test('reports from an older execution leave the newer execution alone', { skip }
     true
   );
 
-  // A repeated completion or a late failure of the finished execution changes nothing.
+  // A repeated completion succeeds without overwriting; a late failure changes nothing.
   assert.equal(
     await manager.completePipeline({
       pipelineId: runId!,
       executionId: '2',
       payload: result(0.5),
     } as any),
-    false
+    true
   );
   await manager.failRun({ runId: runId!, executionId: '2', statusMessage: 'late failure' });
   current = await state();
@@ -394,32 +393,38 @@ test(
   }
 );
 
-test('reports without an executionId follow the rollout setting', { skip }, async (t) => {
+test('reports without a valid executionId are rejected', { skip }, async (t) => {
   await useDatabase(t);
   const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
   const manager = new ComputationManager();
   await manager.claimNextRun(ComputationQueue.cloud);
   const status = async () => (await WorkflowModel.findOne({ instanceId: runId }).lean())?.status;
-  const complete = () =>
-    manager.completePipeline({ pipelineId: runId!, payload: result(0.3) } as any);
 
-  // By default a report must say which execution sent it.
-  await assert.rejects(complete, /executionId/);
-  await assert.rejects(
-    () => PipelineBaseService.updatePipelineProgress({ pipelineId: runId, progress: 5 } as any),
-    /executionId/
-  );
+  for (const executionId of [undefined, null, '', '0', 'abc']) {
+    await assert.rejects(
+      () =>
+        manager.completePipeline({ pipelineId: runId!, executionId, payload: result(0.3) } as any),
+      /executionId/
+    );
+    await assert.rejects(
+      () => manager.failRun({ runId: runId!, executionId } as any),
+      /executionId/
+    );
+    await assert.rejects(
+      () =>
+        PipelineBaseService.updatePipelineProgress({
+          pipelineId: runId,
+          executionId,
+          progress: 5,
+        } as any),
+      /executionId/
+    );
+  }
+
   assert.equal(await status(), PipelineStatus.running);
-
-  // During the rollout, reports from clients that predate executionId are accepted.
-  stub(
-    t,
-    config.computations as unknown as Record<string, unknown>,
-    'acceptLegacyExecutionReports',
-    true
-  );
-  assert.equal(await complete(), true);
-  assert.equal(await status(), PipelineStatus.completed);
+  const pipeline = await PipelineModel.findById(runId).lean();
+  assert.equal(pipeline?.computingResult, undefined);
+  assert.equal(pipeline?.progress, 0);
 });
 
 test(
@@ -433,11 +438,9 @@ test(
     const fresh = await startNextExecution(runId!, ComputationQueue.cloud, 'host-b');
     assert.equal(fresh?.executionId, 2);
 
-    // Simulated S3 (real MongoDB): the old execution's result under its own key and under the
-    // key used before executionId existed.
+    // Simulated S3 (real MongoDB): the old execution's result under its own key.
     const stored: Record<string, unknown> = {
       [`prefix/${runId}/1.json`]: { status: 'completed', result: result(0.1) },
-      [`prefix/${runId}.json`]: { status: 'failed', error: 'old failure' },
     };
     const worker = new CloudComputationWorker() as any;
     worker.resultsPrefix = 'prefix';
@@ -477,7 +480,7 @@ test(
 );
 
 test(
-  'an old worker sending changePipelineStatus(idle) leaves the newer execution alone',
+  'changePipelineStatus(idle) sent for an earlier execution leaves the newer one alone',
   { skip },
   async (t) => {
     await useDatabase(t);
@@ -490,7 +493,7 @@ test(
       pipeline: await PipelineModel.findById(runId).lean(),
     });
 
-    // Execution A runs on an old desktop client; it is stopped and the run starts again as B.
+    // Execution A is stopped and the run starts again as B.
     await new ComputationManager().claimNextRun(ComputationQueue.local, {
       hostname: 'host-a',
     } as any);
@@ -502,12 +505,12 @@ test(
       progress: 30,
     } as any);
 
-    // The old client's worker now reports A's failure the old way.
+    // A request without execution identity, meant for A, arrives now.
     await assert.rejects(
       () => changeStatus(PipelineStatus.idle, 'A failed'),
       /TRANSITION_NOT_FOUND/
     );
-    let current = await state();
+    const current = await state();
     assert.equal(current.workflow?.status, PipelineStatus.running);
     assert.equal(current.workflow?.executionId, 2);
     assert.equal(current.pipeline?.machineInfo?.hostname, 'host-b');
@@ -520,25 +523,6 @@ test(
     assert.equal(await changeStatus(PipelineStatus.queued), true);
     assert.equal(await changeStatus(PipelineStatus.idle), true);
     assert.equal((await state()).workflow?.status, PipelineStatus.idle);
-
-    // Accepting reports without executionId during a rollout does not re-enable this path.
-    await changeStatus(PipelineStatus.queued);
-    await new ComputationManager().claimNextRun(ComputationQueue.local, {
-      hostname: 'host-b',
-    } as any);
-    stub(
-      t,
-      config.computations as unknown as Record<string, unknown>,
-      'acceptLegacyExecutionReports',
-      true
-    );
-    await assert.rejects(
-      () => changeStatus(PipelineStatus.idle, 'A failed'),
-      /TRANSITION_NOT_FOUND/
-    );
-    current = await state();
-    assert.equal(current.workflow?.status, PipelineStatus.running);
-    assert.equal(current.workflow?.executionId, 3);
   }
 );
 
@@ -800,5 +784,204 @@ test(
       // by exactly one side: by Stop if it was recorded first, otherwise by the submitter.
       assert.deepEqual([...cancelled, ...stopperCancelled], submitted);
     }
+  }
+);
+
+test(
+  'a failed result write leaves the run running and a valid retry completes it',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+    const manager = new ComputationManager();
+    await manager.claimNextRun(ComputationQueue.cloud);
+
+    // The value cannot be cast to the result schema, so MongoDB is never written.
+    await assert.rejects(
+      () =>
+        manager.completeRun({
+          runId: runId!,
+          executionId: 1,
+          resultJson: JSON.stringify({ ...result(0.5), accuracyScores: ['not a number'] }),
+        }),
+      /Cast/
+    );
+    assert.equal(await statusOf(runId!), PipelineStatus.running);
+    assert.equal((await PipelineModel.findById(runId).lean())?.computingResult, undefined);
+
+    assert.equal(
+      await manager.completePipeline({
+        pipelineId: runId!,
+        executionId: '1',
+        payload: result(0.5),
+      } as any),
+      true
+    );
+    assert.equal(await statusOf(runId!), PipelineStatus.completed);
+    assert.deepEqual(
+      (await PipelineModel.findById(runId).lean())?.computingResult?.accuracyScores,
+      [0.5]
+    );
+  }
+);
+
+test('a report interrupted after saving the result can be repeated', { skip }, async (t) => {
+  await useDatabase(t);
+  const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+  const manager = new ComputationManager();
+  await manager.claimNextRun(ComputationQueue.cloud);
+  const report = () =>
+    manager.completePipeline({ pipelineId: runId!, executionId: '1', payload: result(0.7) } as any);
+
+  // The process dies, or the database goes away, between the two writes.
+  const pipelineManager = new PipelineManager();
+  let interrupted = false;
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    endExecution: async (...args: Parameters<PipelineManager['endExecution']>) => {
+      if (!interrupted) {
+        interrupted = true;
+        throw new Error('connection lost');
+      }
+      return pipelineManager.endExecution(...args);
+    },
+  } as any);
+
+  await assert.rejects(report, /connection lost/);
+  assert.equal(await statusOf(runId!), PipelineStatus.running);
+
+  assert.equal(await report(), true);
+  assert.equal(await statusOf(runId!), PipelineStatus.completed);
+  assert.deepEqual(
+    (await PipelineModel.findById(runId).lean())?.computingResult?.accuracyScores,
+    [0.7]
+  );
+});
+
+test(
+  'only the execution that completed a run can repair its missing result',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+    const manager = new ComputationManager();
+    await manager.claimNextRun(ComputationQueue.cloud);
+    await startNextExecution(runId!, ComputationQueue.cloud, 'host-b');
+    // Execution 2 is completed with no result on the pipeline.
+    await new PipelineManager().endExecution(
+      { pipelineId: runId, status: PipelineStatus.completed } as any,
+      { executionId: 2 }
+    );
+    const report = (executionId: string, accuracy: number) =>
+      manager.completePipeline({
+        pipelineId: runId!,
+        executionId,
+        payload: result(accuracy),
+      } as any);
+    const stored = async () =>
+      (await PipelineModel.findById(runId).lean())?.computingResult?.accuracyScores;
+
+    assert.equal(await report('1', 0.1), false);
+    assert.equal(await stored(), undefined);
+
+    assert.equal(await report('2', 0.9), true);
+    assert.deepEqual(await stored(), [0.9]);
+
+    assert.equal(await report('2', 0.2), true);
+    assert.equal(await report('1', 0.1), false);
+    assert.deepEqual(await stored(), [0.9]);
+    assert.equal(await statusOf(runId!), PipelineStatus.completed);
+  }
+);
+
+test(
+  'a result that lost to a Stop does not stay on the run or reach its retry',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+    const manager = new ComputationManager();
+    await manager.claimNextRun(ComputationQueue.cloud);
+    await manager.stopRun(runId!);
+    await new PipelineManager().changeStatus({
+      pipelineId: runId,
+      status: PipelineStatus.queued,
+    } as any);
+    const report = (executionId: string, accuracy: number) =>
+      manager.completePipeline({
+        pipelineId: runId!,
+        executionId,
+        payload: result(accuracy),
+      } as any);
+    const stored = async () => (await PipelineModel.findById(runId).lean())?.computingResult;
+
+    // Execution 1 reports while the retry waits in the queue, still under its number.
+    assert.equal(await report('1', 0.1), false);
+    assert.equal(await statusOf(runId!), PipelineStatus.queued);
+    assert.equal(await stored(), undefined);
+
+    // A process that died mid-report could leave a result behind; the claim drops it.
+    await PipelineModel.updateOne({ _id: runId }, { $set: { computingResult: result(0.2) } });
+    const retry = await manager.claimNextRun(ComputationQueue.cloud);
+    assert.equal(retry?.executionId, 2);
+    assert.equal(await stored(), undefined);
+
+    assert.equal(await report('2', 0.8), true);
+    assert.deepEqual((await stored())?.accuracyScores, [0.8]);
+  }
+);
+
+test('repeated reports of one execution racing: one result, all accepted', { skip }, async (t) => {
+  await useDatabase(t);
+  for (let round = 0; round < 10; round += 1) {
+    const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+    const manager = new ComputationManager();
+    await manager.claimNextRun(ComputationQueue.cloud);
+    const accuracies = [0.1, 0.2, 0.3, 0.4];
+
+    const accepted = await Promise.all(
+      accuracies.map((accuracy) =>
+        manager.completePipeline({
+          pipelineId: runId!,
+          executionId: '1',
+          payload: result(accuracy),
+        } as any)
+      )
+    );
+
+    assert.deepEqual(accepted, [true, true, true, true]);
+    assert.equal(await statusOf(runId!), PipelineStatus.completed);
+    const stored = (await PipelineModel.findById(runId).lean())?.computingResult?.accuracyScores;
+    assert.ok(accuracies.includes(stored?.[0] as number));
+  }
+});
+
+test(
+  'cloud reconciliation recovers after an unreadable result is replaced',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+    const worker = new CloudComputationWorker() as any;
+    worker.resultsPrefix = 'prefix';
+    await worker.manager.claimNextRun(ComputationQueue.cloud);
+    let body: unknown = {
+      status: 'completed',
+      result: { ...result(0.4), accuracyScores: ['not a number'] },
+    };
+    stub(t, worker, 's3', {
+      send: async () => ({ Body: Readable.from([JSON.stringify(body)]) }),
+    });
+
+    await assert.rejects(() => worker.reconcileRuns(), /Cast/);
+    assert.equal(await statusOf(runId!), PipelineStatus.running);
+
+    // Reconciliation reads running runs only, so the run must still be there to pick up.
+    body = { status: 'completed', result: result(0.4) };
+    await worker.reconcileRuns();
+    assert.equal(await statusOf(runId!), PipelineStatus.completed);
+    assert.deepEqual(
+      (await PipelineModel.findById(runId).lean())?.computingResult?.accuracyScores,
+      [0.4]
+    );
   }
 );

@@ -34,7 +34,11 @@ export const claimExperimentRun = async (
     ClaimExperimentRunMutation,
     ClaimExperimentRunMutationVariables
   >(ClaimExperimentRunDocument, { queue, machineInfo });
-  return data.claimExperimentRun ?? null;
+  const run = data.claimExperimentRun;
+  if (!run) return null;
+  // Every claim starts an execution, and no report can be sent without its id.
+  if (!run.executionId) throw new Error('Claimed run has no executionId');
+  return { ...run, executionId: run.executionId };
 };
 
 export const fetchExperimentForRun = async (client: GraphqlClient, id: string) => {

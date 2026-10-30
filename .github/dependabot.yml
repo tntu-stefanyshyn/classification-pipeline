@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        update-types: [minor, patch]
+  - package-ecosystem: pip
+    directory: /aws-jobs
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directories: [/, /backend, /aws-jobs]
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ['*']
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

@@ -95,7 +95,9 @@ esac
     process.env.PATH = originalPath;
     try {
       fs.rmSync(dir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // best-effort cleanup
+    }
   });
 
   return {

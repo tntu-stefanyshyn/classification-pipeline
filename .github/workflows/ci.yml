@@ -22,8 +22,42 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build shared test container
         run: docker build --file Dockerfile.ci --tag classification-tests:ci .
+      - name: Lint desktop and backend
+        run: docker run --rm classification-tests:ci npm run lint
+      - name: Check formatting
+        run: docker run --rm classification-tests:ci npm run format:check
       - name: Run all tests in the same container
-        run: docker run --rm classification-tests:ci
+        run: docker run --name classification-tests classification-tests:ci
+      - name: Publish test coverage summary
+        if: always()
+        run: |
+          docker cp classification-tests:/app/test-metrics.csv test-metrics.csv || exit 0
+          {
+            echo '### Test coverage'
+            echo
+            echo '| Part | Tests | Coverage |'
+            echo '| --- | --- | --- |'
+            tail -n +2 test-metrics.csv | awk -F, '{ print "| " $1 " | " $2 " | " $3 " |" }'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  schema:
+    name: GraphQL schema
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies without install scripts
+        run: npm ci --ignore-scripts
+      - name: Regenerate the schema files
+        run: |
+          npm run emit:schema --workspace backend
+          npm run sync:schema --workspace desktop
+      - name: Fail if the committed schema files are stale
+        run: git diff --exit-code -- backend/schema.gql desktop/schema.graphql
 
   container-build:
     name: Docker (${{ matrix.image }})
@@ -71,17 +105,18 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [tests, container-build, windows-installer]
+    needs: [tests, schema, container-build, windows-installer]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every check to succeed
         env:
           TESTS: ${{ needs.tests.result }}
+          SCHEMA: ${{ needs.schema.result }}
           CONTAINERS: ${{ needs.container-build.result }}
           WINDOWS: ${{ needs.windows-installer.result }}
         run: |
-          for result in "$TESTS" "$CONTAINERS" "$WINDOWS"; do
+          for result in "$TESTS" "$SCHEMA" "$CONTAINERS" "$WINDOWS"; do
             if [ "$result" != success ]; then
               echo "A required check finished with status: $result"
               exit 1

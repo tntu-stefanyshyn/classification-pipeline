@@ -10,3 +10,5 @@ backend/dist
 aws-jobs/.venv
 aws-jobs/.pytest_cache
 aws-jobs/.ruff_cache
+backend/schema.gql
+desktop/schema.graphql

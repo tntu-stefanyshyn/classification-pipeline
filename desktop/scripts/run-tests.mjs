@@ -1,5 +1,4 @@
 import { readdir } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -42,7 +41,7 @@ const coverageArgs = [
   ...testFiles,
 ];
 
-const outputFile = path.join(os.tmpdir(), `desktop-test-output-${process.pid}.log`);
+const outputFile = path.join('/tmp', `desktop-test-output-${process.pid}.log`);
 
 const coverageResult = await runCommandWithTee(process.execPath, coverageArgs, {
   cwd: process.cwd(),

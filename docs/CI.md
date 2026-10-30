@@ -69,7 +69,7 @@ npm run make --workspace desktop -- --platform win32 --arch x64
 
 ### Formatting
 
-`npm run format:check` fails when a file is not formatted by Prettier; `npx prettier --write <file>` fixes it. Existing line endings are kept (`endOfLine: auto`), so Windows checkouts with CRLF pass too. To format staged files automatically on every commit, enable the repository hook once:
+`npm run format:check` fails when a file is not formatted by Prettier; `npx prettier --write <file>` fixes it. To format staged files automatically on every commit, enable the repository hook once:
 
 ```bash
 git config core.hooksPath .githooks

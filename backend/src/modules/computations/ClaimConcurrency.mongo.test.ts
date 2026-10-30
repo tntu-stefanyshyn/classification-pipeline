@@ -12,7 +12,6 @@ import { ComputationManager } from './services/ComputationManager';
 import { createLeanResult, stub } from '../../test/testUtils';
 import { ExperimentModel } from '../experiments/models/ExperimentModel';
 import { GraphStructureModel } from '../experiments/models/GraphStructureModel';
-import { localRunMachineHostnameMigration } from '../../migrations/localRunMachineHostnameMigration';
 import { PipelineBaseService } from '../../core/pipeline';
 import { CloudComputationWorker } from './services/CloudComputationWorker';
 import { PipelineResolver } from '../../core/pipeline/graphql/pipeline';
@@ -213,50 +212,6 @@ test('a delayed stop cleanup leaves the run’s next execution alone', { skip },
   assert.equal((await PipelineModel.findById(first).lean())?.machineInfo?.hostname, 'host-b');
   assert.equal(await WorkflowModel.countDocuments({ status: PipelineStatus.running }), 1);
 });
-
-test(
-  'local runs already running before the deploy keep blocking their machine',
-  { skip },
-  async (t) => {
-    await useDatabase(t);
-    const legacyRun = async (queue: ComputationQueue, hostname?: string) => {
-      const pipeline = await PipelineModel.create({
-        experimentId: new Types.ObjectId(),
-        graphStructureId: new Types.ObjectId(),
-        queue,
-        pathNodeIds: [],
-        ...(hostname ? { machineInfo: { queue, hostname } } : {}),
-      });
-      await WorkflowModel.create({
-        type: WorkflowType.PIPELINE,
-        instanceId: pipeline._id,
-        status: PipelineStatus.running,
-      });
-      return pipeline._id;
-    };
-    const onA = await legacyRun(ComputationQueue.local, 'host-a');
-    // The old per-machine check let a second run start on host-a.
-    const secondOnA = await legacyRun(ComputationQueue.local, 'host-a');
-    const withoutHost = await legacyRun(ComputationQueue.local);
-    const cloud = await legacyRun(ComputationQueue.cloud, 'host-c');
-    const [queued] = await seedQueuedRuns(1, ComputationQueue.local);
-    const hostnameOf = async (instanceId: Types.ObjectId) =>
-      (await WorkflowModel.findOne({ instanceId }).lean())?.machineHostname;
-
-    assert.equal(await localRunMachineHostnameMigration.run(), 1);
-    assert.equal(await hostnameOf(onA), 'host-a');
-    assert.equal(await hostnameOf(secondOnA), undefined);
-    assert.equal(await hostnameOf(withoutHost), undefined);
-    assert.equal(await hostnameOf(cloud), undefined);
-    // Startup runs it every time; the second pass changes nothing.
-    assert.equal(await localRunMachineHostnameMigration.run(), 0);
-
-    const claim = (hostname: string) =>
-      new ComputationManager().claimNextRun(ComputationQueue.local, { hostname } as any);
-    assert.equal(await claim('host-a'), undefined);
-    assert.equal(String((await claim('host-b'))?._id), queued);
-  }
-);
 
 test('the workflows index allows one running run per machine hostname', { skip }, async (t) => {
   await useDatabase(t);

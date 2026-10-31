@@ -27,17 +27,24 @@ jobs:
       - name: Check formatting
         run: docker run --rm classification-tests:ci npm run format:check
       - name: Run all tests in the same container
-        run: docker run --name classification-tests classification-tests:ci
+        # The image contains the committed metrics; keep only the header so the CSV holds rows from this run
+        run: >
+          docker run --name classification-tests classification-tests:ci
+          sh -c 'head -n 1 test-metrics.csv > test-metrics.tmp && mv test-metrics.tmp test-metrics.csv && exec npm test'
       - name: Publish test coverage summary
         if: always()
         run: |
-          docker cp classification-tests:/app/test-metrics.csv test-metrics.csv || exit 0
+          # test-metrics.csv from the checkout lists every suite; the container copy holds only rows produced by this run
+          docker cp classification-tests:/app/test-metrics.csv fresh-metrics.csv || : > fresh-metrics.csv
           {
             echo '### Test coverage'
             echo
             echo '| Part | Tests | Coverage |'
             echo '| --- | --- | --- |'
-            tail -n +2 test-metrics.csv | awk -F, '{ print "| " $1 " | " $2 " | " $3 " |" }'
+            awk -F, '
+              FILENAME == ARGV[1] { if (FNR > 1) fresh[$1] = $2 " | " $3; next }
+              FNR > 1 { print "| " $1 " | " (($1 in fresh) ? fresh[$1] : "skipped | skipped") " |" }
+            ' fresh-metrics.csv test-metrics.csv
           } >> "$GITHUB_STEP_SUMMARY"
 
   schema:

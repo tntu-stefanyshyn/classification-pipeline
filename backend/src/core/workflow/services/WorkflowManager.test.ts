@@ -97,12 +97,9 @@ test('WorkflowManager.changeStatus loses the race when the status already change
     _id: new Types.ObjectId(),
     status: ExperimentStatus.creating,
   }));
-  stub(
-    t,
-    WorkflowModel as unknown as Record<string, unknown>,
-    'updateOne',
-    async () => ({ modifiedCount: 0 })
-  );
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'updateOne', async () => ({
+    modifiedCount: 0,
+  }));
 
   await assert.rejects(
     () =>

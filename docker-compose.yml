@@ -4,7 +4,7 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand({ ping: 1 })']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,25 +26,25 @@ services:
       # Sibling compute containers reach the backend through the host's published port.
       BACKEND_GRAPHQL_URL: http://host.docker.internal:4000/graphql
     ports:
-      - "4000:4000"
+      - '4000:4000'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     restart: unless-stopped
 
   # Build-only: produce the images the backend launches via docker.sock, then exit.
   aws-jobs:
     build: ./aws-jobs
     image: aws-jobs
-    entrypoint: ["true"]
-    restart: "no"
+    entrypoint: ['true']
+    restart: 'no'
 
   aws-jobs-optimization:
     build: ./aws-jobs
     image: aws-jobs-optimization
-    entrypoint: ["true"]
-    restart: "no"
+    entrypoint: ['true']
+    restart: 'no'
 
 volumes:
   mongo-data:

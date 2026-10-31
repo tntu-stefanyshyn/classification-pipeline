@@ -1,3 +1,4 @@
+/* eslint-disable import/export -- the named exports intentionally override the types re-exported by `export *` */
 declare module '@apollo/client/react/hooks' {
   export * from '@apollo/client/react/hooks/index.js';
   export { useMutation } from '@apollo/client/react/hooks/useMutation.js';
@@ -8,26 +9,35 @@ declare module '@apollo/client/react/hooks' {
   export type SkipToken = import('@apollo/client/react/hooks/constants.js').SkipToken;
   export type MutationHookOptions<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
   > = import('@apollo/client/react/hooks/useMutation.js').useMutation.Options<TData, TVariables>;
   export type BaseMutationOptions<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
   > = import('@apollo/client').MutationOptions<TData, TVariables>;
   export type QueryHookOptions<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
   > = import('@apollo/client/react/hooks/useQuery.js').useQuery.Options<TData, TVariables>;
   export type LazyQueryHookOptions<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
   > = import('@apollo/client/react/hooks/useLazyQuery.js').useLazyQuery.Options<TData, TVariables>;
   export type SuspenseQueryHookOptions<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
   > = import('@apollo/client/react/hooks/useSuspenseQuery.js').useSuspenseQuery.Options<TVariables>;
   export type UseSuspenseQueryResult<
     TData = unknown,
-    TVariables extends import('@apollo/client').OperationVariables = import('@apollo/client').OperationVariables
-  > = import('@apollo/client/react/hooks/useSuspenseQuery.js').useSuspenseQuery.Result<TData, TVariables>;
+    TVariables extends import('@apollo/client').OperationVariables =
+      import('@apollo/client').OperationVariables,
+  > = import('@apollo/client/react/hooks/useSuspenseQuery.js').useSuspenseQuery.Result<
+    TData,
+    TVariables
+  >;
 }

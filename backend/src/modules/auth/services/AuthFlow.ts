@@ -73,7 +73,9 @@ export class AuthFlow {
     const expected = Buffer.from(config.backend.serviceToken);
     const provided = Buffer.from((req.headers?.authorization || '').replace('Bearer', '').trim());
     return (
-      expected.length > 0 && expected.length === provided.length && timingSafeEqual(expected, provided)
+      expected.length > 0 &&
+      expected.length === provided.length &&
+      timingSafeEqual(expected, provided)
     );
   }
 

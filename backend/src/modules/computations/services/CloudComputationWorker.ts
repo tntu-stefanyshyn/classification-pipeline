@@ -25,6 +25,7 @@ const DEFAULT_POLL_MS = 5000;
 
 type HandlerPayload = {
   pipelineId: string;
+  executionId: string;
   experiment_id: string;
   queue: string;
   file_id?: string | null;
@@ -40,9 +41,10 @@ type HandlerPayload = {
   }>;
 };
 
-type ResultPayload =
+type ResultPayload = { executionId?: string } & (
   | { status: 'completed'; result: Record<string, unknown>; completed_at?: string }
-  | { status: 'failed'; error: string; failed_at?: string };
+  | { status: 'failed'; error: string; failed_at?: string }
+);
 
 type TransformableStream = { transformToString: () => Promise<string> };
 
@@ -158,11 +160,13 @@ export class CloudComputationWorker {
       }
 
       if (run) {
+        const runId = run._id.toString();
+        const executionId = run.executionId!;
         try {
-          await this.submitRun(run._id.toString());
+          await this.submitRun(runId, executionId);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Не вдалося відправити в AWS';
-          await this.manager.failRun({ runId: run._id.toString(), statusMessage: message });
+          await this.manager.failRun({ runId, executionId, statusMessage: message });
         }
       }
 
@@ -194,25 +198,29 @@ export class CloudComputationWorker {
     for (const run of runnings) {
       const runId = String((run as { pipeline?: { _id?: Types.ObjectId } }).pipeline?._id ?? '');
       if (!runId) continue;
-      const resultPayload = await this.fetchResultPayload(runId);
+      // Only the current execution's result counts.
+      const { executionId } = run as { executionId: number };
+      const resultPayload = await this.fetchResultPayload(runId, executionId);
       if (!resultPayload) continue;
+      if (resultPayload.executionId && resultPayload.executionId !== String(executionId)) continue;
 
       if (resultPayload.status === 'failed') {
         const message = resultPayload.error || 'Помилка виконання в AWS';
-        await this.manager.failRun({ runId, statusMessage: message });
+        await this.manager.failRun({ runId, executionId, statusMessage: message });
         continue;
       }
 
       const resultJson = JSON.stringify(resultPayload.result ?? {});
       await this.manager.completeRun({
         runId,
+        executionId,
         resultJson,
         statusMessage: 'Виконано в AWS',
       });
     }
   }
 
-  private async submitRun(runId: string) {
+  private async submitRun(runId: string, executionId: number) {
     if (!Types.ObjectId.isValid(runId)) {
       throw new Error(`Invalid run id: ${runId}`);
     }
@@ -223,7 +231,7 @@ export class CloudComputationWorker {
       type: WorkflowType.PIPELINE,
     });
 
-    if (workflow.status !== PipelineStatus.running) {
+    if (workflow.status !== PipelineStatus.running || workflow.executionId !== executionId) {
       return;
     }
 
@@ -252,6 +260,7 @@ export class CloudComputationWorker {
 
     const payload = this.buildPayload(
       runId,
+      executionId,
       experiment._id,
       experiment.fileId,
       fileStorageKey,
@@ -272,8 +281,10 @@ export class CloudComputationWorker {
 
     const jobId = submitResponse.jobId ?? '';
     const statusMessage = jobId ? `AWS: ${jobId}` : 'Відправлено в AWS';
-    await PipelineModel.findOneAndUpdate(
-      { _id: runId },
+    // Record the job only for this execution, and only if no Stop/Pause marked it first (they
+    // take the recorded id with their mark); otherwise nobody else will cancel it, so do it here.
+    const recorded = await PipelineModel.findOneAndUpdate(
+      { _id: runId, executionId, stoppedExecutionId: { $ne: executionId } },
       {
         $set: {
           statusMessage,
@@ -281,10 +292,12 @@ export class CloudComputationWorker {
         },
       }
     ).lean();
+    if (!recorded && jobId) await this.manager.cancelCloudJob(jobId);
   }
 
   private buildPayload(
     runId: string,
+    executionId: number,
     experimentId: Types.ObjectId,
     fileId: Types.ObjectId | undefined,
     fileStorageKey: string | undefined,
@@ -297,10 +310,11 @@ export class CloudComputationWorker {
       throw new Error('Graph path nodes are missing');
     }
 
-    const resultKey = this.getResultKey(runId);
+    const resultKey = this.getResultKey(runId, executionId);
 
     return {
       pipelineId: runId,
+      executionId: String(executionId),
       experiment_id: String(experimentId),
       queue: 'cloud',
       file_id: fileId ? String(fileId) : null,
@@ -321,8 +335,11 @@ export class CloudComputationWorker {
     };
   }
 
-  private async fetchResultPayload(runId: string): Promise<ResultPayload | null> {
-    const key = this.getResultKey(runId);
+  private async fetchResultPayload(
+    runId: string,
+    executionId: number
+  ): Promise<ResultPayload | null> {
+    const key = this.getResultKey(runId, executionId);
     try {
       const response = await this.s3.send(
         new GetObjectCommand({
@@ -339,8 +356,10 @@ export class CloudComputationWorker {
     }
   }
 
-  private getResultKey(runId: string) {
-    return this.resultsPrefix ? `${this.resultsPrefix}/${runId}.json` : `${runId}.json`;
+  // One key per execution, so a result left by an earlier execution is never read for a later one.
+  private getResultKey(runId: string, executionId: number) {
+    const name = `${runId}/${executionId}.json`;
+    return this.resultsPrefix ? `${this.resultsPrefix}/${name}` : name;
   }
 
   private buildMachineInfo() {

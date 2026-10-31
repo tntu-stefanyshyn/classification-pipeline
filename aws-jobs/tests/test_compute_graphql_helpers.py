@@ -79,6 +79,7 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
             result = progress_module.updatePipelineProgress(
                 backend_url="http://backend/graphql",
                 pipelineId="pipe-1",
+                executionId="7",
                 message="Working",
                 progress=45,
                 token="svc-token",
@@ -93,6 +94,7 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
                     "progress": 45,
                     "message": "Working",
                     "pipelineId": "pipe-1",
+                    "executionId": "7",
                 }
             },
             "svc-token",
@@ -104,6 +106,7 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
             result = complete_module.completePipeline(
                 backend_url="http://backend/graphql",
                 pipelineId="pipe-2",
+                executionId="7",
                 payload={"score": 0.9},
                 token="svc-token",
             )
@@ -116,6 +119,7 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
                 "input": {
                     "payload": {"score": 0.9},
                     "pipelineId": "pipe-2",
+                    "executionId": "7",
                 }
             },
             "svc-token",

@@ -58,6 +58,7 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
 
   const payload = worker.buildPayload(
     runId,
+    2,
     experimentId,
     fileId,
     'uploads/file.csv',
@@ -65,7 +66,7 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
     pathNodeIds
   );
 
-  assert.equal(payload.result_s3_key, `prefix/${runId}.json`);
+  assert.equal(payload.result_s3_key, `prefix/${runId}/2.json`);
   assert.equal(machineInfo.hostname, 'host-1');
 
   stub(t, worker, 's3', {
@@ -76,7 +77,7 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
       },
     }),
   });
-  assert.deepEqual(await worker.fetchResultPayload(runId), {
+  assert.deepEqual(await worker.fetchResultPayload(runId, 2), {
     status: 'completed',
     result: { score: 1 },
   });
@@ -86,7 +87,7 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
       throw { $metadata: { httpStatusCode: 404 } };
     },
   });
-  assert.equal(await worker.fetchResultPayload(runId), null);
+  assert.equal(await worker.fetchResultPayload(runId, 2), null);
 
   const batchCalls: any[] = [];
   stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
@@ -95,7 +96,7 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
     pathNodeIds,
   }));
   stub(t, worker, 'workflowManager', {
-    getWorkflow: async () => ({ status: PipelineStatus.running }),
+    getWorkflow: async () => ({ status: PipelineStatus.running, executionId: 2 }),
   } as any);
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult({ _id: experimentId, fileId })
@@ -116,8 +117,11 @@ test('CloudComputationWorker builds payloads, reads results and submits runs', a
     createLeanResult({ acknowledged: true })
   );
 
-  await worker.submitRun(runId);
+  await worker.submitRun(runId, 2);
   assert.equal(batchCalls[0].jobQueue, 'queue');
+  const submitted = JSON.parse(batchCalls[0].containerOverrides.environment[0].value);
+  assert.equal(submitted.executionId, '2');
+  assert.equal(submitted.result_s3_key, `prefix/${runId}/2.json`);
 });
 
 test('CloudComputationWorker reconciles AWS results into manager calls', async (t) => {
@@ -126,7 +130,7 @@ test('CloudComputationWorker reconciles AWS results into manager calls', async (
   const calls: any[] = [];
 
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
-    { pipeline: { _id: runId } },
+    { pipeline: { _id: runId }, executionId: 5 },
   ]);
   stub(t, worker, 'fetchResultPayload', async () => ({
     status: 'failed',
@@ -143,7 +147,7 @@ test('CloudComputationWorker reconciles AWS results into manager calls', async (
 
   await worker.reconcileRuns();
 
-  assert.deepEqual(calls, [['failRun', { runId, statusMessage: 'AWS failed' }]]);
+  assert.deepEqual(calls, [['failRun', { runId, executionId: 5, statusMessage: 'AWS failed' }]]);
 });
 
 test('LocalBackendComputationWorker resolves backend urls, aws-jobs dir, workflow and machine info', async (t) => {
@@ -203,13 +207,14 @@ test('LocalBackendComputationWorker marks unfinished local runs as failed', asyn
     },
   } as any);
 
-  await worker.processRun('run-1');
+  await worker.processRun('run-1', 3);
 
   assert.deepEqual(calls, [
     [
       'failRun',
       {
         runId: 'run-1',
+        executionId: 3,
         statusMessage: 'Локальний запуск завершився без фінального статусу.',
       },
     ],

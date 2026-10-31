@@ -196,10 +196,10 @@ test('LocalBackendComputationWorker covers start, stop and docker helper branche
   assert.equal(startCalls, 0);
   assert.equal(startWorker.activeControllers.get('run-1')?.signal.aborted, true);
 
-  await worker.runComputeContainer('run-1');
+  await worker.runComputeContainer('run-1', 1);
   assert.equal(
     docker.readCalls()[0],
-    'run --rm -i --env COMPUTE_PAYLOAD_JSON={"pipelineId":"run-1"} --env COMPUTE_BACKEND_URL=http://host.docker.internal:4000/graphql --env COMPUTE_BACKEND_TOKEN=token-1 --add-host host.docker.internal:host-gateway aws-jobs'
+    'run --rm -i --env COMPUTE_PAYLOAD_JSON={"pipelineId":"run-1","executionId":"1"} --env COMPUTE_BACKEND_URL=http://host.docker.internal:4000/graphql --env COMPUTE_BACKEND_TOKEN=token-1 --add-host host.docker.internal:host-gateway aws-jobs'
   );
 
   assert.equal(await worker.dockerImageExists(), true);
@@ -223,7 +223,7 @@ test('LocalBackendComputationWorker covers start, stop and docker helper branche
 
   process.env.FAKE_DOCKER_RUN_STDERR = 'local docker failed';
   process.env.FAKE_DOCKER_RUN_EXIT = '2';
-  await assert.rejects(() => worker.runComputeContainer('run-2'), /local docker failed/);
+  await assert.rejects(() => worker.runComputeContainer('run-2', 1), /local docker failed/);
 
   delete process.env.FAKE_DOCKER_RUN_STDERR;
   process.env.FAKE_DOCKER_RUN_EXIT = '0';
@@ -239,7 +239,7 @@ test('LocalBackendComputationWorker covers start, stop and docker helper branche
   process.env.FAKE_DOCKER_RUN_SLEEP = '2';
   const controller = new AbortController();
   controller.abort();
-  await worker.runComputeContainer('run-3', controller.signal);
+  await worker.runComputeContainer('run-3', 1, controller.signal);
 });
 
 test('LocalBackendComputationWorker covers loop, watcher, recovery and workflow branches', async (t) => {
@@ -294,28 +294,33 @@ test('LocalBackendComputationWorker covers loop, watcher, recovery and workflow 
       calls.push(['errorFailRun', ...args]);
     },
   } as any);
-  await errorWorker.processRun('run-error');
+  await errorWorker.processRun('run-error', 4);
 
   const abortedWorker = new LocalBackendComputationWorker() as any;
   abortedWorker.stopping = true;
   stub(t, abortedWorker, 'runComputeContainer', async () => undefined);
-  stub(t, abortedWorker, 'startStatusWatcher', (_runId: string, controller: AbortController) => {
-    controller.abort();
-    return () => undefined;
-  });
+  stub(
+    t,
+    abortedWorker,
+    'startStatusWatcher',
+    (_runId: string, _executionId: number, controller: AbortController) => {
+      controller.abort();
+      return () => undefined;
+    }
+  );
   stub(t, abortedWorker, 'getWorkflow', async () => ({ status: PipelineStatus.running }));
   stub(t, abortedWorker, 'manager', {
     failRun: async (...args: any[]) => {
       calls.push(['abortedFailRun', ...args]);
     },
   } as any);
-  await abortedWorker.processRun('run-aborted');
+  await abortedWorker.processRun('run-aborted', 4);
 
   const watcherWorker = new LocalBackendComputationWorker() as any;
   watcherWorker.pollMs = 0;
   stub(t, watcherWorker, 'getWorkflow', async () => null);
   const controller = new AbortController();
-  watcherWorker.startStatusWatcher('run-watch', controller);
+  watcherWorker.startStatusWatcher('run-watch', 1, controller);
   await wait(10);
 
   const successWorker = new LocalBackendComputationWorker() as any;
@@ -331,10 +336,12 @@ test('LocalBackendComputationWorker covers loop, watcher, recovery and workflow 
   );
   assert.deepEqual(calls.find((entry) => entry[0] === 'errorFailRun')?.[1], {
     runId: 'run-error',
+    executionId: 4,
     statusMessage: 'Локальне обчислення завершилось з помилкою',
   });
   assert.deepEqual(calls.find((entry) => entry[0] === 'abortedFailRun')?.[1], {
     runId: 'run-aborted',
+    executionId: 4,
     statusMessage: 'Локальний backend-воркер зупинено.',
   });
 });
@@ -375,14 +382,14 @@ test('LocalBackendComputationWorker covers lifecycle, signal and fallback branch
   const watcherWorker = new LocalBackendComputationWorker() as any;
   watcherWorker.stopping = true;
   const watcherController = new AbortController();
-  const stopWatcher = watcherWorker.startStatusWatcher('run-stop', watcherController);
+  const stopWatcher = watcherWorker.startStatusWatcher('run-stop', 1, watcherController);
   await wait(10);
   stopWatcher();
   assert.equal(watcherController.signal.aborted, true);
 
   process.env.FAKE_DOCKER_RUN_STDOUT = 'local worker output';
   const outputWorker = new LocalBackendComputationWorker() as any;
-  await outputWorker.runComputeContainer('run-output');
+  await outputWorker.runComputeContainer('run-output', 1);
   assert.equal(
     calls.some(
       (entry) =>
@@ -395,7 +402,7 @@ test('LocalBackendComputationWorker covers lifecycle, signal and fallback branch
   process.env.FAKE_DOCKER_RUN_SLEEP = '2';
   const signalWorker = new LocalBackendComputationWorker() as any;
   const signalController = new AbortController();
-  const signalPromise = signalWorker.runComputeContainer('run-signal', signalController.signal);
+  const signalPromise = signalWorker.runComputeContainer('run-signal', 1, signalController.signal);
   setTimeout(() => signalController.abort(), 50);
   await signalPromise;
   delete process.env.FAKE_DOCKER_RUN_STDOUT;
@@ -407,7 +414,7 @@ test('LocalBackendComputationWorker covers lifecycle, signal and fallback branch
     t,
     abortedErrorWorker,
     'startStatusWatcher',
-    (_runId: string, controller: AbortController) => {
+    (_runId: string, _executionId: number, controller: AbortController) => {
       controller.abort();
       return () => undefined;
     }
@@ -421,7 +428,7 @@ test('LocalBackendComputationWorker covers lifecycle, signal and fallback branch
       calls.push(['failRun', ...args]);
     },
   } as any);
-  await abortedErrorWorker.processRun('run-catch-aborted');
+  await abortedErrorWorker.processRun('run-catch-aborted', 4);
   assert.equal(
     calls.some(
       (entry) =>
@@ -434,7 +441,7 @@ test('LocalBackendComputationWorker covers lifecycle, signal and fallback branch
 
   const errorWorker = new LocalBackendComputationWorker() as any;
   process.env.PATH = path.join(process.cwd(), 'missing-docker-worker');
-  await assert.rejects(() => errorWorker.runComputeContainer('run-missing'), /ENOENT/);
+  await assert.rejects(() => errorWorker.runComputeContainer('run-missing', 1), /ENOENT/);
   process.env.PATH = originalPath;
 
   const fallbackWorker = new LocalBackendComputationWorker() as any;
@@ -578,12 +585,13 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
   worker.jobNamePrefix = 'job';
 
   assert.throws(
-    () => worker.buildPayload(runId, experimentId, undefined, undefined, [], [nodeId]),
+    () => worker.buildPayload(runId, 1, experimentId, undefined, undefined, [], [nodeId]),
     /Graph path nodes are missing/
   );
 
   const payload = worker.buildPayload(
     runId,
+    1,
     experimentId,
     undefined,
     undefined,
@@ -591,16 +599,24 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     [nodeId]
   );
   assert.equal('file_s3_bucket' in payload, false);
+  // Each execution reports under its own result key.
+  assert.equal(payload.executionId, '1');
+  assert.equal(payload.result_s3_key, `prefix/${runId}/1.json`);
 
+  const readKeys: string[] = [];
   stub(t, worker, 's3', {
-    send: async () => ({
-      Body: Readable.from([JSON.stringify({ status: 'completed', result: { score: 2 } })]),
-    }),
+    send: async (command: any) => {
+      readKeys.push(command.input.Key);
+      return {
+        Body: Readable.from([JSON.stringify({ status: 'completed', result: { score: 2 } })]),
+      };
+    },
   });
-  assert.deepEqual(await worker.fetchResultPayload(runId), {
+  assert.deepEqual(await worker.fetchResultPayload(runId, 1), {
     status: 'completed',
     result: { score: 2 },
   });
+  assert.deepEqual(readKeys, [`prefix/${runId}/1.json`]);
 
   stub(t, worker, 's3', {
     send: async () => {
@@ -625,8 +641,8 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
 
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => [
     { pipeline: {} },
-    { pipeline: { _id: new Types.ObjectId() } },
-    { pipeline: { _id: pipelineId } },
+    { pipeline: { _id: new Types.ObjectId() }, executionId: 2 },
+    { pipeline: { _id: pipelineId }, executionId: 3 },
   ]);
   let fetchCalls = 0;
   stub(t, worker, 'fetchResultPayload', async () => {
@@ -643,13 +659,15 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     },
   } as any);
   await worker.reconcileRuns();
+  assert.equal(fetchCalls, 2);
   assert.deepEqual(calls.find((entry) => entry[0] === 'completeRun')?.[1], {
     runId: pipelineId.toHexString(),
+    executionId: 3,
     resultJson: JSON.stringify({ score: 3 }),
     statusMessage: 'Виконано в AWS',
   });
 
-  await assert.rejects(() => worker.submitRun('bad-id'), /Invalid run id/);
+  await assert.rejects(() => worker.submitRun('bad-id', 1), /Invalid run id/);
 
   const basePipeline = { _id: pipelineId, experimentId, pathNodeIds: [nodeId] };
   let workflowStatus = PipelineStatus.idle;
@@ -665,7 +683,7 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     async () => basePipeline
   );
   stub(t, worker, 'workflowManager', {
-    getWorkflow: async () => ({ status: workflowStatus }),
+    getWorkflow: async () => ({ status: workflowStatus, executionId: 1 }),
   } as any);
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(experimentDoc)
@@ -692,31 +710,31 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     }
   );
 
-  await worker.submitRun(runId);
+  await worker.submitRun(runId, 1);
   assert.equal(
     calls.some((entry) => entry[0] === 'batch'),
     false
   );
 
   workflowStatus = PipelineStatus.running;
-  await assert.rejects(() => worker.submitRun(runId), /Experiment not found/);
+  await assert.rejects(() => worker.submitRun(runId, 1), /Experiment not found/);
 
   experimentDoc = { _id: experimentId, fileId };
-  await assert.rejects(() => worker.submitRun(runId), /Experiment graph is empty/);
+  await assert.rejects(() => worker.submitRun(runId, 1), /Experiment graph is empty/);
 
   graphDoc = {
     nodes: [{ _id: nodeId, stage: 'CLASSIFICATION', technology: 'SVM', settings: [] }],
   };
-  await assert.rejects(() => worker.submitRun(runId), /Experiment file not found/);
+  await assert.rejects(() => worker.submitRun(runId, 1), /Experiment file not found/);
 
   fileDoc = { storageKey: 'uploads/file.csv' };
   worker.inputBucket = '';
-  await assert.rejects(() => worker.submitRun(runId), /S3 bucket is not configured/);
+  await assert.rejects(() => worker.submitRun(runId, 1), /S3 bucket is not configured/);
 
   worker.inputBucket = 'input-bucket';
   experimentDoc = { _id: experimentId, fileId: undefined };
   batchResponse = {};
-  await worker.submitRun(runId);
+  await worker.submitRun(runId, 1);
   assert.equal(
     calls.some((entry) => entry[0] === 'batch' && entry[1].jobName === `job-${runId}`),
     true
@@ -728,4 +746,15 @@ test('CloudComputationWorker covers payload, fetch, reconcile and submit branche
     ),
     true
   );
+  // The job id is recorded only for the execution that submitted it, unless a Stop marked it.
+  assert.deepEqual(calls.find((entry) => entry[0] === 'findOneAndUpdate')?.[1], {
+    _id: runId,
+    executionId: 1,
+    stoppedExecutionId: { $ne: 1 },
+  });
+
+  // A newer execution has started since this one was claimed: nothing is submitted.
+  const batchCalls = calls.filter((entry) => entry[0] === 'batch').length;
+  await worker.submitRun(runId, 0);
+  assert.equal(calls.filter((entry) => entry[0] === 'batch').length, batchCalls);
 });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { TerminateJobCommand } from '@aws-sdk/client-batch';
 import { Types } from 'mongoose';
 
 import { PipelineBaseService, PipelineModel } from '../../core/pipeline';
@@ -219,7 +220,7 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
     experimentId,
   }));
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async (...args: any[]) => {
+    endExecution: async (...args: any[]) => {
       managerCalls.push(['changePipelineStatus', ...args]);
       return true;
     },
@@ -231,13 +232,42 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
     score: 0.12,
   });
 
-  await manager.completePipeline({ pipelineId: String(pipelineId), payload: { score: 1 } } as any);
+  assert.equal(
+    await manager.completePipeline({
+      pipelineId: String(pipelineId),
+      executionId: '2',
+      payload: { score: 1 },
+    } as any),
+    true
+  );
   await manager.completeRun({
     runId: String(pipelineId),
+    executionId: '2',
     resultJson: JSON.stringify({ score: 1 }),
     statusMessage: 'Done',
   });
-  await manager.failRun({ runId: String(pipelineId), statusMessage: 'Failed' });
+  await manager.failRun({ runId: String(pipelineId), executionId: '2', statusMessage: 'Failed' });
+
+  // Each report changes the status only for its own execution, and stores its result for it.
+  const statusChanges = managerCalls.filter((entry) => entry[0] === 'changePipelineStatus');
+  assert.deepEqual(
+    statusChanges.map((entry) => [entry[1].status, entry[2]]),
+    [
+      [PipelineStatus.completed, { executionId: 2 }],
+      [PipelineStatus.completed, { executionId: 2 }],
+      [PipelineStatus.idle, { executionId: 2 }],
+    ]
+  );
+  const resultWrites = managerCalls.filter(
+    (entry) => entry[0] === 'updateOne' && entry[2]?.$set?.computingResult
+  );
+  assert.deepEqual(
+    resultWrites.map((entry) => entry[1]),
+    [
+      { _id: pipelineId, executionId: 2, computingResult: { $exists: false } },
+      { _id: pipelineId, executionId: 2, computingResult: { $exists: false } },
+    ]
+  );
 
   assert.equal(
     managerCalls.some((entry) => entry[0] === 'runOptimization'),
@@ -289,9 +319,22 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
       calls.push(['cancelCloudJob', ...args]);
     }
   );
+  stub(
+    t,
+    PipelineModel as unknown as Record<string, unknown>,
+    'findOneAndUpdate',
+    (...args: any[]) => {
+      calls.push(['markStopped', ...args]);
+      return createLeanResult({
+        _id: pipelineId,
+        queue: ComputationQueue.cloud,
+        cloudJobId: 'job-1',
+      });
+    }
+  );
   let workflowStatus = PipelineStatus.running;
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({ status: workflowStatus }),
+    getWorkflow: async () => ({ status: workflowStatus, executionId: 4 }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async (...args: any[]) => {
@@ -301,6 +344,16 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
   } as any);
 
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), [{ _id: pipelineId }]);
+  // The paused execution is marked (and its job id read), its job cancelled, and only then does
+  // the status change.
+  const names = calls.map((entry) => entry[0]);
+  assert.ok(names.indexOf('markStopped') < names.indexOf('cancelCloudJob'));
+  assert.ok(names.indexOf('cancelCloudJob') < names.indexOf('changeStatus'));
+  assert.deepEqual(calls.find((entry) => entry[0] === 'markStopped')?.slice(1), [
+    { _id: pipelineId, executionId: 4 },
+    { $set: { stoppedExecutionId: 4 } },
+  ]);
+  assert.deepEqual(calls.find((entry) => entry[0] === 'changeStatus')?.[3], { executionId: 4 });
   assert.ok(
     calls.some(
       (entry) =>
@@ -345,10 +398,7 @@ test('ComputationManager private AWS/result helpers work as expected', async (t)
   const clientCalls: any[] = [];
   const batchClient = {
     send: async (command: any) => {
-      clientCalls.push(command.input);
-      if (clientCalls.length === 1) {
-        throw new Error('cancel failed');
-      }
+      clientCalls.push(command);
       return {};
     },
   };
@@ -369,7 +419,10 @@ test('ComputationManager private AWS/result helpers work as expected', async (t)
   await (manager as any).cancelCloudJob('job-1');
   const optimization = await (manager as any).getOptimizationResult(new Types.ObjectId());
 
-  assert.equal(clientCalls.length, 2);
+  // TerminateJob, because CancelJob reports success without stopping a running job.
+  assert.equal(clientCalls.length, 1);
+  assert.ok(clientCalls[0] instanceof TerminateJobCommand);
+  assert.equal(clientCalls[0].input.jobId, 'job-1');
   assert.equal(optimization.score, 0.2);
 });
 

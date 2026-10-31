@@ -6,6 +6,7 @@ import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimi
 import { PipelineStatus } from '../enums';
 import { PipelineHistoryItem } from '../classes/PipelineHistoryItem';
 import { ObjectIdOrString } from '../../../types/context';
+import { executionFilter } from '../executionFilter';
 
 class PipelineBaseServiceClass {
   async listByExperiment(
@@ -28,9 +29,11 @@ class PipelineBaseServiceClass {
     progress,
     message,
     status,
+    executionId,
   }: UpdatePipelineProgressInput & { status?: PipelineStatus }): Promise<Pipeline> {
+    // Progress of an execution that is no longer current matches nothing.
     await PipelineModel.updateOne(
-      { _id: pipelineId },
+      { _id: pipelineId, ...executionFilter(executionId) },
       {
         $set: {
           ...(typeof progress === 'number' ? { progress } : {}),

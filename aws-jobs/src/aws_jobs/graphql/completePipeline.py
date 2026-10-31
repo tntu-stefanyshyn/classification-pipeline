@@ -5,6 +5,7 @@ def completePipeline(
   backend_url: str,
   pipelineId: str,
   payload: Dict[str, Any],
+  executionId: str,
   token: Optional[str] = None,
 ):
   mutation = """
@@ -13,27 +14,19 @@ def completePipeline(
   }
   """
 
+  variables: Dict[str, Any] = {
+    "input": {
+      "payload": payload,
+      "pipelineId": pipelineId,
+      "executionId": executionId,
+    }
+  }
   print(
     {
       "backend_url": backend_url,
       "mutation": mutation,
-      "data": {
-        "input": {
-          "payload": payload,
-          "pipelineId": pipelineId,
-        }
-      },
+      "data": variables,
       "token": token,
     }
   )
-  return graphqlRequest(
-    backend_url,
-    mutation,
-    {
-      "input": {
-        "payload": payload,
-        "pipelineId": pipelineId,
-      }
-    },
-    token,
-  )
+  return graphqlRequest(backend_url, mutation, variables, token)

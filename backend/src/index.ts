@@ -13,6 +13,7 @@ import { ServerInfoApi } from './graphql/ServerInfo';
 import { Experiments } from './modules/experiments/graphql/Experiments';
 import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
 import { PipelineModel } from './core/pipeline/models/PipelineModel';
+import { WorkflowModel } from './core/workflow/model/WorkflowModel';
 import { GraphManager } from './modules/experiments/services/GraphManager';
 import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
 import { Technologies } from './modules/technologies/graphql/Technologies';
@@ -160,6 +161,8 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
+    // The per-machine local-run limit depends on the workflows unique index.
+    await WorkflowModel.init();
     await runMigrations();
     await runSeeders();
     if (config.computations.cloudWorkerEnabled) {

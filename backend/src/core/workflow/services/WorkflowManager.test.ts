@@ -89,6 +89,38 @@ test('WorkflowManager.changeStatus trims explicit messages', async (t) => {
   assert.equal(updateCalls[0][1].$push.history.message, 'Launching pipelines');
 });
 
+test('WorkflowManager.changeStatus writes extra fields in the status update', async (t) => {
+  const manager = new WorkflowManager();
+  const updateCalls: any[] = [];
+
+  stub(t, manager as unknown as Record<string, unknown>, 'getWorkflow', async () => ({
+    _id: new Types.ObjectId(),
+    status: ExperimentStatus.configuring,
+  }));
+  stub(
+    t,
+    WorkflowModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (...args: any[]) => {
+      updateCalls.push(args);
+      return { modifiedCount: 1 };
+    }
+  );
+
+  await manager.changeStatus({
+    instanceId: new Types.ObjectId(),
+    status: ExperimentStatus.computing,
+    type: WorkflowType.EXPERIMENT,
+    fields: { machineHostname: 'host-a', status: 'ignored' },
+    transitions: [{ from: ExperimentStatus.configuring, to: ExperimentStatus.computing }],
+  });
+
+  assert.deepEqual(updateCalls[0][1].$set, {
+    machineHostname: 'host-a',
+    status: ExperimentStatus.computing,
+  });
+});
+
 test('WorkflowManager.changeStatus loses the race when the status already changed', async (t) => {
   const manager = new WorkflowManager();
   let sideEffectRan = false;
@@ -97,12 +129,9 @@ test('WorkflowManager.changeStatus loses the race when the status already change
     _id: new Types.ObjectId(),
     status: ExperimentStatus.creating,
   }));
-  stub(
-    t,
-    WorkflowModel as unknown as Record<string, unknown>,
-    'updateOne',
-    async () => ({ modifiedCount: 0 })
-  );
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'updateOne', async () => ({
+    modifiedCount: 0,
+  }));
 
   await assert.rejects(
     () =>

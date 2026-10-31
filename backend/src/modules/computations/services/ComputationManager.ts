@@ -1,4 +1,4 @@
-import { BatchClient, CancelJobCommand, TerminateJobCommand } from '@aws-sdk/client-batch';
+import { BatchClient, TerminateJobCommand } from '@aws-sdk/client-batch';
 import { Types } from 'mongoose';
 import { config } from '../../../config/config';
 import { ComputationQueue } from '../classes/ComputationQueue';
@@ -220,7 +220,7 @@ export class ComputationManager {
     if (workflow.status !== PipelineStatus.running) {
       return pipeline;
     }
-    const jobId = await this.markStopped(pipeline._id, workflow.executionId);
+    await this.stopExecutionJob(pipeline._id, workflow.executionId);
     try {
       await this.pipelineManager.changeStatus(
         { pipelineId: pipeline._id, status: PipelineStatus.idle, message: 'Зупинено користувачем' },
@@ -235,22 +235,24 @@ export class ComputationManager {
       if (!lostRace) throw error;
       return PipelineBaseService.getById(pipelineId);
     }
-    if (jobId) await this.cancelCloudJob(jobId);
     return PipelineBaseService.getById(pipelineId);
   }
 
   /**
-   * Marks the execution as stopped and returns the AWS job id it recorded, in one update made
-   * before the status change. `CloudComputationWorker.submitRun` records a job id only for an
-   * unmarked execution and cancels the job itself otherwise, so the job is cancelled by one side
-   * whatever a requeue or a new claim changes on the pipeline in between.
+   * Marks the execution as stopped and cancels the AWS job it recorded; the mark and the read of
+   * the job id are one update. `CloudComputationWorker.submitRun` records a job id only for an
+   * unmarked execution and cancels the job itself otherwise, so one side cancels it. This runs
+   * before the status change: a write can fail once the run is `idle`, and a repeated Stop would
+   * then find nothing to stop, while a failure before the change leaves the run to stop again.
    */
-  private async markStopped(pipelineId: Types.ObjectId, executionId?: number) {
+  private async stopExecutionJob(pipelineId: Types.ObjectId, executionId?: number) {
     const before = await PipelineModel.findOneAndUpdate(
       { _id: pipelineId, executionId: executionId ?? null },
       { $set: { stoppedExecutionId: executionId ?? 0 } }
     ).lean();
-    return before?.queue === ComputationQueue.cloud ? before.cloudJobId : undefined;
+    if (before?.queue === ComputationQueue.cloud && before.cloudJobId) {
+      await this.cancelCloudJob(before.cloudJobId);
+    }
   }
 
   async claimNextRun(
@@ -462,17 +464,13 @@ export class ComputationManager {
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return;
-      const jobId =
-        status === PipelineStatus.running
-          ? await this.markStopped(pipelineId, executionId)
-          : undefined;
+      if (status === PipelineStatus.running) await this.stopExecutionJob(pipelineId, executionId);
       try {
         await this.pipelineManager.changeStatus(
           { pipelineId, status: PipelineStatus.idle, message: 'Обчислення зупинено' },
           undefined,
           { executionId: executionId ?? null }
         );
-        if (jobId) await this.cancelCloudJob(jobId);
         return;
       } catch (error) {
         const lostRace =
@@ -608,25 +606,13 @@ export class ComputationManager {
 
   async cancelCloudJob(jobId: string) {
     if (!jobId) return;
-    const client = this.getBatchClient();
+    // CancelJob succeeds without stopping a STARTING or RUNNING job; TerminateJob covers every state.
     try {
-      await client.send(
-        new CancelJobCommand({
-          jobId,
-          reason: 'Paused by user',
-        })
+      await this.getBatchClient().send(
+        new TerminateJobCommand({ jobId, reason: 'Paused by user' })
       );
     } catch (error) {
-      try {
-        await client.send(
-          new TerminateJobCommand({
-            jobId,
-            reason: 'Paused by user',
-          })
-        );
-      } catch (innerError) {
-        console.warn('Не вдалося скасувати AWS-завдання', innerError);
-      }
+      console.warn('Не вдалося скасувати AWS-завдання', error);
     }
   }
 

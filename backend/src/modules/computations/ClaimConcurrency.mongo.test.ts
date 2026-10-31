@@ -570,7 +570,7 @@ test('Stop leaves idle and finished runs alone', { skip }, async (t) => {
 });
 
 test(
-  'Stop racing a completion fails neither and cancels only a stopped job',
+  'Stop racing a completion fails neither and always cancels a stopped job',
   { skip },
   async (t) => {
     await useDatabase(t);
@@ -588,7 +588,9 @@ test(
 
       const status = await statusOf(runId!);
       assert.ok(status === PipelineStatus.idle || status === PipelineStatus.completed);
-      assert.deepEqual(cancelled, status === PipelineStatus.idle ? [`job-${round}`] : []);
+      // If the completion won, Stop may still have cancelled the finished job, which is harmless.
+      if (status === PipelineStatus.idle) assert.deepEqual(cancelled, [`job-${round}`]);
+      else assert.ok(cancelled.every((jobId) => jobId === `job-${round}`));
     }
   }
 );
@@ -940,3 +942,81 @@ test(
     );
   }
 );
+
+// Fails the first write that matches, and passes every other one to the real model.
+const failPipelineWriteOnce = (t: TestContext, matches: (update: any) => boolean) => {
+  const updateOne = PipelineModel.updateOne.bind(PipelineModel);
+  const state = { failed: false };
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', ((
+    filter: any,
+    update: any
+  ) => {
+    if (state.failed || !matches(update)) return updateOne(filter, update);
+    state.failed = true;
+    return { exec: async () => Promise.reject(new Error('write failed')) };
+  }) as any);
+  return state;
+};
+
+// A cloud run with a recorded job, and the user action that ends it.
+const runningCloudRun = async (t: TestContext, action: 'Stop' | 'Pause') => {
+  const [runId] = await seedQueuedRuns(1, ComputationQueue.cloud);
+  const { manager, cancelled } = managerWithCancelLog(t);
+  await manager.claimNextRun(ComputationQueue.cloud);
+  await recordJob(runId!, 1, 'job-1');
+  const { experimentId } = (await PipelineModel.findById(runId).lean())!;
+  const end = () =>
+    action === 'Stop' ? manager.stopRun(runId!) : manager.pauseExperimentRuns(experimentId);
+  return { runId: runId!, cancelled, end };
+};
+
+for (const action of ['Stop', 'Pause'] as const) {
+  // Both writes come after the workflow is already `idle`.
+  for (const [write, matches] of [
+    ['cleanup', (update: any) => 'statusMessage' in (update.$unset ?? {})],
+    ['history', (update: any) => Boolean(update.$push?.history)],
+  ] as const) {
+    test(
+      `${action} cancels the AWS job when the ${write} write after the status change fails`,
+      { skip },
+      async (t) => {
+        await useDatabase(t);
+        const { runId, cancelled, end } = await runningCloudRun(t, action);
+        const injected = failPipelineWriteOnce(t, matches);
+
+        await assert.rejects(end, /write failed/);
+
+        assert.equal(injected.failed, true);
+        assert.equal(await statusOf(runId), PipelineStatus.idle);
+        assert.deepEqual(cancelled, ['job-1']);
+
+        // Repeating it finds nothing left to stop, and the job has already been cancelled.
+        await end();
+        assert.deepEqual(cancelled, ['job-1']);
+      }
+    );
+  }
+
+  test(`${action} can be repeated when the status change itself fails`, { skip }, async (t) => {
+    await useDatabase(t);
+    const { runId, cancelled, end } = await runningCloudRun(t, action);
+    const updateOne = WorkflowModel.updateOne.bind(WorkflowModel);
+    let failed = false;
+    stub(t, WorkflowModel as unknown as Record<string, unknown>, 'updateOne', ((
+      filter: any,
+      update: any
+    ) => {
+      if (failed) return updateOne(filter, update);
+      failed = true;
+      return Promise.reject(new Error('status write failed'));
+    }) as any);
+
+    await assert.rejects(end, /status write failed/);
+    assert.equal(await statusOf(runId), PipelineStatus.running);
+    assert.deepEqual(cancelled, ['job-1']);
+
+    await end();
+    assert.equal(await statusOf(runId), PipelineStatus.idle);
+    assert.ok(cancelled.every((jobId) => jobId === 'job-1'));
+  });
+}

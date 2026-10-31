@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { TerminateJobCommand } from '@aws-sdk/client-batch';
 import { Types } from 'mongoose';
 
 import { PipelineBaseService, PipelineModel } from '../../core/pipeline';
@@ -343,11 +344,11 @@ test('ComputationManager pauses, resumes and normalizes machine info', async (t)
   } as any);
 
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), [{ _id: pipelineId }]);
-  // The paused execution is marked (and its job id read) before the status change; the job is
-  // cancelled after it.
+  // The paused execution is marked (and its job id read), its job cancelled, and only then does
+  // the status change.
   const names = calls.map((entry) => entry[0]);
-  assert.ok(names.indexOf('markStopped') < names.indexOf('changeStatus'));
-  assert.ok(names.indexOf('changeStatus') < names.indexOf('cancelCloudJob'));
+  assert.ok(names.indexOf('markStopped') < names.indexOf('cancelCloudJob'));
+  assert.ok(names.indexOf('cancelCloudJob') < names.indexOf('changeStatus'));
   assert.deepEqual(calls.find((entry) => entry[0] === 'markStopped')?.slice(1), [
     { _id: pipelineId, executionId: 4 },
     { $set: { stoppedExecutionId: 4 } },
@@ -397,10 +398,7 @@ test('ComputationManager private AWS/result helpers work as expected', async (t)
   const clientCalls: any[] = [];
   const batchClient = {
     send: async (command: any) => {
-      clientCalls.push(command.input);
-      if (clientCalls.length === 1) {
-        throw new Error('cancel failed');
-      }
+      clientCalls.push(command);
       return {};
     },
   };
@@ -421,7 +419,10 @@ test('ComputationManager private AWS/result helpers work as expected', async (t)
   await (manager as any).cancelCloudJob('job-1');
   const optimization = await (manager as any).getOptimizationResult(new Types.ObjectId());
 
-  assert.equal(clientCalls.length, 2);
+  // TerminateJob, because CancelJob reports success without stopping a running job.
+  assert.equal(clientCalls.length, 1);
+  assert.ok(clientCalls[0] instanceof TerminateJobCommand);
+  assert.equal(clientCalls[0].input.jobId, 'job-1');
   assert.equal(optimization.score, 0.2);
 });
 

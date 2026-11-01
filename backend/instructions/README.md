@@ -1,9 +1,8 @@
-# Інструкції для бекенду
+# Backend documentation has moved
 
-- Усі внутрішні гайди для бекенду зберігай у цій папці `instructions/`, щоб їх було легко знайти.
-- Додавай нові правила окремими `.md` файлами та оновлюй список у цьому README.
-- Поточні файли:
-  - `ARCHITECTURE.md` — огляд архітектури бекенду.
-  - `EXPERIMENTS.md` — правила статусів/валідацій та REST звіту.
-  - `AWS_JOBS.md` — налаштування AWS Batch для хмарних обчислень.
-  - `DATABASE.md` — правила роботи з Mongoose (exec/lean/toObject).
+The backend guides now live in [`docs/`](../../docs/index.md):
+
+- [Backend folder guidelines](../../docs/architecture/backend-structure.md)
+- [Database conventions](../../docs/architecture/database-conventions.md)
+- [Experiments and computations](../../docs/domain/experiments.md)
+- [AWS Jobs (AWS Batch)](../../docs/operations/aws-batch.md)

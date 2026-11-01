@@ -167,3 +167,61 @@ test('runPythonHandler starts docker with compute payload and writes handler inp
   assert.equal(spawnCalls[1]?.stdinBuffer, JSON.stringify(payload));
   assert.equal(logs.includes('handler started'), true);
 });
+
+test('runPythonHandler passes the backend token to the container environment only', async (t) => {
+  setEnv(t, 'LOCAL_WORKER_REBUILD_IMAGE', '0');
+  setEnv(t, 'NODE_ENV', 'production');
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires -- stubbing needs the CommonJS module object
+  const childProcess = require('node:child_process') as typeof import('node:child_process');
+  const spawnCalls: SpawnCall[] = [];
+  stub(t, childProcess as any, 'spawn', ((
+    command: string,
+    args: string[],
+    options: Record<string, unknown>
+  ) => {
+    const proc = createProcess();
+    const call: SpawnCall = { command, args, options, stdinBuffer: '' };
+    spawnCalls.push(call);
+    const originalWrite = proc.stdin.write;
+    proc.stdin.write = (chunk) => {
+      originalWrite(chunk);
+      call.stdinBuffer = proc.stdinBuffer ?? '';
+    };
+    queueMicrotask(() => proc.emit('close', 0));
+    return proc as any;
+  }) as any);
+
+  const module =
+    loadFreshModule<typeof import('../src/workers/localComputation/pythonRunner')>(
+      pythonRunnerModulePath
+    );
+
+  await module.runPythonHandler(
+    {
+      pipelineId: 'run-1',
+      experiment_id: 'exp-1',
+      queue: 'local',
+      backend_url: 'http://backend/graphql',
+      path: [],
+    } as any,
+    { backendToken: 'svc-token' },
+    {}
+  );
+
+  assert.deepEqual(spawnCalls[1]?.args, [
+    'run',
+    '--rm',
+    '-i',
+    '--env',
+    'COMPUTE_PAYLOAD_JSON={"pipelineId":"run-1"}',
+    '--env',
+    'COMPUTE_BACKEND_URL=http://backend/graphql',
+    '--env',
+    'COMPUTE_BACKEND_TOKEN=svc-token',
+    '--add-host',
+    'host.docker.internal:host-gateway',
+    'aws-jobs',
+  ]);
+  assert.equal(spawnCalls[1]?.stdinBuffer.includes('svc-token'), false);
+});

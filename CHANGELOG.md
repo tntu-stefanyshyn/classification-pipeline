@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Documentation is consolidated under `docs/` with an index and a language policy (English primary, `.uk.md` translations).
+- Documentation is consolidated under `docs/` with an index and a language policy (English only).
 - Documentation statements that no longer matched the code were corrected (pipeline statuses, experiment statuses, aws-jobs Docker images).
 
 ### Added

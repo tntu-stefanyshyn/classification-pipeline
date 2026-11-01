@@ -1,5 +1,3 @@
-English | [Українська](index.uk.md)
-
 # Documentation
 
 Documentation for the Classification Pipeline project: a desktop application and a backend for
@@ -7,31 +5,10 @@ building and running classification experiments.
 
 ## Language policy
 
-- English is the primary language of all documentation.
-- Ukrainian translations of the user-facing pages live next to the English file with the suffix
-  `.uk.md` (for example `README.uk.md`). Developer-only pages are English only.
-- In Ukrainian texts use the established Ukrainian terms from the glossary below and avoid unnecessary English borrowings (for example, write «конвеєр», not «пайплайн»). The same terms are used in the desktop UI (`desktop/src/i18n/uk.ts`).
-- Write the English term in parentheses on its first use in a Ukrainian page when the Ukrainian term could be ambiguous. Code identifiers, file names, commands and status values (`idle`, `queued`) stay in English everywhere.
-- When you change an English page that has a Ukrainian translation, update the translation too.
-
-## Glossary
-
-| English        | Ukrainian                      |
-| -------------- | ------------------------------ |
-| experiment     | експеримент                    |
-| graph          | граф                           |
-| node           | вузол                          |
-| stage          | етап                           |
-| path           | шлях                           |
-| pipeline       | конвеєр                        |
-| run            | запуск                         |
-| queue          | черга                          |
-| fold           | крок перехресної валідації     |
-| computation    | обчислення                     |
-| optimization   | оптимізація                    |
-| dataset        | набір даних                    |
-| worker         | виконавець (worker)            |
-| report         | звіт                           |
+- All documentation is written in English: technical documentation, project rules and descriptions of how the application works.
+- Ukrainian is used only for the translations displayed in the desktop app UI (`desktop/src/i18n/uk.ts`). Do not add Ukrainian copies of documentation pages.
+- Use the terms defined in [Experiments and computations](domain/experiments.md#terms) (experiment, graph, stage, path, pipeline, run, queue, fold) consistently across all pages.
+- Code identifiers, file names, commands and status values (`idle`, `queued`) are written as they appear in the code.
 
 ## Where to find things
 

@@ -1,13 +1,11 @@
-English | [Українська](README.uk.md)
-
 # Classification Pipeline
 
 Desktop application and backend for building and running classification experiments.
 
 ## Documentation
 
-Start with the [documentation index](docs/index.md). Documentation is written in English; Ukrainian
-translations of user-facing pages use the `.uk.md` suffix (for example `README.uk.md`).
+Start with the [documentation index](docs/index.md). Documentation is written in English only;
+Ukrainian is used just for the translations shown in the app UI.
 
 - [Setup guide](SETUP.md) - local setup for WSL/Linux, Docker computations, and S3 uploads.
 - [Getting started](docs/getting-started/index.md)

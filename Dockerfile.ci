@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 # MongoDB backs the run-claiming concurrency test (backend/src/modules/computations/ClaimConcurrency.mongo.test.ts).
 RUN apt-get update \

@@ -185,7 +185,12 @@ export class ComputationManager {
       const pipelines = await PipelineBaseService.listByExperiment(experimentId);
       pipelineIds = pipelines.map((e) => e._id);
     } else if (pipelineId) {
-      pipelineIds = [stringIdToObjectId(pipelineId)];
+      // The caller was checked against experimentId, so the pipeline has to belong to it.
+      const pipeline = await PipelineBaseService.getById(pipelineId);
+      if (String(pipeline.experimentId) !== String(experimentId)) {
+        throw new Error('Конвеєр не знайдено');
+      }
+      pipelineIds = [pipeline._id];
     }
 
     const idlePipelineIds = (

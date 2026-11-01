@@ -141,8 +141,10 @@ export class Experiments {
 
   @Mutation(() => Boolean)
   async updateExperimentProgress(
-    @Arg('input', () => UpdateExperimentProgressInput) input: UpdateExperimentProgressInput
+    @Arg('input', () => UpdateExperimentProgressInput) input: UpdateExperimentProgressInput,
+    @Ctx() context: GraphQLContext
   ): Promise<boolean> {
+    this.auth.requireService(context.req);
     await this.experimentManager.updateExperimentProgress(input);
     return true;
   }
@@ -150,8 +152,10 @@ export class Experiments {
   @Mutation(() => Boolean)
   async updateExperimentOptimizationResult(
     @Arg('input', () => UpdateExperimentOptimizationResultInput)
-    input: UpdateExperimentOptimizationResultInput
+    input: UpdateExperimentOptimizationResultInput,
+    @Ctx() context: GraphQLContext
   ): Promise<boolean> {
+    this.auth.requireService(context.req);
     await this.experimentManager.updateExperimentOptimizationResult(input);
     return true;
   }

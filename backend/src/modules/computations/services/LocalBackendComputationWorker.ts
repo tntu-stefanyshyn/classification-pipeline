@@ -54,7 +54,7 @@ export class LocalBackendComputationWorker {
       );
       if (!config.backend.serviceToken) {
         console.warn(
-          'BACKEND_SERVICE_TOKEN не задано: контейнери обчислень не зможуть прочитати експеримент і файл.'
+          'BACKEND_SERVICE_TOKEN не задано: контейнери обчислень не зможуть прочитати дані й надіслати результат.'
         );
       }
     } catch (error) {

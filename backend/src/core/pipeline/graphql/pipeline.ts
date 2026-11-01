@@ -1,11 +1,14 @@
-import { Arg, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
+import { Arg, Ctx, FieldResolver, ID, Mutation, Query, Resolver, Root } from 'type-graphql';
 import { Pipeline, PipelineBaseService } from '../../../core/pipeline';
 import { GraphNode } from '../../../modules/experiments/classes/GraphNode';
 import { GraphStructureModel } from '../../../modules/experiments/models/GraphStructureModel';
 import { ComputationQueue } from '../../../modules/computations/classes/ComputationQueue';
 import { UpdatePipelineProgressInput } from '../classes/UpdatePipelineProgressInput';
 import { UpdatePipelineOptimizationInput } from '../classes/UpdatePipelineOptimizationInput';
+import { AuthFlow } from '../../../modules/auth/services/AuthFlow';
+import { ExperimentAccess } from '../../../modules/experiments/services/ExperimentAccess';
 import { ObjectIdOrString } from '../../../types/context';
+import type { GraphQLContext } from '../../../types/context';
 import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
 import { PipelineStatus } from '../enums';
@@ -16,6 +19,8 @@ import { PipelineManager } from '../services/PipelineManager';
 export class PipelineResolver {
   private readonly pipelineManager = new PipelineManager();
   private readonly workflowManager = new WorkflowManager();
+  private readonly auth = new AuthFlow();
+  private readonly access = new ExperimentAccess();
 
   // #region FieldResolver
   @FieldResolver(() => [GraphNode])
@@ -50,13 +55,19 @@ export class PipelineResolver {
   @Query(() => [Pipeline])
   async pipelines(
     @Arg('experimentId', () => ID) experimentId: ObjectIdOrString,
+    @Ctx() context: GraphQLContext,
     @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {
+    await this.access.assertExperimentOwnerOrService(context.req, experimentId);
     return PipelineBaseService.listByExperiment(experimentId, queue);
   }
 
   @Query(() => Pipeline, { nullable: true })
-  pipeline(@Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString): Promise<Pipeline | null> {
+  async pipeline(
+    @Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString,
+    @Ctx() context: GraphQLContext
+  ): Promise<Pipeline | null> {
+    await this.access.assertPipelineOwnerOrService(context.req, pipelineId);
     return PipelineBaseService.getById(pipelineId);
   }
   // #endregion Query
@@ -64,23 +75,29 @@ export class PipelineResolver {
   // #region Mutation
   @Mutation(() => Pipeline)
   updatePipelineProgress(
-    @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput
+    @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput,
+    @Ctx() context: GraphQLContext
   ): Promise<Pipeline> {
+    this.auth.requireService(context.req);
     return PipelineBaseService.updatePipelineProgress(input);
   }
 
   @Mutation(() => Boolean)
   async updatePipelineOptimization(
-    @Arg('input', () => UpdatePipelineOptimizationInput) input: UpdatePipelineOptimizationInput
+    @Arg('input', () => UpdatePipelineOptimizationInput) input: UpdatePipelineOptimizationInput,
+    @Ctx() context: GraphQLContext
   ): Promise<boolean> {
+    this.auth.requireService(context.req);
     await PipelineBaseService.updatePipelineOptimization(input);
     return true;
   }
 
   @Mutation(() => Boolean)
-  changePipelineStatus(
-    @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput
+  async changePipelineStatus(
+    @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput,
+    @Ctx() context: GraphQLContext
   ): Promise<boolean> {
+    await this.access.assertPipelineOwnerOrService(context.req, input.pipelineId);
     return this.pipelineManager.changeStatus(input);
   }
   // #endregion Mutation

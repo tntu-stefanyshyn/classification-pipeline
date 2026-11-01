@@ -68,7 +68,7 @@ export class AuthFlow {
     return user;
   }
 
-  /** True when the request carries BACKEND_SERVICE_TOKEN (compute workers read experiments and files with it). */
+  /** True when the request carries BACKEND_SERVICE_TOKEN (compute workers authenticate with it). */
   isService(req: Request): boolean {
     const expected = Buffer.from(config.backend.serviceToken);
     const provided = Buffer.from((req.headers?.authorization || '').replace('Bearer', '').trim());
@@ -77,6 +77,13 @@ export class AuthFlow {
       expected.length === provided.length &&
       timingSafeEqual(expected, provided)
     );
+  }
+
+  /** Guards worker-only operations: anything except BACKEND_SERVICE_TOKEN is rejected. */
+  requireService(req: Request): void {
+    if (!this.isService(req)) {
+      throw new Error('Not authenticated');
+    }
   }
 
   private buildToken(user: User): string {

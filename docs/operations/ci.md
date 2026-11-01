@@ -1,6 +1,6 @@
 # Continuous integration
 
-[CI](../.github/workflows/ci.yml) runs on every pull request, every push to `main`, and manual dispatch from the repository's **Actions → CI → Run workflow** page.
+[CI](../../.github/workflows/ci.yml) runs on every pull request, every push to `main`, and manual dispatch from the repository's **Actions → CI → Run workflow** page.
 
 | Check                 | What it verifies                                                                                             |
 | --------------------- | ------------------------------------------------------------------------------------------------------------ |

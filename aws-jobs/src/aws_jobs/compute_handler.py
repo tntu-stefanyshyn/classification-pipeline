@@ -69,7 +69,9 @@ def _load_payload() -> Dict[str, Any]:
         raise ValueError("PAYLOAD_NOT_FOUND", raw)
     return json.loads(raw)
 
-     
+
+def _resolve_token(payload: Dict[str, Any]) -> Optional[str]:
+    return payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
 
 
 def _fetch_path_from_backend(
@@ -534,6 +536,7 @@ def _run_classifier(
     progress_for_one_step: float,
     backend_url: str,
     pipelineId: str,
+    token: Optional[str] = None,
 ):
     random_state = _to_int(_get_setting(settings, "random_state"))
     raw_folds = _to_int(graphStructureSettings.get("folds"))
@@ -546,6 +549,7 @@ def _run_classifier(
                 backend_url,
                 pipelineId,
                 message=f"Кількість кроків CV обмежено до {MAX_FOLDS} для стабільного виконання.",
+                token=token,
             )
         splitter_kwargs["n_splits"] = folds
 
@@ -588,7 +592,8 @@ def _run_classifier(
             backend_url,
             pipelineId,
             message=f"Початок перехресної валідації: крок {fold_index}/{folds}",
-            progress=progress
+            progress=progress,
+            token=token,
         )
         X_train = X.iloc[train_idx]
         y_train = y.iloc[train_idx]
@@ -623,7 +628,8 @@ def _run_classifier(
             backend_url,
             pipelineId,
             message=f"Завершення перехресної валідації: крок {fold_index}/{folds}",
-            progress=progress
+            progress=progress,
+            token=token,
         )
 
     channelNames = [str(label) for label in labels]
@@ -643,7 +649,7 @@ def _run_classifier(
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
     pipelineId = payload.get("pipelineId")
-    token = payload.get("backend_token") or os.getenv("COMPUTE_BACKEND_TOKEN")
+    token = _resolve_token(payload)
     started_at = time.time()
 
     if not backend_url or not pipelineId:
@@ -658,13 +664,13 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         if file_id and not payload.get("file_id"):
             payload["file_id"] = file_id
 
-    _emit(backend_url, pipelineId, message="Початок обчислення", progress=1)
+    _emit(backend_url, pipelineId, message="Початок обчислення", progress=1, token=token)
 
-   
 
-    _emit(backend_url, pipelineId, message="Зчитування файлу ЕЕГ", progress=3)
+
+    _emit(backend_url, pipelineId, message="Зчитування файлу ЕЕГ", progress=3, token=token)
     df = _load_dataframe(payload, backend_url or None, token)
-    _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5)
+    _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5, token=token)
 
     X, y = _prepare_features(df)
 
@@ -684,7 +690,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             backend_url,
             pipelineId,
             message=_format_step_log("Початок кроку", technology, stage),
-            progress=progress
+            progress=progress,
+            token=token,
         )
 
         if stage == "PREPROCESSING":
@@ -714,7 +721,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 graphStructureSettings,
                 progress_for_one_step,
                 backend_url,
-                pipelineId
+                pipelineId,
+                token,
             )
             report["accuracyScores"] = accuracyScores
             report["f1Scores"] = f1Scores
@@ -731,7 +739,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             backend_url,
             pipelineId,
             message=_format_step_log("Завершення кроку", technology, stage),
-            progress=progress
+            progress=progress,
+            token=token,
         )
 
 
@@ -740,7 +749,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     report["sampleCount"] = sampleCount
     report["duration"] = duration
 
-    _emit(backend_url, pipelineId, message="Обчислення завершено", progress=100)
+    _emit(backend_url, pipelineId, message="Обчислення завершено", progress=100, token=token)
     return report
 
 
@@ -749,7 +758,7 @@ def main() -> None:
     try:
         payload = _load_payload()
 
-        token = payload.get("backend_token")
+        token = _resolve_token(payload)
         backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
         pipelineId = payload.get("pipelineId")
 
@@ -767,7 +776,7 @@ def main() -> None:
         print((json.dumps(result, indent=2)))
     except Exception as exc:
         backend_url = os.getenv("COMPUTE_BACKEND_URL", "")
-        token = payload.get("backend_token")
+        token = _resolve_token(payload)
         pipelineId = payload.get("pipelineId")
         message = f"{type(exc).__name__}: {exc}"
 

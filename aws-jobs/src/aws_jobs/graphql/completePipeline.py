@@ -23,7 +23,6 @@ def completePipeline(
           "pipelineId": pipelineId,
         }
       },
-      "token": token,
     }
   )
   return graphqlRequest(

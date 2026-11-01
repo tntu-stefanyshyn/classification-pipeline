@@ -4,27 +4,17 @@ import { ApolloServer } from 'apollo-server-express';
 import cors from 'cors';
 import express from 'express';
 import mongoose, { Types } from 'mongoose';
-import { buildSchemaSync } from 'type-graphql';
 
-import { User } from './core/user';
-import { Auth } from './modules/auth/graphql/Auth';
-import { Health } from './graphql/Health';
-import { ServerInfoApi } from './graphql/ServerInfo';
-import { Experiments } from './modules/experiments/graphql/Experiments';
 import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
 import { PipelineModel } from './core/pipeline/models/PipelineModel';
 import { GraphManager } from './modules/experiments/services/GraphManager';
 import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
-import { Technologies } from './modules/technologies/graphql/Technologies';
-import { Storage } from './modules/storage/graphql/Storage';
-import { Files } from './modules/files/graphql/Files';
 import { UploadedFileModel } from './modules/files/models/UploadedFileModel';
 import { config } from './config/config';
+import { buildAppSchema } from './schema';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
 import { runMigrations } from './migrations';
-import { ComputationResolver } from './modules/computations';
-import { PipelineResolver } from './core/pipeline/graphql/pipeline';
 import { CloudComputationWorker } from './modules/computations/services/CloudComputationWorker';
 import { LocalBackendComputationWorker } from './modules/computations/services/LocalBackendComputationWorker';
 
@@ -32,22 +22,7 @@ async function bootstrap() {
   let cloudWorker: CloudComputationWorker | null = null;
   let localWorker: LocalBackendComputationWorker | null = null;
   let shuttingDown = false;
-  const schema = buildSchemaSync({
-    resolvers: [
-      Health,
-      Auth,
-      ServerInfoApi,
-      Experiments,
-      Technologies,
-      Storage,
-      Files,
-      ComputationResolver,
-      PipelineResolver,
-    ],
-    orphanedTypes: [User],
-    validate: { forbidUnknownValues: false },
-    ...(config.schemaFile ? { emitSchemaFile: config.schemaFile } : {}),
-  });
+  const schema = buildAppSchema(config.schemaFile);
 
   const apollo = new ApolloServer({
     schema,

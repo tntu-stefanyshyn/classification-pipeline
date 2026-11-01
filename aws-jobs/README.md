@@ -10,10 +10,10 @@ Docker images that the backend and the desktop app start.
 `docker-compose.yml` builds it twice under two names and exits immediately (`entrypoint: ["true"]`),
 because the backend starts the containers itself through the Docker socket:
 
-| Image                   | Used for                                                |
-| ----------------------- | ------------------------------------------------------- |
-| `aws-jobs`              | Compute runs (the desktop and backend Docker workers)   |
-| `aws-jobs-optimization` | Experiment optimization (`OptimizationRunner`)          |
+| Image                   | Used for                                              |
+| ----------------------- | ----------------------------------------------------- |
+| `aws-jobs`              | Compute runs (the desktop and backend Docker workers) |
+| `aws-jobs-optimization` | Experiment optimization (`OptimizationRunner`)        |
 
 Build both images from the repository root (and again after changing `aws-jobs/`):
 

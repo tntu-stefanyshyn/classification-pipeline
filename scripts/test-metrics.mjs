@@ -8,11 +8,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot = path.resolve(scriptDir, '..');
 export const testMetricsCsvPath = path.join(projectRoot, 'test-metrics.csv');
 
-const headerColumns = [
-  'частини програмної системи',
-  'кількість тестів',
-  'покриття тестами коду',
-];
+const headerColumns = ['частини програмної системи', 'кількість тестів', 'покриття тестами коду'];
 
 const escapeCsvCell = (value) => {
   const text = String(value);
@@ -113,7 +109,9 @@ export const parseNodeCoverageFilePercents = (output) => {
   const lines = output.split(/\r?\n/);
 
   for (const line of lines) {
-    const match = line.match(/^#(?<indent>\s+)(?<name>[^|]+?)\s+\|\s*(?<linePercent>[0-9]+(?:\.[0-9]+)?)?\s*\|/);
+    const match = line.match(
+      /^#(?<indent>\s+)(?<name>[^|]+?)\s+\|\s*(?<linePercent>[0-9]+(?:\.[0-9]+)?)?\s*\|/
+    );
     if (!match || !match.groups) {
       continue;
     }
@@ -154,12 +152,16 @@ export const walkFilesRecursive = async (dir) => {
 };
 
 export const countRelevantLines = (content) =>
-  content
-    .split(/\r?\n/)
-    .filter((line) => {
-      const trimmed = line.trim();
-      return trimmed !== '' && trimmed !== '/*' && trimmed !== '*/' && !trimmed.startsWith('//') && trimmed !== '*';
-    }).length;
+  content.split(/\r?\n/).filter((line) => {
+    const trimmed = line.trim();
+    return (
+      trimmed !== '' &&
+      trimmed !== '/*' &&
+      trimmed !== '*/' &&
+      !trimmed.startsWith('//') &&
+      trimmed !== '*'
+    );
+  }).length;
 
 export const computeFullNodeCoverage = async ({ filePaths, output, cwd }) => {
   const coverageByFile = parseNodeCoverageFilePercents(output);
@@ -202,7 +204,6 @@ export const computeFullDesktopCoverage = async ({ distSrcDir, output, cwd }) =>
   });
 };
 
-
 export const parsePythonTraceSummary = (output) => {
   const testsMatch = output.match(/^Ran (\d+) tests? in /m);
   const coverageRows = [...output.matchAll(/^\s*(\d+)\s+([0-9]+(?:\.[0-9]+)?)%\s+\S+\s+\(.+\)$/gm)];
@@ -243,7 +244,8 @@ export const upsertTestMetricsRow = async ({ component, testCount, coverage }) =
     .filter(Boolean)
     .slice(1)
     .map((line) => {
-      const [existingComponent = '', existingTestCount = '', existingCoverage = ''] = parseCsvLine(line);
+      const [existingComponent = '', existingTestCount = '', existingCoverage = ''] =
+        parseCsvLine(line);
       return {
         component: existingComponent,
         testCount: existingTestCount,

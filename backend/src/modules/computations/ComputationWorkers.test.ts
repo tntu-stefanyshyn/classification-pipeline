@@ -159,7 +159,9 @@ test('LocalBackendComputationWorker resolves backend urls, aws-jobs dir, workflo
     process.env.AWS_JOBS_DIR = originalAwsJobsDir;
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // best-effort cleanup
+    }
   });
 
   fs.mkdirSync(tempDir, { recursive: true });

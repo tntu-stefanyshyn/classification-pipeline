@@ -15,13 +15,13 @@ how the desktop constructor and the experiment details page apply them.
 
 ## Experiment status lifecycle
 
-| Status          | Meaning                                                                                              |
-| --------------- | ---------------------------------------------------------------------------------------------------- |
-| `creating`      | Default state after creation.                                                                        |
-| `configuring`   | Set when graph nodes, graph settings or the computation mode are updated.                            |
-| `computing`     | Set when computations are started. One pipeline is generated per path and selected queue.             |
-| `optimization`  | Set while the optimization job runs, after the pipelines are computed.                               |
-| `completed`     | Set when optimization has finished.                                                                  |
+| Status         | Meaning                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `creating`     | Default state after creation.                                                             |
+| `configuring`  | Set when graph nodes, graph settings or the computation mode are updated.                 |
+| `computing`    | Set when computations are started. One pipeline is generated per path and selected queue. |
+| `optimization` | Set while the optimization job runs, after the pipelines are computed.                    |
+| `completed`    | Set when optimization has finished.                                                       |
 
 Allowed transitions: `creating → configuring → computing → optimization → completed`, and
 `completed → optimization` (optimization can be run again).
@@ -29,12 +29,12 @@ An experiment cannot enter `computing` without an attached, available CSV file.
 
 ## Pipeline status lifecycle
 
-| Status      | Meaning                                                                                   |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| `idle`      | No active run. Initial status, and the status a run returns to when it is stopped.        |
-| `queued`    | Waiting in a queue for a worker.                                                          |
-| `running`   | Claimed by a worker and being computed.                                                   |
-| `completed` | Finished successfully.                                                                    |
+| Status      | Meaning                                                                            |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `idle`      | No active run. Initial status, and the status a run returns to when it is stopped. |
+| `queued`    | Waiting in a queue for a worker.                                                   |
+| `running`   | Claimed by a worker and being computed.                                            |
+| `completed` | Finished successfully.                                                             |
 
 Allowed transitions: `idle → queued`, `queued → running`, `queued → idle` (when computations are
 paused), `running → completed`, `running → idle` (when the run is stopped).

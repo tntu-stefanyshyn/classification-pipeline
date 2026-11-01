@@ -2,10 +2,10 @@
 
 The backend exposes one GraphQL endpoint and one REST endpoint on port 4000.
 
-| Endpoint                                   | Purpose                                        |
-| ------------------------------------------ | ---------------------------------------------- |
-| `POST /graphql`                            | GraphQL API used by the desktop app and workers |
-| `GET /experiments/:experimentId/report`    | PDF report for an experiment                   |
+| Endpoint                                | Purpose                                         |
+| --------------------------------------- | ----------------------------------------------- |
+| `POST /graphql`                         | GraphQL API used by the desktop app and workers |
+| `GET /experiments/:experimentId/report` | PDF report for an experiment                    |
 
 ## GraphQL
 

@@ -538,7 +538,7 @@ test('ComputationManager merges machine hosts and reuses initialized batch clien
     awsAccessKeyId: config.aws.accessKeyId,
     awsSecretAccessKey: config.aws.secretAccessKey,
   };
-  let experimentDoc: any = {
+  const experimentDoc: any = {
     computationHosts: [
       {
         queue: ComputationQueue.local,

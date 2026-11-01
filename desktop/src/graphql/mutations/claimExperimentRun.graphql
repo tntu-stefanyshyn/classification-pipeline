@@ -7,5 +7,6 @@ mutation ClaimExperimentRun($queue: ComputationQueue!, $machineInfo: PipelineMac
     progress
     statusMessage
     pathNodeIds
+    executionId
   }
 }

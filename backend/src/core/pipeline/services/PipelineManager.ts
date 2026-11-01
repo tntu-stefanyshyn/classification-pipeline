@@ -87,9 +87,10 @@ export class PipelineManager {
     {
       from: PipelineStatus.idle,
       to: PipelineStatus.queued,
-      sideEffect: async ({ instanceId }) => {
+      // Scoped to the last execution: once a newer claim raised the fence, this reset is stale.
+      sideEffect: async ({ instanceId, executionId }) => {
         await PipelineModel.updateOne(
-          { _id: instanceId },
+          { _id: instanceId, executionId: executionId ?? null },
           {
             $set: {
               progress: 0,
@@ -105,9 +106,9 @@ export class PipelineManager {
       // Pausing an experiment takes its queued runs out of the queue.
       from: PipelineStatus.queued,
       to: PipelineStatus.idle,
-      sideEffect: async ({ instanceId }) => {
+      sideEffect: async ({ instanceId, executionId }) => {
         await PipelineModel.updateOne(
-          { _id: instanceId },
+          { _id: instanceId, executionId: executionId ?? null },
           { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
         ).exec();
       },
@@ -115,9 +116,9 @@ export class PipelineManager {
     {
       from: PipelineStatus.queued,
       to: PipelineStatus.running,
-      sideEffect: async ({ instanceId }) => {
+      sideEffect: async ({ instanceId, executionId }) => {
         await PipelineModel.updateOne(
-          { _id: instanceId },
+          { _id: instanceId, executionId: executionId ?? null },
           {
             $set: {
               progress: 0,
@@ -130,9 +131,9 @@ export class PipelineManager {
     {
       from: PipelineStatus.running,
       to: PipelineStatus.completed,
-      sideEffect: async ({ instanceId }) => {
+      sideEffect: async ({ instanceId, executionId }) => {
         await PipelineModel.updateOne(
-          { _id: instanceId },
+          { _id: instanceId, executionId: executionId ?? null },
           { $set: { progress: 100, statusMessage: 'Завершено' } }
         ).exec();
       },
@@ -140,24 +141,33 @@ export class PipelineManager {
     {
       from: PipelineStatus.running,
       to: PipelineStatus.idle,
-      sideEffect: async ({ instanceId }) => {
+      // Cleanup of the execution that stopped; a later execution's state is left alone.
+      // cloudJobId stays until the run is queued again, so Stop/Pause can cancel that job.
+      sideEffect: async ({ instanceId, executionId }) => {
         await PipelineModel.updateOne(
-          { _id: instanceId },
-          { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } }
+          { _id: instanceId, executionId: executionId ?? null },
+          { $unset: { machineInfo: '', progress: '', statusMessage: '' } }
         ).exec();
       },
     },
   ];
 
-  async changeStatus({ pipelineId, status, message }: ChangePipelineStatusInput) {
+  async changeStatus(
+    { pipelineId, status, message }: ChangePipelineStatusInput,
+    fields?: Record<string, unknown>,
+    expected?: Record<string, unknown>,
+    transitions = this.transitions
+  ) {
     const normalizedMessage = message?.trim() || PIPELINE_STATUS_LOG_MESSAGES[status];
 
     await this.workflowManager.changeStatus({
       instanceId: pipelineId,
       status,
-      transitions: this.transitions,
+      transitions,
       type: WorkflowType.PIPELINE,
       message: normalizedMessage,
+      fields,
+      expected,
     });
 
     await PipelineModel.updateOne(
@@ -175,4 +185,32 @@ export class PipelineManager {
 
     return true;
   }
+
+  /**
+   * A status change sent through `changePipelineStatus`, which carries no execution identity.
+   * It cannot end a running execution: the user stops one with `stopExperimentRun` and a worker
+   * reports one with `failExperimentRun`/`completePipeline`, so a request meant for an earlier
+   * execution cannot end a newer one of the same run. The transition is chosen from the status the
+   * update matches, so a run that starts meanwhile is not affected.
+   */
+  changeStatusFromApi(input: ChangePipelineStatusInput) {
+    return this.changeStatus(input, undefined, undefined, this.apiTransitions);
+  }
+
+  private readonly apiTransitions = this.transitions.filter(
+    (transition) => transition.from !== PipelineStatus.running
+  );
+
+  /**
+   * Ends an execution on its worker's report. Only transitions out of `running` apply: a run that
+   * was stopped and queued again keeps its executionId, so a late failure report would otherwise
+   * take the retry out of the queue. The transition follows the status the update matches.
+   */
+  endExecution(input: ChangePipelineStatusInput, expected: Record<string, unknown>) {
+    return this.changeStatus(input, undefined, expected, this.executionTransitions);
+  }
+
+  private readonly executionTransitions = this.transitions.filter(
+    (transition) => transition.from === PipelineStatus.running
+  );
 }

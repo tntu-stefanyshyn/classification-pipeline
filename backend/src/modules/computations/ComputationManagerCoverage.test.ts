@@ -327,11 +327,16 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
       calls.push(['cancelCloudJob', ...args]);
     }
   );
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
+    createLeanResult(currentPipeline)
+  );
+  // claimNextRun reads each candidate's workflow before claiming it.
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () =>
+    createLeanResult({ status: PipelineStatus.queued })
+  );
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => {
     aggregateCall += 1;
-    if (aggregateCall === 1) return [{}];
-    if (aggregateCall === 2) return [];
-    if (aggregateCall === 3) return [];
+    if (aggregateCall === 1) return [];
     return [
       {
         _id: queuedPipelineId,
@@ -374,8 +379,11 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
     true
   );
 
-  assert.equal(await manager.claimNextRun(ComputationQueue.local), undefined);
-  assert.equal(await manager.claimNextRun(ComputationQueue.local), undefined);
+  await assert.rejects(() => manager.claimNextRun(ComputationQueue.local), /machineInfo.hostname/);
+  assert.equal(
+    await manager.claimNextRun(ComputationQueue.local, { hostname: 'host' } as any),
+    undefined
+  );
 
   const claimed = await manager.claimNextRun(ComputationQueue.cloud, {
     hostname: ' host ',
@@ -399,12 +407,14 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
     ),
     true
   );
-  assert.deepEqual(calls.find((entry) => entry[0] === 'updateOne')?.[2], {
+  const machineInfoUpdate = calls.find(
+    (entry) => entry[0] === 'updateOne' && entry[2]?.$set?.machineInfo
+  );
+  assert.deepEqual(machineInfoUpdate?.[2], {
     $set: {
       machineInfo: {
         queue: ComputationQueue.cloud,
-        lastSeenAt: calls.find((entry) => entry[0] === 'updateOne')?.[2].$set.machineInfo
-          .lastSeenAt,
+        lastSeenAt: machineInfoUpdate?.[2].$set.machineInfo.lastSeenAt,
         hostname: 'host',
         platform: 'linux',
         arch: 'x64',
@@ -453,12 +463,14 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     getWorkflow: async () => ({ status: PipelineStatus.completed }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    changeStatus: async (...args: any[]) => {
+    endExecution: async (...args: any[]) => {
       calls.push(['changeStatus', ...args]);
-      return true;
+      // The run is already completed, so no transition out of `running` applies.
+      throw new Error('TRANSITION_NOT_FOUND');
     },
   } as any);
   stub(t, WorkflowModel as unknown as Record<string, unknown>, 'aggregate', async () => []);
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'exists', async () => null);
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(experimentDoc)
   );
@@ -480,15 +492,19 @@ test('ComputationManager helper branches cover empty resumes, registerMachineInf
     calls.push(['warn', ...args]);
   });
 
-  await manager.completeRun({ runId: pipelineId.toHexString(), resultJson: '{"score":1}' });
-  assert.equal(
-    calls.some(
-      (entry) => entry[0] === 'changeStatus' && entry[1].status === PipelineStatus.completed
-    ),
-    false
-  );
+  await manager.completeRun({
+    runId: pipelineId.toHexString(),
+    executionId: '1',
+    resultJson: '{"score":1}',
+  });
+  // The completion lost, so the result saved for it is removed again.
+  const resultUpdates = calls.filter((entry) => entry[0] === 'updateOne');
+  assert.deepEqual(resultUpdates.at(-1)?.[2], { $unset: { computingResult: '' } });
 
-  assert.equal(await manager.failRun({ runId: pipelineId.toHexString() }), pipeline);
+  assert.equal(
+    await manager.failRun({ runId: pipelineId.toHexString(), executionId: '1' }),
+    pipeline
+  );
   assert.deepEqual(await manager.pauseExperimentRuns(experimentId), []);
   assert.deepEqual(await manager.resumeExperimentRuns(experimentId.toHexString()), []);
   await assert.rejects(() => manager.resumeExperimentRuns('   '), /Experiment _id is required/);

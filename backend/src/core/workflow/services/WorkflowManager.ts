@@ -49,12 +49,18 @@ export class WorkflowManager {
     status,
     type,
     message,
+    fields,
+    expected,
   }: {
     transitions: Transitions<T>;
     instanceId: ObjectIdOrString;
     type: WorkflowType;
     status: T;
     message?: string;
+    /** Written in the same update as the status. */
+    fields?: Record<string, unknown>;
+    /** Extra conditions for the update, checked atomically with the previous status. */
+    expected?: Record<string, unknown>;
   }) => {
     const workflow = await this.getWorkflow({ instanceId, type });
     const transition = transitions.find(
@@ -68,9 +74,9 @@ export class WorkflowManager {
 
     // Match the previous status so concurrent claimers cannot both win the transition.
     const { modifiedCount } = await WorkflowModel.updateOne(
-      { _id: workflow._id, status: workflow.status },
+      { ...expected, _id: workflow._id, status: workflow.status },
       {
-        $set: { status },
+        $set: { ...fields, status },
         $push: {
           history: {
             previousStatus: workflow.status,
@@ -82,6 +88,7 @@ export class WorkflowManager {
       }
     );
     if (!modifiedCount) throw new WorkflowTransitionConflictError();
-    await transition?.sideEffect?.({ instanceId });
+    const executionId = (fields?.executionId as number | undefined) ?? workflow.executionId;
+    await transition?.sideEffect?.({ instanceId, executionId });
   };
 }

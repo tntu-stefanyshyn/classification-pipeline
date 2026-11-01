@@ -78,10 +78,14 @@ export class PipelineResolver {
   }
 
   @Mutation(() => Boolean)
-  changePipelineStatus(
+  async changePipelineStatus(
     @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput
   ): Promise<boolean> {
-    return this.pipelineManager.changeStatus(input);
+    // Runs start only through claimExperimentRun, which enforces one local run per machine.
+    if (input.status === PipelineStatus.running) {
+      throw new Error('Запуск можна почати лише через claimExperimentRun');
+    }
+    return this.pipelineManager.changeStatusFromApi(input);
   }
   // #endregion Mutation
 }

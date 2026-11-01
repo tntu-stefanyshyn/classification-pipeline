@@ -1,4 +1,4 @@
-import { BatchClient, CancelJobCommand, TerminateJobCommand } from '@aws-sdk/client-batch';
+import { BatchClient, TerminateJobCommand } from '@aws-sdk/client-batch';
 import { Types } from 'mongoose';
 import { config } from '../../../config/config';
 import { ComputationQueue } from '../classes/ComputationQueue';
@@ -33,6 +33,7 @@ import { ObjectIdOrString } from '../../../types/context';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 import { OptimizationResult } from '../classes/OptimizationResult';
+import { executionFilter } from '../../../core/pipeline/executionFilter';
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -219,43 +220,53 @@ export class ComputationManager {
     if (workflow.status !== PipelineStatus.running) {
       return pipeline;
     }
-    if (pipeline.queue === ComputationQueue.cloud && pipeline.cloudJobId) {
-      await this.cancelCloudJob(pipeline.cloudJobId);
+    await this.stopExecutionJob(pipeline._id, workflow.executionId);
+    try {
+      await this.pipelineManager.changeStatus(
+        { pipelineId: pipeline._id, status: PipelineStatus.idle, message: 'Зупинено користувачем' },
+        undefined,
+        { executionId: workflow.executionId ?? null }
+      );
+    } catch (error) {
+      // It completed, failed or was stopped meanwhile: there is nothing left to stop.
+      const lostRace =
+        error instanceof WorkflowTransitionConflictError ||
+        (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND');
+      if (!lostRace) throw error;
+      return PipelineBaseService.getById(pipelineId);
     }
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.idle,
-      message: 'Зупинено користувачем',
-    });
     return PipelineBaseService.getById(pipelineId);
+  }
+
+  /**
+   * Marks the execution as stopped and cancels the AWS job it recorded; the mark and the read of
+   * the job id are one update. `CloudComputationWorker.submitRun` records a job id only for an
+   * unmarked execution and cancels the job itself otherwise, so one side cancels it. This runs
+   * before the status change: a write can fail once the run is `idle`, and a repeated Stop would
+   * then find nothing to stop, while a failure before the change leaves the run to stop again.
+   */
+  private async stopExecutionJob(pipelineId: Types.ObjectId, executionId?: number) {
+    const before = await PipelineModel.findOneAndUpdate(
+      { _id: pipelineId, executionId: executionId ?? null },
+      { $set: { stoppedExecutionId: executionId ?? 0 } }
+    ).lean();
+    if (before?.queue === ComputationQueue.cloud && before.cloudJobId) {
+      await this.cancelCloudJob(before.cloudJobId);
+    }
   }
 
   async claimNextRun(
     queue: ComputationQueue,
     machineInfo?: PipelineMachineInfoInput
   ): Promise<Pipeline | undefined> {
-    if (queue === ComputationQueue.local) {
-      const [localRunningPipeline] = await WorkflowModel.aggregate([
-        { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.running } },
-        {
-          $lookup: {
-            from: pipelinesCollectionName,
-            localField: 'instanceId',
-            foreignField: '_id',
-            as: 'pipeline',
-          },
-        },
-        { $unwind: '$pipeline' },
-        { $match: { 'pipeline.queue': ComputationQueue.local } },
-        { $limit: 1 },
-      ]);
-      if (localRunningPipeline) {
-        return;
-      }
+    // One local run per machine (unique index on the workflow), so the hostname is required.
+    const hostname = queue === ComputationQueue.local ? machineInfo?.hostname?.trim() : undefined;
+    if (queue === ComputationQueue.local && !hostname) {
+      throw new Error('Для локальних запусків потрібна назва машини (machineInfo.hostname)');
     }
 
     const normalizedMachineInfo = this.normalizeMachineInfo(queue, machineInfo);
-    const [pipeline] = await WorkflowModel.aggregate<Pipeline | undefined>([
+    const candidates = await WorkflowModel.aggregate<Pipeline>([
       { $match: { type: WorkflowType.PIPELINE, status: PipelineStatus.queued } },
       {
         $lookup: {
@@ -271,93 +282,146 @@ export class ComputationManager {
       { $sort: { priority: -1, updatedAt: 1 } },
     ]);
 
-    if (!pipeline) return;
+    // A worker that loses a race moves on to the next queued run instead of waiting a poll.
+    for (const pipeline of candidates) {
+      const workflow = await WorkflowModel.findOne({
+        instanceId: pipeline._id,
+        type: WorkflowType.PIPELINE,
+      }).lean();
+      if (workflow?.status !== PipelineStatus.queued) continue;
+      const previousExecutionId = workflow.executionId;
+      const executionId = (previousExecutionId ?? 0) + 1;
 
-    try {
-      await this.pipelineManager.changeStatus({
-        pipelineId: pipeline._id,
-        status: PipelineStatus.running,
-      });
-    } catch (error) {
-      // Another worker claimed this run first.
-      if (error instanceof WorkflowTransitionConflictError) return;
-      throw error;
-    }
-
-    if (normalizedMachineInfo) {
+      // Raise the pipeline's execution fence first: from here on, reports of earlier executions
+      // match nothing. The status change below then gives this number to exactly one claimant.
+      // A result left by an earlier execution goes too, so the new one cannot inherit it.
       await PipelineModel.updateOne(
-        { _id: pipeline._id },
-        { $set: { machineInfo: normalizedMachineInfo } }
+        { _id: pipeline._id, executionId: { $not: { $gte: executionId } } },
+        { $set: { executionId }, $unset: { computingResult: '' } }
       );
-      await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
-    }
+      try {
+        await this.pipelineManager.changeStatus(
+          { pipelineId: pipeline._id, status: PipelineStatus.running },
+          { executionId, ...(hostname ? { machineHostname: hostname } : {}) },
+          { executionId: previousExecutionId ?? null }
+        );
+      } catch (error) {
+        // Duplicate key: a run is already `running` on this machine.
+        if ((error as { code?: number }).code === 11000) return;
+        // Another worker claimed this run first: either the conditional update lost, or the
+        // re-read status was already `running`, which has no transition to `running`.
+        if (error instanceof WorkflowTransitionConflictError) continue;
+        if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') continue;
+        throw error;
+      }
 
-    return pipeline;
+      if (normalizedMachineInfo) {
+        await PipelineModel.updateOne(
+          { _id: pipeline._id, executionId },
+          { $set: { machineInfo: normalizedMachineInfo } }
+        );
+        await this.registerMachineInfo(pipeline.experimentId, normalizedMachineInfo);
+      }
+
+      return { ...pipeline, executionId };
+    }
   }
 
-  async completePipeline({ payload, pipelineId }: CompletePipelineInput) {
-    const pipeline = await PipelineBaseService.getById(pipelineId);
+  /**
+   * Moves the run out of `running` only if `executionId` is still its current execution; the
+   * condition is part of the status update. Returns false if it was not running any more.
+   */
+  private async finishExecution(
+    pipelineId: Types.ObjectId,
+    execution: ReturnType<typeof executionFilter>,
+    status: PipelineStatus.completed | PipelineStatus.idle,
+    message: string
+  ): Promise<boolean> {
+    try {
+      await this.pipelineManager.endExecution({ pipelineId, status, message }, execution);
+      return true;
+    } catch (error) {
+      if (error instanceof WorkflowTransitionConflictError) return false;
+      if (error instanceof Error && error.message === 'TRANSITION_NOT_FOUND') return false;
+      throw error;
+    }
+  }
 
-    await PipelineModel.updateOne({ _id: pipeline._id }, { $set: { computingResult: payload } });
-
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
+  /**
+   * Saves the result before the run moves to `completed`, so a completed run always has one: a
+   * failed write leaves it `running` and the report can be retried. The fence keeps stale reports
+   * out, and the first report of an execution wins. Returns whether this execution completed the
+   * run, now or with an earlier report.
+   */
+  private async saveResult(
+    pipelineId: Types.ObjectId,
+    executionId: string | number,
+    result: unknown,
+    message: string
+  ) {
+    const execution = executionFilter(executionId);
+    await PipelineModel.updateOne(
+      { _id: pipelineId, ...execution, computingResult: { $exists: false } },
+      { $set: { computingResult: result } }
+    );
+    if (await this.finishExecution(pipelineId, execution, PipelineStatus.completed, message)) {
+      return true;
+    }
+    const alreadyCompleted = await WorkflowModel.exists({
+      instanceId: pipelineId,
+      type: WorkflowType.PIPELINE,
       status: PipelineStatus.completed,
-      message: 'Завершено',
+      ...execution,
     });
+    if (alreadyCompleted) return true;
+
+    // A Stop or a failure ended this execution first, so its result does not count.
+    await PipelineModel.updateOne(
+      { _id: pipelineId, ...execution },
+      { $unset: { computingResult: '' } }
+    );
+    return false;
+  }
+
+  /** Returns false when the report belongs to an execution that is no longer current. */
+  async completePipeline({ payload, pipelineId, executionId }: CompletePipelineInput) {
+    const pipeline = await PipelineBaseService.getById(pipelineId);
+    return this.saveResult(pipeline._id, executionId, payload, 'Завершено');
   }
 
   async completeRun({
     runId,
+    executionId,
     resultJson,
     statusMessage,
   }: {
     runId: string;
+    executionId: string | number;
     resultJson: string;
     statusMessage?: string;
   }): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(runId);
     const parsedResult = JSON.parse(resultJson) as Record<string, unknown>;
-    await PipelineModel.updateOne(
-      { _id: pipeline._id },
-      { $set: { computingResult: parsedResult } }
-    );
-
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: pipeline._id,
-      type: WorkflowType.PIPELINE,
-    });
-    if (workflow.status === PipelineStatus.running) {
-      await this.pipelineManager.changeStatus({
-        pipelineId: pipeline._id,
-        status: PipelineStatus.completed,
-        message: statusMessage ?? 'Завершено',
-      });
-    }
-
+    await this.saveResult(pipeline._id, executionId, parsedResult, statusMessage ?? 'Завершено');
     return PipelineBaseService.getById(runId);
   }
 
   async failRun({
     runId,
+    executionId,
     statusMessage,
   }: {
     runId: string;
+    executionId: string | number;
     statusMessage?: string;
   }): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(runId);
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: pipeline._id,
-      type: WorkflowType.PIPELINE,
-    });
-    if (workflow.status !== PipelineStatus.running) {
-      return pipeline;
-    }
-    await this.pipelineManager.changeStatus({
-      pipelineId: pipeline._id,
-      status: PipelineStatus.idle,
-      message: statusMessage ?? 'Некоректне завершення обчислення',
-    });
+    await this.finishExecution(
+      pipeline._id,
+      executionFilter(executionId),
+      PipelineStatus.idle,
+      statusMessage ?? 'Некоректне завершення обчислення'
+    );
     return PipelineBaseService.getById(runId);
   }
 
@@ -384,13 +448,6 @@ export class ComputationManager {
 
     if (runs.length === 0) return [];
 
-    const cloudJobs = runs.filter((run) => run.queue === ComputationQueue.cloud && run.cloudJobId);
-    for (const run of cloudJobs) {
-      if (run.cloudJobId) {
-        await this.cancelCloudJob(run.cloudJobId);
-      }
-    }
-
     await Promise.all(runs.map((run) => this.pauseRun(run._id)));
 
     const runIds = runs.map((run) => run._id);
@@ -402,17 +459,18 @@ export class ComputationManager {
   private async pauseRun(pipelineId: Types.ObjectId) {
     // queued -> running is the only change a worker can make first, so two retries suffice.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const { status } = await this.workflowManager.getWorkflow({
+      const { status, executionId } = await this.workflowManager.getWorkflow({
         instanceId: pipelineId,
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return;
+      if (status === PipelineStatus.running) await this.stopExecutionJob(pipelineId, executionId);
       try {
-        await this.pipelineManager.changeStatus({
-          pipelineId,
-          status: PipelineStatus.idle,
-          message: 'Обчислення зупинено',
-        });
+        await this.pipelineManager.changeStatus(
+          { pipelineId, status: PipelineStatus.idle, message: 'Обчислення зупинено' },
+          undefined,
+          { executionId: executionId ?? null }
+        );
         return;
       } catch (error) {
         const lostRace =
@@ -546,27 +604,15 @@ export class ComputationManager {
     return this.batchClient;
   }
 
-  private async cancelCloudJob(jobId: string) {
+  async cancelCloudJob(jobId: string) {
     if (!jobId) return;
-    const client = this.getBatchClient();
+    // CancelJob succeeds without stopping a STARTING or RUNNING job; TerminateJob covers every state.
     try {
-      await client.send(
-        new CancelJobCommand({
-          jobId,
-          reason: 'Paused by user',
-        })
+      await this.getBatchClient().send(
+        new TerminateJobCommand({ jobId, reason: 'Paused by user' })
       );
     } catch (error) {
-      try {
-        await client.send(
-          new TerminateJobCommand({
-            jobId,
-            reason: 'Paused by user',
-          })
-        );
-      } catch (innerError) {
-        console.warn('Не вдалося скасувати AWS-завдання', innerError);
-      }
+      console.warn('Не вдалося скасувати AWS-завдання', error);
     }
   }
 

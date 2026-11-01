@@ -6,6 +6,7 @@ import { buildHandlerPayload } from '../src/workers/localComputation/payloadBuil
 test('buildHandlerPayload keeps run path order and normalizes node settings', () => {
   const run = {
     _id: 'run-1',
+    executionId: '3',
     experimentId: 'exp-1',
     queue: 'local',
     pathNodeIds: ['node-2', 'node-1'],
@@ -33,6 +34,7 @@ test('buildHandlerPayload keeps run path order and normalizes node settings', ()
   assert.deepEqual(buildHandlerPayload(run, experiment), {
     backend_url: 'http://host.docker.internal:4000/graphql',
     pipelineId: 'run-1',
+    executionId: '3',
     experiment_id: 'exp-1',
     queue: 'local',
     file_id: 'file-1',

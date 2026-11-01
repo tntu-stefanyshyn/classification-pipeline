@@ -40,6 +40,7 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
   );
   const refetchCalls: string[] = [];
   const statusChanges: any[] = [];
+  const stopCalls: any[] = [];
   const apolloQueries: any[] = [];
 
   const state = stubReactHooks(t, compiledFile);
@@ -172,7 +173,12 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
       async () => undefined,
       { loading: false, error: null },
     ],
-    useStopExperimentRunMutation: () => [async () => undefined, { loading: false, error: null }],
+    useStopExperimentRunMutation: () => [
+      async (options: any) => {
+        stopCalls.push(options);
+      },
+      { loading: false, error: null },
+    ],
   });
   stubResolvedModule(t, compiledFile, './components/ResultModal/ResultModal', {
     __esModule: true,
@@ -227,6 +233,15 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
   dataTable!.props.columns[4].cell({
     row: { original: { status: 'idle', _id: 'run-1' } },
   });
+  // Stop on a running run is an explicit stopExperimentRun, not a generic status change.
+  const runningActions = dataTable!.props.columns[4].cell({
+    row: { original: { status: 'running', _id: 'run-2' } },
+  });
+  await findElement(
+    runningActions,
+    (element) => typeof element.props?.onClick === 'function'
+  )!.props.onClick();
+  assert.deepEqual(stopCalls, [{ variables: { input: { runId: 'run-2' } } }]);
 
   assert.equal(apolloQueries[0].variables.queue, 'local');
   assert.equal(statusChanges.length, 2);

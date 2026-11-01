@@ -195,7 +195,7 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
         (entry: any) =>
           entry.from === PipelineStatus.running && entry.to === PipelineStatus.completed
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -206,7 +206,7 @@ test('PipelineManager.changeStatus executes running to completed side effects', 
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: 3 },
     { $set: { progress: 100, statusMessage: 'Завершено' } },
   ]);
 });
@@ -236,7 +236,7 @@ test('PipelineManager.changeStatus executes idle to queued side effects', async 
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: null },
     {
       $set: {
         progress: 0,
@@ -262,7 +262,7 @@ test('PipelineManager.changeStatus executes queued to running side effects', asy
       const transition = payload.transitions.find(
         (entry: any) => entry.from === PipelineStatus.queued && entry.to === PipelineStatus.running
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -273,7 +273,7 @@ test('PipelineManager.changeStatus executes queued to running side effects', asy
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: 3 },
     {
       $set: {
         progress: 0,
@@ -297,7 +297,7 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
       const transition = payload.transitions.find(
         (entry: any) => entry.from === PipelineStatus.running && entry.to === PipelineStatus.idle
       );
-      await transition.sideEffect({ instanceId: payload.instanceId });
+      await transition.sideEffect({ instanceId: payload.instanceId, executionId: 3 });
       return true;
     },
   } as any);
@@ -308,8 +308,8 @@ test('PipelineManager.changeStatus executes idle transition reset side effects',
   } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
-    { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
+    { _id: pipelineId, executionId: 3 },
+    { $unset: { machineInfo: '', progress: '', statusMessage: '' } },
   ]);
 });
 
@@ -336,7 +336,29 @@ test('PipelineManager.changeStatus moves a queued run back to idle', async (t) =
   await manager.changeStatus({ pipelineId, status: PipelineStatus.idle } as any);
 
   assert.deepEqual(updateCalls[0], [
-    { _id: pipelineId },
+    { _id: pipelineId, executionId: null },
     { $unset: { machineInfo: '', cloudJobId: '', progress: '', statusMessage: '' } },
   ]);
+});
+
+test('PipelineManager.changeStatusFromApi never ends a running execution', async (t) => {
+  const manager = new PipelineManager();
+  const transitionSets: any[] = [];
+
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', () =>
+    createExecResult()
+  );
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    changeStatus: async (payload: any) => {
+      transitionSets.push(payload.transitions.map((entry: any) => `${entry.from}->${entry.to}`));
+      return true;
+    },
+  } as any);
+
+  await manager.changeStatusFromApi({
+    pipelineId: new Types.ObjectId(),
+    status: PipelineStatus.idle,
+  });
+
+  assert.deepEqual(transitionSets, [['idle->queued', 'queued->idle', 'queued->running']]);
 });

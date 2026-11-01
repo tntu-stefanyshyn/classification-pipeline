@@ -48,6 +48,7 @@ export const setEnv = (t: TestContext, key: string, value?: string) => {
 export const loadFreshModule = <T>(modulePath: string): T => {
   const resolved = require.resolve(modulePath);
   delete require.cache[resolved];
+  // eslint-disable-next-line @typescript-eslint/no-var-requires -- the test needs the CommonJS module instance
   return require(resolved) as T;
 };
 

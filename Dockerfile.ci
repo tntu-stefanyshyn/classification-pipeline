@@ -21,4 +21,6 @@ COPY . .
 RUN python3 -m pip install --no-cache-dir -e './aws-jobs[dev]' \
     && npm ci --no-audit --no-fund
 
-CMD ["sh", "-c", "mkdir -p /tmp/mongodb && mongod --dbpath /tmp/mongodb --bind_ip 127.0.0.1 --fork --logpath /tmp/mongod.log && npm test"]
+# MongoDB starts whatever command the container runs, because CI replaces CMD.
+ENTRYPOINT ["sh", "-c", "mkdir -p /tmp/mongodb && mongod --dbpath /tmp/mongodb --bind_ip 127.0.0.1 --fork --logpath /tmp/mongod.log >/dev/null && exec \"$@\"", "--"]
+CMD ["npm", "test"]

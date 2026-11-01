@@ -52,6 +52,7 @@ test('warmupLocalDockerImage builds the docker image when it is missing', async 
   t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
   setEnv(t, 'AWS_JOBS_DIR', tempDir);
 
+  // eslint-disable-next-line @typescript-eslint/no-var-requires -- stubbing needs the CommonJS module object
   const childProcess = require('node:child_process') as typeof import('node:child_process');
   const spawnCalls: SpawnCall[] = [];
   stub(t, childProcess as any, 'spawn', ((
@@ -91,6 +92,7 @@ test('runPythonHandler starts docker with compute payload and writes handler inp
   setEnv(t, 'LOCAL_WORKER_REBUILD_IMAGE', '0');
   setEnv(t, 'NODE_ENV', 'production');
 
+  // eslint-disable-next-line @typescript-eslint/no-var-requires -- stubbing needs the CommonJS module object
   const childProcess = require('node:child_process') as typeof import('node:child_process');
   const spawnCalls: SpawnCall[] = [];
   stub(t, childProcess as any, 'spawn', ((

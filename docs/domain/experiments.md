@@ -54,6 +54,7 @@ status message "Зупинено користувачем". The pipeline history
 
 ## GraphQL behavior
 
+- Only the owner of an experiment can start, stop, pause, resume, optimize or read its runs; workers report with the service token. See [Authentication](../api/authentication.md).
 - `enqueueExperimentRuns` checks the graph settings and the classification stage coverage, then moves `idle` pipelines to `queued`.
 - `stopExperimentRun(input: { runId })` stops a `running` pipeline and returns it to `idle`; for any other status it returns the pipeline unchanged. A cloud job is cancelled first when one exists.
 - `PipelineStatus.idle` is also what the UI shows for a path that has no runs.

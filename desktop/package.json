@@ -50,7 +50,7 @@
     "@graphql-codegen/typescript": "^5.0.7",
     "@graphql-codegen/typescript-operations": "^5.0.7",
     "@graphql-codegen/typescript-react-apollo": "^4.3.4",
-    "@graphql-tools/code-file-loader": "^8.1.27",
+    "@graphql-tools/code-file-loader": "^9.1.0",
     "@tsconfig/node24": "^24.0.5",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/node": "^24.19.2",

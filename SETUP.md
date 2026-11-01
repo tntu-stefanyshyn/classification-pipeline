@@ -1,5 +1,3 @@
-English | [Українська](SETUP.uk.md)
-
 # Minimal local setup: WSL and Linux
 
 Run the backend, MongoDB, and desktop app locally, with AWS S3 for CSV uploads.

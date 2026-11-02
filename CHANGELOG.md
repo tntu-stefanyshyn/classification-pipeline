@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `docs/index.md`, `docs/getting-started`, `docs/architecture`, `docs/domain`, `docs/api` and `docs/operations` sections.
 - `docs/api/authentication.md` describes the user JWT and service token rules.
+- Session refresh: `login` and `register` also return a `refreshToken`, and the new `refreshSession` and `logout` mutations rotate and revoke it. A reused refresh token ends the whole session. The access token now lives `ACCESS_TOKEN_TTL` (15 minutes by default), the refresh token `REFRESH_TOKEN_TTL` (30 days).
+- The desktop refreshes an expired session and repeats the request, and opens the login page with a notice only when the session cannot be refreshed. Signing out revokes the session on the server.
+- Authentication errors carry `extensions.code: "UNAUTHENTICATED"`.
 
 ### Security
 

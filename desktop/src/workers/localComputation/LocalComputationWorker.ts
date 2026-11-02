@@ -1,18 +1,15 @@
 import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { app } from 'electron';
-import {
-  PipelineMachineInfoInput,
-  ComputationQueue,
-  PipelineStatus,
-} from '../../graphql/types.generated';
+import { PipelineMachineInfoInput, ComputationQueue } from '../../graphql/types.generated';
 import { createGraphqlClient, GraphqlClient, isFetchAvailable } from './graphqlClient';
 import {
-  changePipelineStatus,
   claimExperimentRun,
+  failExperimentRun,
   fetchExperimentForRun,
   fetchExperimentRun,
 } from './graphqlOperations';
+import { isCurrentExecution } from './currentExecution';
 import { buildHandlerPayload } from './payloadBuilder';
 import { runPythonHandler, warmupLocalDockerImage } from './pythonRunner';
 
@@ -84,10 +81,10 @@ export class LocalComputationWorker {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Локальне обчислення завершилося з помилкою';
-        await changePipelineStatus(this.requireClient(), {
-          pipelineId: run._id,
-          status: PipelineStatus.idle,
-          message,
+        await failExperimentRun(this.requireClient(), {
+          runId: run._id,
+          executionId: run.executionId,
+          statusMessage: message,
         });
       }
     }
@@ -102,7 +99,7 @@ export class LocalComputationWorker {
     }
 
     const abortController = new AbortController();
-    const stopWatcher = this.startPauseWatcher(run._id, abortController);
+    const stopWatcher = this.startPauseWatcher(run._id, run.executionId, abortController);
     const payload = buildHandlerPayload(run, experiment);
 
     try {
@@ -121,10 +118,10 @@ export class LocalComputationWorker {
           onError: async (message) => {
             if (abortController.signal.aborted) return;
             console.log({ statusMessage: message });
-            await changePipelineStatus(this.requireClient(), {
-              pipelineId: run._id,
-              status: PipelineStatus.idle,
-              message,
+            await failExperimentRun(this.requireClient(), {
+              runId: run._id,
+              executionId: run.executionId,
+              statusMessage: message,
             });
           },
         }
@@ -139,7 +136,7 @@ export class LocalComputationWorker {
     }
   }
 
-  private startPauseWatcher(runId: string, controller: AbortController) {
+  private startPauseWatcher(runId: string, executionId: string, controller: AbortController) {
     let stopped = false;
     const pollMs = Number(process.env.LOCAL_WORKER_STATUS_POLL_MS ?? DEFAULT_POLL_MS);
     const loop = async () => {
@@ -152,7 +149,7 @@ export class LocalComputationWorker {
         if (stopped || controller.signal.aborted) return;
         try {
           const run = await fetchExperimentRun(this.requireClient(), runId);
-          if (run && run.status !== PipelineStatus.running) {
+          if (run && !isCurrentExecution(run, executionId)) {
             controller.abort();
             return;
           }

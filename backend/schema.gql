@@ -28,6 +28,7 @@ enum ClassificationStage {
 }
 
 input CompletePipelineInput {
+  executionId: ID!
   payload: ComputationResultPayloadInput!
   pipelineId: ID!
 }
@@ -126,6 +127,12 @@ enum ExperimentStatus {
   optimization
 }
 
+input FailExperimentRunInput {
+  executionId: ID!
+  runId: ID!
+  statusMessage: String
+}
+
 input GenerateExperimentGraphInput {
   _id: ID!
   stages: [GraphStageSelectionInput!]!
@@ -219,6 +226,7 @@ type Mutation {
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!, detachExperimentIds: [ID!]): UploadedFile!
   enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
+  failExperimentRun(input: FailExperimentRunInput!): Pipeline!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
   pauseExperimentRuns(experimentId: ID!): [Pipeline!]!
@@ -254,6 +262,7 @@ type Pipeline {
   _id: ID!
   computingResult: ComputationResultPayload
   createdAt: DateTimeISO!
+  executionId: ID
   experimentId: ID!
   graphStructureId: ID!
   history: [PipelineHistoryItem!]!
@@ -404,6 +413,7 @@ input UpdatePipelineOptimizationInput {
 }
 
 input UpdatePipelineProgressInput {
+  executionId: ID!
   message: String
   pipelineId: ID!
   progress: Float

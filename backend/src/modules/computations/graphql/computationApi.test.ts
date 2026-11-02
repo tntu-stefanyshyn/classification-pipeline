@@ -168,6 +168,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         experimentId,
         complete: {
           pipelineId: runId,
+          executionId: '4',
           payload: {
             accuracyScores: [0.9],
             f1Scores: [0.8],
@@ -237,6 +238,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
       'completePipeline',
       {
         pipelineId: runId,
+        executionId: '4',
         payload: {
           accuracyScores: [0.9],
           f1Scores: [0.8],
@@ -258,4 +260,22 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
       },
     ],
   ]);
+});
+
+test('execution reports require an executionId in the GraphQL contract', async () => {
+  const schema = buildGraphqlSchema([ComputationResolver]);
+
+  const result = await executeGraphql(
+    schema,
+    `
+      mutation Fail($input: FailExperimentRunInput!) {
+        failExperimentRun(input: $input) {
+          _id
+        }
+      }
+    `,
+    { variables: { input: { runId: new Types.ObjectId().toHexString() } } }
+  );
+
+  assert.match(String(result.errors?.[0]?.message), /executionId/);
 });

@@ -4,6 +4,7 @@ import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
+import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
 import { ComputationManager } from '../services/ComputationManager';
 import { Pipeline } from '../../../core/pipeline';
 import { PipelineMachineInfoInput } from '../../../core/pipeline/classes/PipelineMachineInfo';
@@ -74,13 +75,23 @@ export class ComputationResolver {
     return this.manager.resumeExperimentRuns(experimentId);
   }
 
+  /** False when the report came from an execution that is no longer current. */
   @Mutation(() => Boolean)
-  async completePipeline(
+  completePipeline(
     @Arg('input', () => CompletePipelineInput) input: CompletePipelineInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
     this.auth.requireService(context.req);
-    await this.manager.completePipeline(input);
-    return true;
+    return this.manager.completePipeline(input);
+  }
+
+  /** Ends the run as failed only if `executionId` is still its current execution. */
+  @Mutation(() => Pipeline)
+  failExperimentRun(
+    @Arg('input', () => FailExperimentRunInput) input: FailExperimentRunInput,
+    @Ctx() context: GraphQLContext
+  ): Promise<Pipeline> {
+    this.auth.requireService(context.req);
+    return this.manager.failRun(input);
   }
 }

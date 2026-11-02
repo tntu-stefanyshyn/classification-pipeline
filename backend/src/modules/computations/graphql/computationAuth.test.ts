@@ -29,6 +29,7 @@ const ownerId = new Types.ObjectId().toHexString();
 const strangerId = new Types.ObjectId().toHexString();
 const experimentId = new Types.ObjectId().toHexString();
 const pipelineId = new Types.ObjectId().toHexString();
+const executionId = new Types.ObjectId().toHexString();
 
 const schema = buildGraphqlSchema([ComputationResolver, PipelineResolver, Experiments]);
 
@@ -96,10 +97,11 @@ const stubBackend = (t: TestContext) => {
   stub(t, manager, 'claimNextRun', record('claimNextRun', pipeline));
   stub(t, manager, 'pauseExperimentRuns', record('pauseExperimentRuns', [pipeline]));
   stub(t, manager, 'resumeExperimentRuns', record('resumeExperimentRuns', [pipeline]));
-  stub(t, manager, 'completePipeline', record('completePipeline', undefined));
+  stub(t, manager, 'completePipeline', record('completePipeline', true));
+  stub(t, manager, 'failRun', record('failRun', pipeline));
 
   const pipelineManager = PipelineManager.prototype as unknown as Record<string, unknown>;
-  stub(t, pipelineManager, 'changeStatus', record('changeStatus', true));
+  stub(t, pipelineManager, 'changeStatusFromApi', record('changeStatusFromApi', true));
 
   const experiments = ExperimentManager.prototype as unknown as Record<string, unknown>;
   stub(t, experiments, 'updateExperimentProgress', record('updateExperimentProgress', true));
@@ -203,6 +205,7 @@ const operations: Array<{
     variables: {
       input: {
         pipelineId,
+        executionId,
         payload: {
           accuracyScores: [0.9],
           f1Scores: [0.8],
@@ -226,11 +229,19 @@ const operations: Array<{
     expected: WORKER_ONLY,
   },
   {
+    name: 'failExperimentRun',
+    executes: 'failRun',
+    source:
+      'mutation($input: FailExperimentRunInput!) { failExperimentRun(input: $input) { _id } }',
+    variables: { input: { runId: pipelineId, executionId, statusMessage: 'Failed' } },
+    expected: WORKER_ONLY,
+  },
+  {
     name: 'updatePipelineProgress',
     executes: 'updatePipelineProgress',
     source:
       'mutation($input: UpdatePipelineProgressInput!) { updatePipelineProgress(input: $input) { _id } }',
-    variables: { input: { pipelineId, progress: 10, message: 'Working' } },
+    variables: { input: { pipelineId, executionId, progress: 10, message: 'Working' } },
     expected: WORKER_ONLY,
   },
   {
@@ -272,7 +283,7 @@ const operations: Array<{
   },
   {
     name: 'changePipelineStatus',
-    executes: 'changeStatus',
+    executes: 'changeStatusFromApi',
     source: 'mutation($input: ChangePipelineStatusInput!) { changePipelineStatus(input: $input) }',
     variables: { input: { pipelineId, status: 'queued' } },
     expected: OWNER_OR_WORKER(PIPELINE_NOT_FOUND),

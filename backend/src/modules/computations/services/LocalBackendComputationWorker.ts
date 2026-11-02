@@ -81,7 +81,7 @@ export class LocalBackendComputationWorker {
         console.log(
           `[local-backend-worker][${runId}] Взято в обробку backend-обчислення з cloud черги.`
         );
-        await this.processRun(runId);
+        await this.processRun(runId, run.executionId!);
       } else {
         await this.logIdleQueueState();
       }
@@ -92,15 +92,15 @@ export class LocalBackendComputationWorker {
     this.running = false;
   }
 
-  private async processRun(runId: string) {
+  private async processRun(runId: string, executionId: number) {
     const abortController = new AbortController();
     this.activeControllers.set(runId, abortController);
-    const stopWatcher = this.startStatusWatcher(runId, abortController);
+    const stopWatcher = this.startStatusWatcher(runId, executionId, abortController);
 
     try {
-      await this.runComputeContainer(runId, abortController.signal);
+      await this.runComputeContainer(runId, executionId, abortController.signal);
       if (abortController.signal.aborted) {
-        await this.recoverAbortedRun(runId);
+        await this.recoverAbortedRun(runId, executionId);
         return;
       }
 
@@ -108,35 +108,37 @@ export class LocalBackendComputationWorker {
       if (workflow?.status === PipelineStatus.running) {
         await this.manager.failRun({
           runId,
+          executionId,
           statusMessage: 'Локальний запуск завершився без фінального статусу.',
         });
       }
     } catch (error) {
       if (abortController.signal.aborted) {
-        await this.recoverAbortedRun(runId);
+        await this.recoverAbortedRun(runId, executionId);
         return;
       }
       const message =
         error instanceof Error ? error.message : 'Локальне обчислення завершилось з помилкою';
-      await this.manager.failRun({ runId, statusMessage: message });
+      await this.manager.failRun({ runId, executionId, statusMessage: message });
     } finally {
       stopWatcher();
       this.activeControllers.delete(runId);
     }
   }
 
-  private async recoverAbortedRun(runId: string) {
+  private async recoverAbortedRun(runId: string, executionId: number) {
     const workflow = await this.getWorkflow(runId);
     if (!workflow) return;
     if (workflow.status === PipelineStatus.running && this.stopping) {
       await this.manager.failRun({
         runId,
+        executionId,
         statusMessage: 'Локальний backend-воркер зупинено.',
       });
     }
   }
 
-  private startStatusWatcher(runId: string, controller: AbortController) {
+  private startStatusWatcher(runId: string, executionId: number, controller: AbortController) {
     let stopped = false;
     const loop = async () => {
       while (!stopped && !controller.signal.aborted) {
@@ -147,8 +149,13 @@ export class LocalBackendComputationWorker {
         await sleep(this.pollMs);
         if (stopped || controller.signal.aborted) return;
 
+        // The run may already be running again as a newer execution.
         const workflow = await this.getWorkflow(runId);
-        if (!workflow || workflow.status !== PipelineStatus.running) {
+        if (
+          !workflow ||
+          workflow.status !== PipelineStatus.running ||
+          workflow.executionId !== executionId
+        ) {
           controller.abort();
           return;
         }
@@ -161,7 +168,7 @@ export class LocalBackendComputationWorker {
     };
   }
 
-  private async runComputeContainer(runId: string, signal?: AbortSignal) {
+  private async runComputeContainer(runId: string, executionId: number, signal?: AbortSignal) {
     const backendUrl = this.resolveContainerBackendUrl();
     console.log(
       `[local-backend-worker][${runId}] Запускаю Docker image "${this.dockerImage}" для обчислення.`
@@ -171,7 +178,7 @@ export class LocalBackendComputationWorker {
       '--rm',
       '-i',
       '--env',
-      `COMPUTE_PAYLOAD_JSON=${JSON.stringify({ pipelineId: runId })}`,
+      `COMPUTE_PAYLOAD_JSON=${JSON.stringify({ pipelineId: runId, executionId: String(executionId) })}`,
       '--env',
       `COMPUTE_BACKEND_URL=${backendUrl}`,
     ];

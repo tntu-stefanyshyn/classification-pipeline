@@ -260,7 +260,7 @@ Do not mix up the two scenarios:
 
 Technical note:
 
-- `CloudComputationWorker` already reserves `result_s3_bucket` and `result_s3_key` in the payload of cloud runs.
+- `CloudComputationWorker` already reserves `result_s3_bucket` and `result_s3_key` in the payload of cloud runs. The key is separate for each execution: `<prefix>/<runId>/<executionId>.json`; a writer must use exactly `result_s3_key` from the payload (see [Execution identity](../domain/experiments.md#execution-identity)).
 - However, the current `compute_handler.py` completes the pipeline through GraphQL callbacks and requires `COMPUTE_BACKEND_URL`.
 - A fully S3-based completion flow needs separate work in the Python handler or in a reconciliation mechanism on the backend.
 

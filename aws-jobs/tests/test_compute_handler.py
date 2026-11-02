@@ -323,7 +323,7 @@ class ComputeHandlerTests(unittest.TestCase):
 
     def test_main_uses_environment_token_for_the_final_status(self):
         module = load_compute_handler()
-        payload = {"pipelineId": "pipe-1"}
+        payload = {"pipelineId": "pipe-1", "executionId": "3"}
         result = {"accuracyScores": [0.9], "sampleCount": 8, "duration": 1.5}
 
         with patch.dict(
@@ -345,11 +345,12 @@ class ComputeHandlerTests(unittest.TestCase):
             payload=result,
             pipelineId="pipe-1",
             token="env-token",
+            executionId="3",
         )
 
     def test_main_uses_environment_token_for_the_failure_message(self):
         module = load_compute_handler()
-        payload = {"pipelineId": "pipe-1"}
+        payload = {"pipelineId": "pipe-1", "executionId": "3"}
         emits = []
 
         with patch.dict(

@@ -86,7 +86,13 @@ test('LocalComputationWorker authenticates its requests and the container with t
       return {
         claimExperimentRun:
           claims === 1
-            ? { _id: 'run-1', experimentId: 'exp-1', queue: 'local', pathNodeIds: ['node-1'] }
+            ? {
+                _id: 'run-1',
+                executionId: '1',
+                experimentId: 'exp-1',
+                queue: 'local',
+                pathNodeIds: ['node-1'],
+              }
             : null,
       };
     }

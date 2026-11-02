@@ -20,6 +20,8 @@ An empty `BACKEND_SERVICE_TOKEN` matches nothing, so worker operations stay clos
 
 The owner is the user whose id is stored in the `createdById` field of the experiment. A pipeline belongs to the owner of its experiment.
 
+Resolvers authenticate the request (`AuthFlow.me` for user operations, `AuthFlow.authenticate` where the service token is also allowed) and pass the user id or the principal to `ExperimentAccess`. It holds the ownership rules and does not depend on HTTP.
+
 ## Errors
 
 - A request without a token gets `Not authenticated`.

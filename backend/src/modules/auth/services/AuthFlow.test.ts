@@ -1,14 +1,27 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 
+import { config } from '../../../config/config';
 import { UserModel } from '../../../core/user';
 import { stub } from '../../../test/testUtils';
+import { RefreshTokenModel } from '../models/RefreshTokenModel';
 import { AuthFlow } from './AuthFlow';
+
+const stubRefreshTokens = (t: TestContext) => {
+  const created: any[] = [];
+  stub(t, RefreshTokenModel as unknown as Record<string, unknown>, 'create', async (doc: any) => {
+    created.push(doc);
+    return doc;
+  });
+  return created;
+};
 
 test('AuthFlow.register normalizes user data and returns a token', async (t) => {
   const authFlow = new AuthFlow();
+  const refreshTokens = stubRefreshTokens(t);
   const createdUser = {
     _id: new Types.ObjectId(),
     email: 'user@example.com',
@@ -48,6 +61,8 @@ test('AuthFlow.register normalizes user data and returns a token', async (t) => 
   assert.equal(result.user, createdUser);
   assert.equal(typeof result.token, 'string');
   assert.ok(result.token.length > 20);
+  assert.equal(refreshTokens.length, 1);
+  assert.equal(String(refreshTokens[0].userId), String(createdUser._id));
 });
 
 test('AuthFlow.register rejects duplicate emails', async (t) => {
@@ -67,8 +82,9 @@ test('AuthFlow.register rejects duplicate emails', async (t) => {
   );
 });
 
-test('AuthFlow.login returns a token for valid credentials', async (t) => {
+test('AuthFlow.login returns an access token and a refresh token', async (t) => {
   const authFlow = new AuthFlow();
+  const refreshTokens = stubRefreshTokens(t);
   const user = {
     _id: new Types.ObjectId(),
     email: 'user@example.com',
@@ -95,6 +111,15 @@ test('AuthFlow.login returns a token for valid credentials', async (t) => {
   assert.equal(result.user, user);
   assert.equal(typeof result.token, 'string');
   assert.ok(result.token.length > 20);
+  // The access token lives ACCESS_TOKEN_TTL (15 minutes by default).
+  const claims = jwt.verify(result.token, config.jwtSecret) as jwt.JwtPayload;
+  assert.equal(claims.sub, user._id.toString());
+  assert.equal(claims.exp! - claims.iat!, 15 * 60);
+  // Only the hash of the refresh token is stored.
+  assert.ok(result.refreshToken.length >= 40);
+  assert.equal(refreshTokens.length, 1);
+  assert.notEqual(refreshTokens[0].tokenHash, result.refreshToken);
+  assert.match(refreshTokens[0].tokenHash, /^[0-9a-f]{64}$/);
 });
 
 test('AuthFlow.login rejects invalid credentials', async (t) => {

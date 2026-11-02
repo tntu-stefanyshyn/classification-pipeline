@@ -12,6 +12,12 @@ import { AuthPayload } from './classes/AuthPayload';
 import { LoginInput } from './classes/LoginInput';
 import { RegisterInput } from './classes/RegisterInput';
 import { AuthFlow } from './services/AuthFlow';
+import {
+  accessTokenTtlSeconds,
+  durationToSeconds,
+  refreshTokenTtlSeconds,
+} from './constants/token';
+import { UNAUTHENTICATED } from './errors';
 
 test('auth classes store assigned values and resolver delegates to AuthFlow', async (t) => {
   const payload = new AuthPayload();
@@ -142,4 +148,73 @@ test('AuthFlow.requireService rejects anything except the service token', (t) =>
   assert.doesNotThrow(() => flow.requireService(req('Bearer svc-token')));
   assert.throws(() => flow.requireService(req('Bearer user-jwt')), /Not authenticated/);
   assert.throws(() => flow.requireService(req()), /Not authenticated/);
+});
+
+test('durationToSeconds accepts seconds and s, m, h, d units', () => {
+  assert.equal(durationToSeconds('900'), 900);
+  assert.equal(durationToSeconds('15m'), 900);
+  assert.equal(durationToSeconds(' 12h '), 43200);
+  assert.equal(durationToSeconds('30D'), 2592000);
+  for (const invalid of ['', '0', '-5m', '1.5h', '10w', 'soon']) {
+    assert.throws(() => durationToSeconds(invalid), /Invalid duration/);
+  }
+});
+
+test('token lifetimes come from ACCESS_TOKEN_TTL and REFRESH_TOKEN_TTL', (t) => {
+  const original = { ...config.auth };
+  t.after(() => {
+    Object.assign(config.auth, original);
+  });
+
+  assert.equal(accessTokenTtlSeconds(), 15 * 60);
+  assert.equal(refreshTokenTtlSeconds(), 30 * 86400);
+  config.auth.accessTokenTtl = '5m';
+  config.auth.refreshTokenTtl = '7d';
+  assert.equal(accessTokenTtlSeconds(), 300);
+  assert.equal(refreshTokenTtlSeconds(), 7 * 86400);
+});
+
+test('every AuthFlow authentication failure carries the UNAUTHENTICATED code', async (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  config.backend.serviceToken = 'svc-token';
+  const flow = new AuthFlow();
+  const req = (authorization?: string) => ({ headers: { authorization } }) as any;
+  const expectCode = (message: RegExp) => (error: any) => {
+    assert.match(error.message, message);
+    assert.equal(error.extensions?.code, UNAUTHENTICATED);
+    return true;
+  };
+
+  await assert.rejects(() => flow.me(req()), expectCode(/^Not authenticated$/));
+  await assert.rejects(() => flow.me(req('Bearer garbage')), expectCode(/jwt malformed/));
+  const expired = jwt.sign({ sub: new Types.ObjectId().toString() }, config.jwtSecret, {
+    expiresIn: -10,
+  });
+  await assert.rejects(() => flow.me(req(`Bearer ${expired}`)), expectCode(/jwt expired/));
+  const withoutSubject = jwt.sign({ email: 'user@example.com' }, config.jwtSecret);
+  await assert.rejects(
+    () => flow.me(req(`Bearer ${withoutSubject}`)),
+    expectCode(/Invalid token payload/)
+  );
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findById', async () => null);
+  const forDeletedUser = jwt.sign({ sub: new Types.ObjectId().toString() }, config.jwtSecret);
+  await assert.rejects(
+    () => flow.me(req(`Bearer ${forDeletedUser}`)),
+    expectCode(/User not found/)
+  );
+  assert.throws(() => flow.requireService(req('Bearer user-jwt')), expectCode(/Not authenticated/));
+});
+
+test('a 7-day token issued before this change keeps working until it expires', async (t) => {
+  const flow = new AuthFlow();
+  const user = { _id: new Types.ObjectId(), email: 'user@example.com' };
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findById', async () => user);
+  const legacy = jwt.sign({ sub: user._id.toString(), email: user.email }, config.jwtSecret, {
+    expiresIn: '7d',
+  });
+
+  assert.equal(await flow.me({ headers: { authorization: `Bearer ${legacy}` } } as any), user);
 });

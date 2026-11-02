@@ -142,3 +142,68 @@ test('Auth GraphQL executes register, login and me through the schema', async (t
     ['me', 'Bearer token'],
   ]);
 });
+
+test('Auth GraphQL exposes refreshSession and logout without an access token', async (t) => {
+  const schema = buildGraphqlSchema([Auth]);
+  const userId = new Types.ObjectId();
+  const calls: any[] = [];
+
+  stub(
+    t,
+    AuthFlow.prototype as unknown as Record<string, unknown>,
+    'refreshSession',
+    async (refreshToken: string) => {
+      calls.push(['refreshSession', refreshToken]);
+      return {
+        token: 'next-access',
+        refreshToken: 'next-refresh',
+        user: { _id: userId, email: 'tester@example.com' },
+      };
+    }
+  );
+  stub(
+    t,
+    AuthFlow.prototype as unknown as Record<string, unknown>,
+    'logout',
+    async (refreshToken: string) => {
+      calls.push(['logout', refreshToken]);
+      return true;
+    }
+  );
+
+  const refreshed = await executeGraphql(
+    schema,
+    `mutation($refreshToken: String!) {
+      refreshSession(refreshToken: $refreshToken) { token refreshToken user { _id } }
+    }`,
+    { variables: { refreshToken: 'old-refresh' } }
+  );
+  const loggedOut = await executeGraphql(
+    schema,
+    `mutation($refreshToken: String!) { logout(refreshToken: $refreshToken) }`,
+    { variables: { refreshToken: 'next-refresh' } }
+  );
+
+  assert.equal(refreshed.errors, undefined);
+  assert.deepEqual(toPlainValue(refreshed.data), {
+    refreshSession: {
+      token: 'next-access',
+      refreshToken: 'next-refresh',
+      user: { _id: userId.toHexString() },
+    },
+  });
+  assert.deepEqual(toPlainValue(loggedOut.data), { logout: true });
+  assert.deepEqual(calls, [
+    ['refreshSession', 'old-refresh'],
+    ['logout', 'next-refresh'],
+  ]);
+});
+
+test('Auth GraphQL reports authentication failures with the UNAUTHENTICATED code', async () => {
+  const schema = buildGraphqlSchema([Auth]);
+
+  const result = await executeGraphql(schema, 'query { me { _id } }');
+
+  assert.equal(result.errors?.[0]?.message, 'Not authenticated');
+  assert.equal(result.errors?.[0]?.extensions?.code, 'UNAUTHENTICATED');
+});

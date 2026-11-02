@@ -13,6 +13,8 @@ import { UpdatePipelineProgressInput } from './classes/UpdatePipelineProgressInp
 import { PipelineStatus } from './enums';
 import { PipelineResolver } from './graphql/pipeline';
 import { createLeanResult, stub } from '../../test/testUtils';
+import { WorkflowType } from '../workflow/enums';
+import { WorkflowModel } from '../workflow/model/WorkflowModel';
 
 test('core pipeline classes keep assigned values and exports remain available', () => {
   const now = new Date();
@@ -154,6 +156,61 @@ test('PipelineBaseService.updatePipelineProgress updates progress and optional h
   assert.equal(updateCalls[0][1].$set.progress, 55);
   assert.equal(updateCalls[0][1].$push.history.message, 'Halfway');
   assert.equal(updateCalls[0][1].$push.history.status, PipelineStatus.running);
+});
+
+test('PipelineBaseService.updatePipelineProgress stores the run status with a message-only update', async (t) => {
+  const updateCalls: any[] = [];
+  const workflowQueries: any[] = [];
+
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
+    updateCalls.push(args);
+    return createLeanResult({ acknowledged: true });
+  });
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', (query: any) => {
+    workflowQueries.push(query);
+    return { sort: () => createLeanResult({ status: PipelineStatus.running }) };
+  });
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
+    _id: 'pipeline-1',
+  }));
+
+  // aws-jobs sends only a message: UpdatePipelineProgressInput has no status field.
+  await PipelineBaseService.updatePipelineProgress({
+    pipelineId: 'pipeline-1',
+    executionId: '3',
+    progress: 3,
+    message: 'Зчитування файлу ЕЕГ',
+  });
+
+  assert.deepEqual(workflowQueries, [{ instanceId: 'pipeline-1', type: WorkflowType.PIPELINE }]);
+  assert.equal(updateCalls[0][1].$push.history.message, 'Зчитування файлу ЕЕГ');
+  assert.equal(updateCalls[0][1].$push.history.status, PipelineStatus.running);
+});
+
+test('PipelineBaseService.updatePipelineProgress reads no status for a progress-only update', async (t) => {
+  const updateCalls: any[] = [];
+  let workflowReads = 0;
+
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'updateOne', (...args: any[]) => {
+    updateCalls.push(args);
+    return createLeanResult({ acknowledged: true });
+  });
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () => {
+    workflowReads += 1;
+    return { sort: () => createLeanResult({ status: PipelineStatus.running }) };
+  });
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
+    _id: 'pipeline-1',
+  }));
+
+  await PipelineBaseService.updatePipelineProgress({
+    pipelineId: 'pipeline-1',
+    executionId: '3',
+    progress: 40,
+  });
+
+  assert.equal(workflowReads, 0);
+  assert.deepEqual(updateCalls[0][1], { $set: { progress: 40 } });
 });
 
 test('PipelineBaseService.updatePipelineProgress skips history when message and status are absent', async (t) => {

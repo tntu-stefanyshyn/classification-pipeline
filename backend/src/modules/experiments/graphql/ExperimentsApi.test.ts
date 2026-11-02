@@ -169,6 +169,12 @@ test('Experiments GraphQL executes mutations through the schema', async (t) => {
   }));
   stub(
     t,
+    AuthFlow.prototype as unknown as Record<string, unknown>,
+    'requireService',
+    () => undefined
+  );
+  stub(
+    t,
     ExperimentManager.prototype as unknown as Record<string, unknown>,
     'create',
     async (...args: any[]) => {

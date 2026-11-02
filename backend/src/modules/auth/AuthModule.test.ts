@@ -129,3 +129,17 @@ test('AuthFlow.isService accepts only the configured service token', (t) => {
   config.backend.serviceToken = '';
   assert.equal(flow.isService(req('Bearer ')), false);
 });
+
+test('AuthFlow.requireService rejects anything except the service token', (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  const flow = new AuthFlow();
+  const req = (authorization?: string) => ({ headers: { authorization } }) as any;
+
+  config.backend.serviceToken = 'svc-token';
+  assert.doesNotThrow(() => flow.requireService(req('Bearer svc-token')));
+  assert.throws(() => flow.requireService(req('Bearer user-jwt')), /Not authenticated/);
+  assert.throws(() => flow.requireService(req()), /Not authenticated/);
+});

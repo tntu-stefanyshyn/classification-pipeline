@@ -10,7 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Documentation is consolidated under `docs/` with an index and a language policy (English only).
 - Documentation statements that no longer matched the code were corrected (pipeline statuses, experiment statuses, aws-jobs Docker images).
+- The desktop worker for the `local` queue now requires `BACKEND_SERVICE_TOKEN` (`desktop/.env` or the shell).
+- AWS Batch job definitions now require `COMPUTE_BACKEND_TOKEN`.
 
 ### Added
 
 - `docs/index.md`, `docs/getting-started`, `docs/architecture`, `docs/domain`, `docs/api` and `docs/operations` sections.
+- `docs/api/authentication.md` describes the user JWT and service token rules.
+
+### Security
+
+- Run operations and the `pipeline` and `pipelines` queries are limited to the owner of the experiment.
+- Worker operations require the service token.
+- `completePipeline` in aws-jobs no longer prints the token to the logs.
+
+### Fixed
+
+- Runs on the `local` queue no longer fail with `Not authenticated`.
+- Compute containers now send the token with every progress update and with the final result.

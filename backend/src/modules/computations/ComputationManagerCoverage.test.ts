@@ -141,6 +141,11 @@ test('ComputationManager.enqueueRuns validates graph settings and queues selecte
     'listByExperiment',
     async () => [{ _id: pipelineId }]
   );
+  let pipelineExperimentId = experimentId;
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
+    _id: pipelineId,
+    experimentId: pipelineExperimentId,
+  }));
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
     getWorkflow: async () => ({ status: workflowStatus }),
   } as any);
@@ -283,6 +288,19 @@ test('ComputationManager.enqueueRuns validates graph settings and queues selecte
     queue: ComputationQueue.local,
   } as any);
   assert.deepEqual(calls, [['changeStatus', { pipelineId, status: PipelineStatus.queued }]]);
+
+  pipelineExperimentId = new Types.ObjectId();
+  calls.length = 0;
+  await assert.rejects(
+    () =>
+      manager.enqueueRuns({
+        experimentId: experimentId.toHexString(),
+        pipelineId: pipelineId.toHexString(),
+        queue: ComputationQueue.local,
+      } as any),
+    /Конвеєр не знайдено/
+  );
+  assert.equal(calls.length, 0);
 
   workflowStatus = PipelineStatus.running;
   calls.length = 0;

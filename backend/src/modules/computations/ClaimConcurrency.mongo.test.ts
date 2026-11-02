@@ -441,8 +441,13 @@ test(
     await useDatabase(t);
     const [runId] = await seedQueuedRuns(1, ComputationQueue.local);
     const resolver = new PipelineResolver();
+    // The caller rules have their own suite in computationAuth.test.ts.
+    stub(t, resolver as unknown as Record<string, unknown>, 'access', {
+      assertPipelineOwnerOrService: async () => undefined,
+    } as any);
+    const context = { req: { headers: {} } } as any;
     const changeStatus = (status: PipelineStatus, message?: string) =>
-      resolver.changePipelineStatus({ pipelineId: runId, status, message } as any);
+      resolver.changePipelineStatus({ pipelineId: runId, status, message } as any, context);
     const state = async () => ({
       workflow: await WorkflowModel.findOne({ instanceId: runId }).lean(),
       pipeline: await PipelineModel.findById(runId).lean(),

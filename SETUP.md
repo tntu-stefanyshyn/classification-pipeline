@@ -155,10 +155,15 @@ Two workers execute runs. The backend's Docker worker
 (`BACKEND_LOCAL_WORKER_ENABLED=true`, the default) consumes the `cloud` queue and
 needs no AWS Batch; the desktop worker executes the `local` queue. Keep
 `BACKEND_CLOUD_WORKER_ENABLED=false` unless you use AWS Batch (the code default is
-`true`, so a missing value logs the "cloud worker disabled" warning at startup). The containers that
-the backend starts authenticate with `BACKEND_SERVICE_TOKEN`; any long random string
-works. The same values apply to the Compose and the manual start below (Compose sets
-`MONGODB_URI` and `BACKEND_GRAPHQL_URL` itself).
+`true`, so a missing value logs the "cloud worker disabled" warning at startup). Both
+workers and their containers authenticate with `BACKEND_SERVICE_TOKEN`; any long random
+string works. The same values apply to the Compose and the manual start below (Compose
+sets `MONGODB_URI` and `BACKEND_GRAPHQL_URL` itself).
+
+The desktop worker needs the same token. Create `desktop/.env` from
+`desktop/.env.example` and set `BACKEND_SERVICE_TOKEN` to the value from `backend/.env`,
+or export the variable in the shell that starts the desktop. See
+[Authentication](docs/api/authentication.md) for the rules.
 
 ### Allow uploads to the bucket from localhost
 
@@ -231,8 +236,8 @@ development; set `LOCAL_WORKER_REBUILD_IMAGE=false` to skip the rebuild). The wo
 queue and executes runs submitted through the app while the desktop is open.
 Remove any old `LOCAL_WORKER_ENABLED=false` override from your shell or launch
 configuration. No separate worker launch or manual image build is needed.
-The desktop uses `http://localhost:4000/graphql` by default, so no desktop `.env`
-is needed. Do not launch the desktop with `sudo`.
+The desktop uses `http://localhost:4000/graphql` by default, so `desktop/.env` only needs
+`BACKEND_SERVICE_TOKEN` (section 3). Do not launch the desktop with `sudo`.
 
 The containers reach the backend at `http://host.docker.internal:4000/graphql`.
 The existing runners add the `host-gateway` mapping for Linux Docker networking.
@@ -259,8 +264,7 @@ To check a computation, create an experiment with the uploaded CSV, select `clou
 (the backend's Docker worker) as the allowed queue, and include a classification
 stage in every graph path. Start a run and inspect its status and the backend logs
 (`docker compose logs -f backend` when using Compose). Runs on the `local` queue are
-executed by the desktop worker, which does not send a token to its container yet;
-see the troubleshooting entry below.
+executed by the desktop worker and appear in the desktop's terminal output.
 
 After all pipelines complete, optimization uses the local `aws-jobs-optimization`
 image. The optimizer and the backend compute containers read the experiment and the
@@ -276,12 +280,14 @@ string and restart the backend.
 - **Docker unavailable or permission denied:** start Docker, check WSL integration
   or Linux user permissions, and confirm `docker info` works without `sudo`.
 - **Local runs stay queued:** keep the desktop open, remove any
-  `LOCAL_WORKER_ENABLED=false` override, and choose the `local` queue.
-- **Run fails with `Not authenticated`:** for runs executed by the backend Docker
-  worker (`cloud` queue), check that `BACKEND_SERVICE_TOKEN` is set in `backend/.env`
-  and restart the backend. The desktop worker for the `local` queue starts its
-  container without a token, so those runs can still fail this way (tracked
-  separately); use the `cloud` queue meanwhile.
+  `LOCAL_WORKER_ENABLED=false` override, choose the `local` queue, and check that
+  `BACKEND_SERVICE_TOKEN` is set for the desktop. Without it the desktop logs
+  `BACKEND_SERVICE_TOKEN не задано; локальний воркер вимкнено` and the worker stays off.
+- **Run fails with `Not authenticated`:** the worker's token does not match the backend.
+  For the `cloud` queue, check that `BACKEND_SERVICE_TOKEN` is set in `backend/.env` and
+  restart the backend. For the `local` queue, also check that `BACKEND_SERVICE_TOKEN` in
+  `desktop/.env` has the same value and restart the desktop. Rebuild the `aws-jobs` image
+  if it predates this check (`docker compose build aws-jobs aws-jobs-optimization`).
 - **Optimization fails with `Not authenticated`:** set `BACKEND_SERVICE_TOKEN` and
   restart the backend.
 - **Container cannot reach the backend:** check that the backend is listening on

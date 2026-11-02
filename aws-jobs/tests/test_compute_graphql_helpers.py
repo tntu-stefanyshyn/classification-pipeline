@@ -125,6 +125,7 @@ class ComputeGraphqlWrapperTests(unittest.TestCase):
             "svc-token",
         )
         self.assertIn("pipe-2", stdout.getvalue())
+        self.assertNotIn("svc-token", stdout.getvalue())
 
 
 if __name__ == "__main__":

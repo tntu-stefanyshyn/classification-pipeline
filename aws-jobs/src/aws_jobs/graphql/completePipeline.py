@@ -26,6 +26,7 @@ def completePipeline(
       "backend_url": backend_url,
       "mutation": mutation,
       "data": variables,
+      "token": token,
     }
   )
   return graphqlRequest(backend_url, mutation, variables, token)

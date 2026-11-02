@@ -260,15 +260,7 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
   const optimizationCalls: any[] = [];
   const statusCalls: any[] = [];
   const workflowCalls: any[] = [];
-  const context = { req: { headers: {} } } as any;
 
-  stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
-    requireService: () => undefined,
-  } as any);
-  stub(t, resolver as unknown as Record<string, unknown>, 'access', {
-    assertExperimentOwnerOrService: async () => undefined,
-    assertPipelineOwnerOrService: async () => undefined,
-  } as any);
   stub(
     t,
     PipelineBaseService as unknown as Record<string, unknown>,
@@ -319,39 +311,30 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
   } as any);
 
   assert.equal(await resolver.status({ _id: pipeline._id } as any), PipelineStatus.completed);
-  assert.deepEqual(await resolver.pipelines('exp-1', context, ComputationQueue.cloud), [pipeline]);
-  assert.equal(await resolver.pipeline('pipeline-1', context), pipeline);
+  assert.deepEqual(await resolver.pipelines('exp-1', ComputationQueue.cloud), [pipeline]);
+  assert.equal(await resolver.pipeline('pipeline-1'), pipeline);
   assert.equal(
-    await resolver.updatePipelineProgress({ pipelineId: 'pipeline-1' } as any, context),
+    await resolver.updatePipelineProgress({ pipelineId: 'pipeline-1' } as any),
     pipeline
   );
   assert.equal(
-    await resolver.updatePipelineOptimization(
-      { pipelineId: 'pipeline-1', score: 0.9 } as any,
-      context
-    ),
+    await resolver.updatePipelineOptimization({ pipelineId: 'pipeline-1', score: 0.9 } as any),
     true
   );
   assert.equal(
-    await resolver.changePipelineStatus(
-      {
-        pipelineId: 'pipeline-1',
-        status: PipelineStatus.queued,
-      } as any,
-      context
-    ),
+    await resolver.changePipelineStatus({
+      pipelineId: 'pipeline-1',
+      status: PipelineStatus.queued,
+    } as any),
     true
   );
 
   await assert.rejects(
     () =>
-      resolver.changePipelineStatus(
-        {
-          pipelineId: 'pipeline-1',
-          status: PipelineStatus.running,
-        } as any,
-        context
-      ),
+      resolver.changePipelineStatus({
+        pipelineId: 'pipeline-1',
+        status: PipelineStatus.running,
+      } as any),
     /claimExperimentRun/
   );
 

@@ -58,8 +58,7 @@ COMPUTE_BACKEND_URL=https://<backend-host>/graphql
 COMPUTE_BACKEND_TOKEN=<service-token>
 ```
 
-`COMPUTE_BACKEND_TOKEN` is required and must equal `BACKEND_SERVICE_TOKEN` of the backend: without it the
-job cannot read its data or report progress and results (see [Authentication](../api/authentication.md)).
+`COMPUTE_BACKEND_TOKEN` is needed when the GraphQL endpoint requires the service token.
 Do not use `host.docker.internal` for AWS: a Batch container cannot reach your local backend.
 
 7. Check the permissions:
@@ -145,7 +144,7 @@ Recommended configuration:
 - Command: `python -u src/aws_jobs/compute_handler.py`
 - Environment:
   - `COMPUTE_BACKEND_URL=https://<backend-host>/graphql`
-  - `COMPUTE_BACKEND_TOKEN=<service-token>` (required, equal to `BACKEND_SERVICE_TOKEN` of the backend)
+  - `COMPUTE_BACKEND_TOKEN=<service-token>` when the GraphQL endpoint requires a token
 
 Container permissions:
 

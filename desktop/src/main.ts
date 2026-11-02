@@ -78,16 +78,6 @@ const buildMenu = () => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 };
 
-// Not bundled: the service token stays out of the packaged app and is read at runtime.
-const loadDevelopmentEnv = () => {
-  if (app.isPackaged) return;
-  try {
-    process.loadEnvFile(path.join(app.getAppPath(), '.env'));
-  } catch {
-    // desktop/.env is optional: the variables can also come from the shell.
-  }
-};
-
 const handleReady = () => {
   createWindow();
   buildMenu();
@@ -98,7 +88,6 @@ const handleReady = () => {
       mainWindow?.webContents.reloadIgnoringCache()
     );
   }
-  loadDevelopmentEnv();
   if (process.env.LOCAL_WORKER_ENABLED !== 'false') {
     localComputationWorker.start();
   }

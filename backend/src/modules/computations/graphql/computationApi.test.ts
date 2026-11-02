@@ -4,8 +4,6 @@ import { Types } from 'mongoose';
 
 import { buildGraphqlSchema, executeGraphql, toPlainValue } from '../../../test/graphqlTestUtils';
 import { stub } from '../../../test/testUtils';
-import { AuthFlow } from '../../auth/services/AuthFlow';
-import { ExperimentAccess } from '../../experiments/services/ExperimentAccess';
 import { ComputationManager } from '../services/ComputationManager';
 import { ComputationResolver } from './computation';
 
@@ -15,25 +13,6 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
   const runId = new Types.ObjectId().toHexString();
   const calls: any[] = [];
 
-  // The caller rules have their own suite in computationAuth.test.ts.
-  stub(
-    t,
-    AuthFlow.prototype as unknown as Record<string, unknown>,
-    'requireService',
-    () => undefined
-  );
-  stub(
-    t,
-    ExperimentAccess.prototype as unknown as Record<string, unknown>,
-    'assertExperimentOwner',
-    async () => undefined
-  );
-  stub(
-    t,
-    ExperimentAccess.prototype as unknown as Record<string, unknown>,
-    'assertPipelineOwner',
-    async () => undefined
-  );
   stub(
     t,
     ComputationManager.prototype as unknown as Record<string, unknown>,

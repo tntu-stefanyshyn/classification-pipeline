@@ -372,7 +372,6 @@ test('Experiments resolver delegates queries, field resolvers and mutations', as
   stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
     me: async () => user,
     isService: () => false,
-    requireService: () => undefined,
   } as any);
   stub(t, resolver as unknown as Record<string, unknown>, 'manager', {
     list: async (...args: any[]) => {
@@ -456,21 +455,15 @@ test('Experiments resolver delegates queries, field resolvers and mutations', as
     true
   );
   assert.equal(
-    await resolver.updateExperimentProgress(
-      { experimentId: experiment._id.toString() } as any,
-      { req: {} } as any
-    ),
+    await resolver.updateExperimentProgress({ experimentId: experiment._id.toString() } as any),
     true
   );
   assert.equal(
-    await resolver.updateExperimentOptimizationResult(
-      {
-        experimentId: experiment._id.toString(),
-        bestPipelineId: 'p',
-        score: 1,
-      } as any,
-      { req: {} } as any
-    ),
+    await resolver.updateExperimentOptimizationResult({
+      experimentId: experiment._id.toString(),
+      bestPipelineId: 'p',
+      score: 1,
+    } as any),
     true
   );
 });

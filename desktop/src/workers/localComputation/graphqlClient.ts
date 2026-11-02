@@ -9,10 +9,7 @@ type GraphQLResponse<T> = {
 export const isFetchAvailable = () => typeof fetch === 'function';
 
 export class GraphqlClient {
-  constructor(
-    private readonly endpoint: string,
-    private readonly token?: string
-  ) {}
+  constructor(private readonly endpoint: string) {}
 
   async request<TData, TVars extends Record<string, unknown> | undefined>(
     document: DocumentNode,
@@ -24,10 +21,7 @@ export class GraphqlClient {
 
     const response = await fetch(this.endpoint, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         query: print(document),
         variables: variables ?? {},
@@ -49,7 +43,7 @@ export class GraphqlClient {
   }
 }
 
-export const createGraphqlClient = (token: string) => {
+export const createGraphqlClient = () => {
   console.log(`Адреса GraphQL: ${config.renderer.graphqlEndpoint}`);
-  return new GraphqlClient(config.renderer.graphqlEndpoint, token);
+  return new GraphqlClient(config.renderer.graphqlEndpoint);
 };

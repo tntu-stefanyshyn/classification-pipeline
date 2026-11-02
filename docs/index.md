@@ -34,7 +34,6 @@ building and running classification experiments.
   - [Experiments and computations](domain/experiments.md)
 - API
   - [API overview and REST report](api/index.md)
-  - [Authentication](api/authentication.md)
   - [GraphQL in the desktop app](api/graphql-client.md)
 - Operations
   - [Continuous integration](operations/ci.md)

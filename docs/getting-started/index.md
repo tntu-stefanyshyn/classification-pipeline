@@ -6,7 +6,6 @@ Use the Node.js version recorded in [`.nvmrc`](../../.nvmrc) (Node.js 24) and np
 
 ```bash
 cp backend/.env.example backend/.env   # set JWT_SECRET, BACKEND_SERVICE_TOKEN and the S3 values
-cp desktop/.env.example desktop/.env   # set the same BACKEND_SERVICE_TOKEN
 docker compose up -d                   # MongoDB, backend, compute images
 npm install && npm run start:desktop   # Electron runs on the host
 ```

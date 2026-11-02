@@ -7,7 +7,6 @@ export type PythonHandlerOptions = {
   pythonBin?: string;
   handlerModule?: string;
   signal?: AbortSignal;
-  backendToken?: string;
 };
 
 export type PythonHandlerCallbacks = {
@@ -171,10 +170,6 @@ export const runPythonHandler = async (
     runArgs.push('--env', `COMPUTE_PAYLOAD_JSON=${computePayloadJson}`);
 
     runArgs.push('--env', `COMPUTE_BACKEND_URL=${payload.backend_url}`);
-
-    if (options.backendToken) {
-      runArgs.push('--env', `COMPUTE_BACKEND_TOKEN=${options.backendToken}`);
-    }
 
     runArgs.push('--add-host', 'host.docker.internal:host-gateway', DOCKER_IMAGE);
 

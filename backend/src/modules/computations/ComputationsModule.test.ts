@@ -97,15 +97,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
   const resolver = new ComputationResolver();
   const pipeline = { _id: new Types.ObjectId() };
   const calls: any[] = [];
-  const context = { req: { headers: {} } } as any;
 
-  stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
-    requireService: () => undefined,
-  } as any);
-  stub(t, resolver as unknown as Record<string, unknown>, 'access', {
-    assertExperimentOwner: async () => undefined,
-    assertPipelineOwner: async () => undefined,
-  } as any);
   stub(t, resolver as unknown as Record<string, unknown>, 'manager', {
     optimize: async (...args: any[]) => {
       calls.push(['optimize', ...args]);
@@ -137,27 +129,24 @@ test('ComputationResolver delegates all operations to ComputationManager', async
     },
   } as any);
 
-  assert.deepEqual(await resolver.optimizeExperimentRuns('exp-1', context), {
+  assert.deepEqual(await resolver.optimizeExperimentRuns('exp-1'), {
     runId: 'pipeline-1',
     pathNodeIds: ['node-1'],
     score: 0.1,
   });
   assert.equal(
-    await resolver.enqueueExperimentRuns(
-      {
-        experimentId: 'exp-1',
-        queue: ComputationQueue.local,
-      } as any,
-      context
-    ),
+    await resolver.enqueueExperimentRuns({
+      experimentId: 'exp-1',
+      queue: ComputationQueue.local,
+    } as any),
     true
   );
-  assert.equal(await resolver.stopExperimentRun({ runId: 'pipeline-1' } as any, context), pipeline);
-  assert.equal(await resolver.claimExperimentRun(ComputationQueue.local, context), pipeline);
-  assert.deepEqual(await resolver.pauseExperimentRuns('exp-1', context), [pipeline]);
-  assert.deepEqual(await resolver.resumeExperimentRuns('exp-1', context), [pipeline]);
+  assert.equal(await resolver.stopExperimentRun({ runId: 'pipeline-1' } as any), pipeline);
+  assert.equal(await resolver.claimExperimentRun(ComputationQueue.local), pipeline);
+  assert.deepEqual(await resolver.pauseExperimentRuns('exp-1'), [pipeline]);
+  assert.deepEqual(await resolver.resumeExperimentRuns('exp-1'), [pipeline]);
   assert.equal(
-    await resolver.completePipeline({ pipelineId: 'pipeline-1', payload: {} } as any, context),
+    await resolver.completePipeline({ pipelineId: 'pipeline-1', payload: {} } as any),
     true
   );
   assert.equal(calls.length, 7);

@@ -246,7 +246,6 @@ class ComputeHandlerTests(unittest.TestCase):
             45.0,
             "http://backend/graphql",
             "pipe-1",
-            "svc-token",
         )
         self.assertEqual(
             result,
@@ -269,108 +268,6 @@ class ComputeHandlerTests(unittest.TestCase):
         self.assertIn('Початок кроку "Normalize", етап Попередня обробка', messages)
         self.assertIn('Початок кроку "SVM", етап Класифікація', messages)
         self.assertEqual(messages[-1], "Обчислення завершено")
-        self.assertEqual({kwargs["token"] for _, kwargs in emits}, {"svc-token"})
-
-    def test_run_classifier_forwards_token_to_progress_updates(self):
-        module = load_compute_handler()
-        emits = []
-
-        class FakeSplitter:
-            n_splits = 1
-
-            def __init__(self, **_kwargs):
-                pass
-
-            def split(self, *_args):
-                return iter([([0], [1])])
-
-        class FakeIloc:
-            def __getitem__(self, _index):
-                return "subset"
-
-        frame = SimpleNamespace(iloc=FakeIloc())
-        model = SimpleNamespace(fit=lambda *_args: None, predict=lambda *_args: [1])
-
-        with patch.object(
-            module,
-            "_emit",
-            side_effect=lambda *args, **kwargs: emits.append(kwargs),
-        ), patch.object(module.np, "unique", return_value=[0, 1]), patch.object(
-            module, "StratifiedShuffleSplit", FakeSplitter
-        ), patch.object(
-            module, "_build_classifier", return_value=model
-        ), patch.object(
-            module, "_compute_roc_auc", return_value=1.0
-        ), patch.object(
-            module,
-            "confusion_matrix",
-            return_value=SimpleNamespace(tolist=lambda: [[1]]),
-        ):
-            module._run_classifier(
-                frame,
-                frame,
-                "svm",
-                {},
-                {"folds": module.MAX_FOLDS + 1},
-                10.0,
-                "http://backend/graphql",
-                "pipe-1",
-                "svc-token",
-            )
-
-        self.assertEqual(len(emits), 3)
-        self.assertEqual({kwargs["token"] for kwargs in emits}, {"svc-token"})
-
-    def test_main_uses_environment_token_for_the_final_status(self):
-        module = load_compute_handler()
-        payload = {"pipelineId": "pipe-1", "executionId": "3"}
-        result = {"accuracyScores": [0.9], "sampleCount": 8, "duration": 1.5}
-
-        with patch.dict(
-            module.os.environ,
-            {
-                "COMPUTE_BACKEND_URL": "http://backend/graphql",
-                "COMPUTE_BACKEND_TOKEN": "env-token",
-            },
-            clear=False,
-        ), patch.object(module, "_load_payload", return_value=payload), patch.object(
-            module, "run_compute", return_value=result
-        ), patch.object(module, "completePipeline") as complete_pipeline, patch(
-            "sys.stdout", new_callable=io.StringIO
-        ):
-            module.main()
-
-        complete_pipeline.assert_called_once_with(
-            backend_url="http://backend/graphql",
-            payload=result,
-            pipelineId="pipe-1",
-            token="env-token",
-            executionId="3",
-        )
-
-    def test_main_uses_environment_token_for_the_failure_message(self):
-        module = load_compute_handler()
-        payload = {"pipelineId": "pipe-1", "executionId": "3"}
-        emits = []
-
-        with patch.dict(
-            module.os.environ,
-            {
-                "COMPUTE_BACKEND_URL": "http://backend/graphql",
-                "COMPUTE_BACKEND_TOKEN": "env-token",
-            },
-            clear=False,
-        ), patch.object(module, "_load_payload", return_value=payload), patch.object(
-            module, "run_compute", side_effect=RuntimeError("boom")
-        ), patch.object(
-            module,
-            "_emit",
-            side_effect=lambda *args, **kwargs: emits.append(kwargs),
-        ):
-            with self.assertRaises(RuntimeError):
-                module.main()
-
-        self.assertEqual(emits, [{"message": "RuntimeError: boom", "token": "env-token"}])
 
     def test_main_completes_pipeline_with_result(self):
         module = load_compute_handler()

@@ -23,7 +23,6 @@ export class LocalComputationWorker {
   private running = false;
   private stopping = false;
   private client: GraphqlClient | null = null;
-  private serviceToken = '';
   private cachedMachineInfo: PipelineMachineInfoInput | null = null;
 
   start() {
@@ -32,13 +31,8 @@ export class LocalComputationWorker {
       console.warn('Fetch API недоступний у main-процесі; локальний воркер вимкнено.');
       return;
     }
-    this.serviceToken = process.env.BACKEND_SERVICE_TOKEN?.trim() ?? '';
-    if (!this.serviceToken) {
-      console.warn('BACKEND_SERVICE_TOKEN не задано; локальний воркер вимкнено.');
-      return;
-    }
     this.stopping = false;
-    this.client = createGraphqlClient(this.serviceToken);
+    this.client = createGraphqlClient();
     void warmupLocalDockerImage({
       onLog: async (message) => {
         console.log(message);
@@ -105,7 +99,7 @@ export class LocalComputationWorker {
     try {
       await runPythonHandler(
         payload,
-        { signal: abortController.signal, backendToken: this.serviceToken },
+        { signal: abortController.signal },
         {
           onProgress: async (progress, message) => {
             if (abortController.signal.aborted) return;

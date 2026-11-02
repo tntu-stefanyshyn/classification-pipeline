@@ -7,6 +7,7 @@ import { config } from '../../../config/config';
 import { User, UserModel } from '../../../core/user';
 import { TOKEN_TTL } from '../constants/token';
 import { AuthPayload } from '../classes/AuthPayload';
+import type { Principal } from '../classes/Principal';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
 
@@ -77,6 +78,13 @@ export class AuthFlow {
       expected.length === provided.length &&
       timingSafeEqual(expected, provided)
     );
+  }
+
+  /** The service token if the request carries it, otherwise the user of the JWT. */
+  async authenticate(req: Request): Promise<Principal> {
+    if (this.isService(req)) return { kind: 'service' };
+    const user = await this.me(req);
+    return { kind: 'user', userId: user._id };
   }
 
   /** Guards worker-only operations: anything except BACKEND_SERVICE_TOKEN is rejected. */

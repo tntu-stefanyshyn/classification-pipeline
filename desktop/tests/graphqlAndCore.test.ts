@@ -154,7 +154,7 @@ test('generated GraphQL wrappers and barrel files call Apollo hooks', (t) => {
   assert.ok(calls.some((call) => call.kind === 'mutation'));
 });
 
-test('graphql client builds auth and error links with translated messages', (t) => {
+test('graphql client builds error, session and auth links with translated messages', (t) => {
   const clientModulePath = path.resolve(__dirname, '../src/graphql/client');
   const clientCompiledFile = path.resolve(__dirname, '../src/graphql/client.js');
   const { stub: apolloStub } = createApolloStub();
@@ -187,10 +187,15 @@ test('graphql client builds auth and error links with translated messages', (t) 
       return { kind: 'error-link' };
     },
   });
+  const tokenListeners: Array<(token: string | null) => void> = [];
   stubResolvedModule(t, clientCompiledFile, '../services/tokenService', {
     tokenService: {
       getToken: () => 'secret-token',
+      subscribe: (listener: (token: string | null) => void) => tokenListeners.push(listener),
     },
+  });
+  stubResolvedModule(t, clientCompiledFile, './sessionLink', {
+    createSessionLink: () => ({ kind: 'session-link' }),
   });
   stubResolvedModule(t, clientCompiledFile, '../config/config', {
     config: {
@@ -205,6 +210,10 @@ test('graphql client builds auth and error links with translated messages', (t) 
     },
   });
 
+  let storeResets = 0;
+  apolloStub.ApolloClient.prototype.clearStore = async () => {
+    storeResets += 1;
+  };
   const module = loadFreshModule<{ apolloClient: { config: { link: { links: unknown[] } } } }>(
     clientModulePath
   );
@@ -228,14 +237,24 @@ test('graphql client builds auth and error links with translated messages', (t) 
       { message: 'translated:Network failure', originalMessage: 'Network failure' },
     ]
   );
-  assert.equal(module.apolloClient.config.link.links.length, 3);
+  const links = module.apolloClient.config.link.links;
+  // The session link sits inside the error link, so it sees the codes before the messages are
+  // translated, and above the auth link, so a retry reads the refreshed token.
+  assert.deepEqual(links.slice(0, 3), [
+    { kind: 'error-link' },
+    { kind: 'session-link' },
+    { kind: 'auth-link' },
+  ]);
+  assert.ok(links[3] instanceof apolloStub.HttpLink);
+  tokenListeners.forEach((listener) => listener('still-signed-in'));
+  assert.equal(storeResets, 0);
+  tokenListeners.forEach((listener) => listener(null));
+  assert.equal(storeResets, 1);
 });
 
-test('tokenService updates local storage and notifies subscribers', (t) => {
+test('tokenService keeps both tokens together and reports an expired session', (t) => {
   const tokenServiceModulePath = path.resolve(__dirname, '../src/services/tokenService');
   const tokenServiceCompiledFile = path.resolve(__dirname, '../src/services/tokenService.js');
-  const storageCalls: Array<[string, string, string?]> = [];
-  const snapshots: Array<string | null> = [];
   const storedValues = new Map([['auth_token', 'saved-token']]);
 
   const previousLocalStorage = (globalThis as typeof globalThis & { localStorage?: unknown })
@@ -245,14 +264,8 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
     writable: true,
     value: {
       getItem: (key: string) => storedValues.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        storedValues.set(key, value);
-        storageCalls.push(['setItem', key, value]);
-      },
-      removeItem: (key: string) => {
-        storedValues.delete(key);
-        storageCalls.push(['removeItem', key]);
-      },
+      setItem: (key: string, value: string) => storedValues.set(key, value),
+      removeItem: (key: string) => storedValues.delete(key),
     },
   });
   t.after(() => {
@@ -268,16 +281,7 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
   });
 
   stubResolvedModule(t, tokenServiceCompiledFile, 'react', {
-    useSyncExternalStore: (
-      subscribe: (listener: () => void) => () => void,
-      getSnapshot: () => string | null,
-      getServerSnapshot: () => string | null
-    ) => {
-      snapshots.push(getSnapshot(), getServerSnapshot());
-      const unsubscribe = subscribe(() => snapshots.push(getSnapshot()));
-      unsubscribe();
-      return getSnapshot();
-    },
+    useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
   });
 
   const module =
@@ -285,28 +289,29 @@ test('tokenService updates local storage and notifies subscribers', (t) => {
   const listenerCalls: Array<string | null> = [];
   const unsubscribe = module.tokenService.subscribe((token) => listenerCalls.push(token));
 
+  // A token stored before refresh tokens existed is read as it is.
   assert.equal(module.useAuthToken(), 'saved-token');
-  module.tokenService.setToken('next-token');
+  assert.equal(module.tokenService.getRefreshToken(), null);
+
+  module.tokenService.setSession({ token: 'next-token', refreshToken: 'next-refresh' });
   assert.equal(module.useAuthToken(), 'next-token');
+  assert.equal(module.tokenService.getRefreshToken(), 'next-refresh');
+  assert.equal(module.useSessionExpired(), false);
+
+  module.tokenService.expireSession();
+  assert.equal(module.useAuthToken(), null);
+  assert.equal(module.tokenService.getRefreshToken(), null);
+  assert.equal(module.useSessionExpired(), true);
+
+  // Signing in again hides the notice; signing out does not show it.
+  module.tokenService.setSession({ token: 'third-token', refreshToken: 'third-refresh' });
+  assert.equal(module.useSessionExpired(), false);
   module.tokenService.clearToken();
-  const currentToken = module.useAuthToken();
+  assert.equal(module.useSessionExpired(), false);
+  assert.deepEqual([...storedValues.keys()], []);
   unsubscribe();
 
-  assert.equal(module.tokenService.getToken(), null);
-  assert.equal(currentToken, null);
-  assert.deepEqual(listenerCalls, ['next-token', null]);
-  assert.deepEqual(storageCalls, [
-    ['setItem', 'auth_token', 'next-token'],
-    ['removeItem', 'auth_token'],
-  ]);
-  assert.deepEqual(snapshots, [
-    'saved-token',
-    'saved-token',
-    'next-token',
-    'next-token',
-    null,
-    null,
-  ]);
+  assert.deepEqual(listenerCalls, ['next-token', null, 'third-token', null]);
 });
 
 test('types and localization exports stay aligned', () => {

@@ -4,6 +4,7 @@
 # -----------------------------------------------
 
 type AuthPayload {
+  refreshToken: String!
   token: String!
   user: User!
 }
@@ -229,7 +230,9 @@ type Mutation {
   failExperimentRun(input: FailExperimentRunInput!): Pipeline!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!
+  logout(refreshToken: String!): Boolean!
   pauseExperimentRuns(experimentId: ID!): [Pipeline!]!
+  refreshSession(refreshToken: String!): AuthPayload!
   register(input: RegisterInput!): AuthPayload!
   resumeExperimentRuns(experimentId: ID!): [Pipeline!]!
   stopExperimentRun(input: StopExperimentRunInput!): Pipeline!

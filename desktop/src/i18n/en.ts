@@ -54,6 +54,7 @@ const en = {
       subtitle: 'Enter your details to continue.',
       noAccount: 'No account yet?',
       register: 'Create one',
+      sessionExpired: 'Your session has ended. Sign in again to continue.',
     },
     registerPage: {
       title: 'Create an account',

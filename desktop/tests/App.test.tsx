@@ -27,10 +27,12 @@ test('App derives auth state from token and wires router callbacks', (t) => {
   });
   stubResolvedModule(t, appCompiledFile, '../services/tokenService', {
     tokenService: {
-      setToken: (value: string) => tokenCalls.push(['setToken', value]),
-      clearToken: () => tokenCalls.push(['clearToken']),
+      setSession: (value: unknown) => tokenCalls.push(['setSession', value]),
     },
     useAuthToken: () => 'token-1',
+  });
+  stubResolvedModule(t, appCompiledFile, '../graphql/session', {
+    endSession: async () => tokenCalls.push(['endSession']),
   });
   stubResolvedModule(t, appCompiledFile, '@apollo/client/react', {
     ApolloProvider: ({ children }: any) => React.createElement(React.Fragment, null, children),
@@ -46,10 +48,13 @@ test('App derives auth state from token and wires router callbacks', (t) => {
   assert.match(html, /toast/);
   assert.equal(routerProps[0]?.isAuthenticated, true);
 
-  routerProps[0].onLoginSuccess('next-token');
+  routerProps[0].onLoginSuccess({ token: 'next-token', refreshToken: 'next-refresh' });
   routerProps[0].onLogout();
 
-  assert.deepEqual(tokenCalls, [['setToken', 'next-token'], ['clearToken']]);
+  assert.deepEqual(tokenCalls, [
+    ['setSession', { token: 'next-token', refreshToken: 'next-refresh' }],
+    ['endSession'],
+  ]);
 });
 
 test('App passes unauthenticated state when no token is present', (t) => {
@@ -69,10 +74,12 @@ test('App passes unauthenticated state when no token is present', (t) => {
   });
   stubResolvedModule(t, appCompiledFile, '../services/tokenService', {
     tokenService: {
-      setToken: () => undefined,
-      clearToken: () => undefined,
+      setSession: () => undefined,
     },
     useAuthToken: () => null,
+  });
+  stubResolvedModule(t, appCompiledFile, '../graphql/session', {
+    endSession: async () => undefined,
   });
   stubResolvedModule(t, appCompiledFile, '@apollo/client/react', {
     ApolloProvider: ({ children }: any) => React.createElement(React.Fragment, null, children),

@@ -25,8 +25,8 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
           onError: (apolloError) => setFormikFormErrorFromApollo(apolloError, setFieldError),
         });
 
-        const token = result.data?.register.token;
-        if (token) onSuccess(token);
+        const session = result.data?.register;
+        if (session?.token) onSuccess({ token: session.token, refreshToken: session.refreshToken });
       }}
     >
       <Form className="auth-form" noValidate>

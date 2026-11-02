@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom';
 import type { FC } from 'react';
 import { LoginForm } from '../../auth/LoginForm';
+import { Alert } from '../../ui/Alert';
+import { useSessionExpired } from '../../../services/tokenService';
 import type { LoginPageProps } from './LoginPage.types';
 import { useI18n } from '../../../i18n';
 
 const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const { messages } = useI18n();
+  const sessionExpired = useSessionExpired();
 
   return (
     <main className="page unauth">
@@ -13,6 +16,9 @@ const LoginPage: FC<LoginPageProps> = ({ onLoginSuccess }) => {
         <div className="card auth-card">
           <h1>{messages.auth.loginPage.title}</h1>
           <p className="subtitle">{messages.auth.loginPage.subtitle}</p>
+          {sessionExpired ? (
+            <Alert variant="info">{messages.auth.loginPage.sessionExpired}</Alert>
+          ) : null}
 
           <LoginForm onSuccess={onLoginSuccess} />
 

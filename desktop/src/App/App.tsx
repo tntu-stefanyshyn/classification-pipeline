@@ -6,6 +6,7 @@ import { useEffect, type FC } from 'react';
 import { AppRouter } from '../router/AppRouter';
 import { apolloClient } from '../graphql/client';
 import { tokenService, useAuthToken } from '../services/tokenService';
+import { endSession } from '../graphql/session';
 import { ToastContainer } from 'react-toastify';
 import { useI18n } from '../i18n';
 
@@ -24,8 +25,8 @@ const App: FC = () => {
     <ApolloProvider client={apolloClient}>
       <AppRouter
         isAuthenticated={isAuthenticated}
-        onLoginSuccess={(nextToken) => tokenService.setToken(nextToken)}
-        onLogout={() => tokenService.clearToken()}
+        onLoginSuccess={(session) => tokenService.setSession(session)}
+        onLogout={() => void endSession()}
       />
       <ToastContainer position="top-right" />
     </ApolloProvider>

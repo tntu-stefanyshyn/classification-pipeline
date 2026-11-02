@@ -24,8 +24,8 @@ const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
           onError: (apolloError) => setFormikFormErrorFromApollo(apolloError, setFieldError),
         });
 
-        const token = result.data?.login.token;
-        if (token) onSuccess(token);
+        const session = result.data?.login;
+        if (session?.token) onSuccess({ token: session.token, refreshToken: session.refreshToken });
       }}
     >
       <Form className="auth-form" noValidate>

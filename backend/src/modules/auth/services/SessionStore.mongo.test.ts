@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 
 import { UserModel } from '../../../core/user';
-import { UNAUTHENTICATED } from '../errors';
+import { stub } from '../../../test/testUtils';
+import { AuthenticationError } from '../errors';
 import { RefreshTokenModel } from '../models/RefreshTokenModel';
+import { SessionModel } from '../models/SessionModel';
 import { AuthFlow } from './AuthFlow';
 
 // Rotation and reuse detection rely on conditional updates, which only a real MongoDB proves.
@@ -15,6 +18,7 @@ const skip = uri ? false : 'MONGODB_TEST_URI is not set';
 const useDatabase = async (t: TestContext) => {
   await mongoose.connect(uri!, { dbName: `session-test-${process.pid}-${Date.now()}` });
   await RefreshTokenModel.createIndexes();
+  await SessionModel.createIndexes();
   t.after(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
@@ -30,11 +34,29 @@ const startSession = async () => {
 };
 
 const rejectsAsExpired = (promise: Promise<unknown>) =>
-  assert.rejects(promise, (error: any) => {
+  assert.rejects(promise, (error: unknown) => {
+    assert.ok(error instanceof AuthenticationError);
     assert.equal(error.message, 'Session expired');
-    assert.equal(error.extensions?.code, UNAUTHENTICATED);
     return true;
   });
+
+// Holds the next successor write until the test releases it, so a revocation can land between
+// "old token marked as used" and "successor stored".
+const pauseNextIssue = (t: TestContext) => {
+  const create = RefreshTokenModel.create.bind(RefreshTokenModel);
+  let reached!: () => void;
+  let release!: () => void;
+  const paused = new Promise<void>((resolve) => (reached = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  stub(t, RefreshTokenModel as unknown as Record<string, unknown>, 'create', (async (
+    ...args: Parameters<typeof create>
+  ) => {
+    reached();
+    await released;
+    return create(...args);
+  }) as any);
+  return { paused, release };
+};
 
 test('refreshSession rotates the refresh token', { skip }, async (t) => {
   await useDatabase(t);
@@ -57,12 +79,12 @@ test('a reused refresh token is rejected and ends the whole session', { skip }, 
   await rejectsAsExpired(flow.refreshSession(session.refreshToken));
   // The token issued by the legitimate rotation is revoked too.
   await rejectsAsExpired(flow.refreshSession(next.refreshToken));
-  const tokens = await RefreshTokenModel.find({ userId: session.user._id }).lean();
-  assert.equal(tokens.length, 2);
-  assert.ok(tokens.every((token) => token.revokedAt));
+  const stored = await SessionModel.find({ userId: session.user._id }).lean();
+  assert.equal(stored.length, 1);
+  assert.ok(stored[0].revokedAt);
 });
 
-test('of two parallel exchanges of one token only one succeeds', { skip }, async (t) => {
+test('parallel exchanges of one token leave no usable successor', { skip }, async (t) => {
   await useDatabase(t);
   const { flow, session } = await startSession();
 
@@ -71,8 +93,68 @@ test('of two parallel exchanges of one token only one succeeds', { skip }, async
     flow.refreshSession(session.refreshToken),
   ]);
 
-  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.ok(results.filter((result) => result.status === 'fulfilled').length <= 1);
+  // The second exchange is a reuse: whatever the first one got cannot be exchanged again.
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      await rejectsAsExpired(flow.refreshSession(result.value.refreshToken));
+    }
+  }
 });
+
+test('logout while the successor is being stored keeps it from the client', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const pause = pauseNextIssue(t);
+
+  const refreshing = flow.refreshSession(session.refreshToken);
+  await pause.paused;
+  await flow.logout(session.refreshToken);
+  pause.release();
+
+  await rejectsAsExpired(refreshing);
+  const stored = await SessionModel.findById((await RefreshTokenModel.findOne().lean())!.familyId);
+  assert.ok(stored?.revokedAt);
+});
+
+test(
+  'reuse detection while the successor is being stored keeps it from the client',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    const pause = pauseNextIssue(t);
+
+    const refreshing = flow.refreshSession(session.refreshToken);
+    await pause.paused;
+    // The same token again: a copy. Its exchange revokes the session while the first one waits.
+    await rejectsAsExpired(flow.refreshSession(session.refreshToken));
+    pause.release();
+
+    await rejectsAsExpired(refreshing);
+  }
+);
+
+test(
+  'a token that was stored after its session was revoked cannot be exchanged',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    const { familyId, userId } = (await RefreshTokenModel.findOne().lean())!;
+    await flow.logout(session.refreshToken);
+    // The state the race left behind before the fix: a successor without its own revokedAt.
+    const late = 'successor-stored-after-revocation';
+    await RefreshTokenModel.create({
+      userId,
+      familyId,
+      tokenHash: createHash('sha256').update(late).digest('hex'),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await rejectsAsExpired(flow.refreshSession(late));
+  }
+);
 
 test('an expired refresh token is rejected', { skip }, async (t) => {
   await useDatabase(t);
@@ -113,5 +195,14 @@ test(
     const indexes = await RefreshTokenModel.collection.indexes();
     assert.ok(indexes.some((index) => index.key.expiresAt === 1 && index.expireAfterSeconds === 0));
     assert.ok(indexes.some((index) => index.key.tokenHash === 1 && index.unique));
+    const sessionIndexes = await SessionModel.collection.indexes();
+    assert.ok(
+      sessionIndexes.some((index) => index.key.expiresAt === 1 && index.expireAfterSeconds === 0)
+    );
+    // Each rotation extends the session to the expiry of its newest token.
+    const before = (await SessionModel.findOne().lean())!.expiresAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new AuthFlow().refreshSession(session.refreshToken);
+    assert.ok((await SessionModel.findOne().lean())!.expiresAt > before);
   }
 );

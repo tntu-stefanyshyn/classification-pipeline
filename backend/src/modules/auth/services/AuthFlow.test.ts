@@ -8,6 +8,7 @@ import { config } from '../../../config/config';
 import { UserModel } from '../../../core/user';
 import { stub } from '../../../test/testUtils';
 import { RefreshTokenModel } from '../models/RefreshTokenModel';
+import { SessionModel } from '../models/SessionModel';
 import { AuthFlow } from './AuthFlow';
 
 const stubRefreshTokens = (t: TestContext) => {
@@ -16,6 +17,8 @@ const stubRefreshTokens = (t: TestContext) => {
     created.push(doc);
     return doc;
   });
+  stub(t, SessionModel as unknown as Record<string, unknown>, 'create', async (doc: any) => doc);
+  stub(t, SessionModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
   return created;
 };
 

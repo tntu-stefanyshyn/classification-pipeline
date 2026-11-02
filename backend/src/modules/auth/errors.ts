@@ -1,10 +1,14 @@
-import { GraphQLError } from 'graphql';
-
-/** `extensions.code` of every authentication failure, so clients do not match message text. */
-export const UNAUTHENTICATED = 'UNAUTHENTICATED';
-
-export const unauthenticated = (message = 'Not authenticated') =>
-  new GraphQLError(message, { extensions: { code: UNAUTHENTICATED } });
+/**
+ * Authentication failed: no, an invalid or an expired credential. Services throw it without
+ * knowing the transport; the GraphQL layer reports it with the UNAUTHENTICATED code
+ * (see `graphql/reportAuthenticationErrors.ts`).
+ */
+export class AuthenticationError extends Error {
+  constructor(message = 'Not authenticated') {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
 
 /** The refresh token is unknown, expired, used or revoked: the client has to log in again. */
-export const sessionExpired = () => unauthenticated('Session expired');
+export const sessionExpired = () => new AuthenticationError('Session expired');

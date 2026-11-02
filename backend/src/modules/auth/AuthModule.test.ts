@@ -17,7 +17,8 @@ import {
   durationToSeconds,
   refreshTokenTtlSeconds,
 } from './constants/token';
-import { UNAUTHENTICATED } from './errors';
+import { AuthenticationError } from './errors';
+import { reportAuthenticationErrors, UNAUTHENTICATED } from './graphql/reportAuthenticationErrors';
 
 test('auth classes store assigned values and resolver delegates to AuthFlow', async (t) => {
   const payload = new AuthPayload();
@@ -174,7 +175,7 @@ test('token lifetimes come from ACCESS_TOKEN_TTL and REFRESH_TOKEN_TTL', (t) => 
   assert.equal(refreshTokenTtlSeconds(), 7 * 86400);
 });
 
-test('every AuthFlow authentication failure carries the UNAUTHENTICATED code', async (t) => {
+test('every AuthFlow authentication failure is an AuthenticationError', async (t) => {
   const original = config.backend.serviceToken;
   t.after(() => {
     config.backend.serviceToken = original;
@@ -182,9 +183,10 @@ test('every AuthFlow authentication failure carries the UNAUTHENTICATED code', a
   config.backend.serviceToken = 'svc-token';
   const flow = new AuthFlow();
   const req = (authorization?: string) => ({ headers: { authorization } }) as any;
-  const expectCode = (message: RegExp) => (error: any) => {
+  const expectCode = (message: RegExp) => (error: unknown) => {
+    // A plain domain error: the GraphQL layer adds the code (see the next test).
+    assert.ok(error instanceof AuthenticationError);
     assert.match(error.message, message);
-    assert.equal(error.extensions?.code, UNAUTHENTICATED);
     return true;
   };
 
@@ -217,4 +219,21 @@ test('a 7-day token issued before this change keeps working until it expires', a
   });
 
   assert.equal(await flow.me({ headers: { authorization: `Bearer ${legacy}` } } as any), user);
+});
+
+test('reportAuthenticationErrors adds the UNAUTHENTICATED code and passes other errors on', async () => {
+  const run = (error: Error) =>
+    reportAuthenticationErrors({} as any, async () => {
+      throw error;
+    });
+
+  await assert.rejects(run(new AuthenticationError('jwt expired')), (error: any) => {
+    assert.equal(error.message, 'jwt expired');
+    assert.equal(error.extensions?.code, UNAUTHENTICATED);
+    assert.ok(error.originalError instanceof AuthenticationError);
+    return true;
+  });
+  const other = new Error('Експеремент не знайдено');
+  await assert.rejects(run(other), (error) => error === other);
+  assert.equal(await reportAuthenticationErrors({} as any, async () => 'value'), 'value');
 });

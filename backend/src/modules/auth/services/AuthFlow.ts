@@ -9,7 +9,7 @@ import { accessTokenTtlSeconds } from '../constants/token';
 import { AuthPayload } from '../classes/AuthPayload';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
-import { sessionExpired, unauthenticated } from '../errors';
+import { AuthenticationError, sessionExpired } from '../errors';
 import { SessionStore } from './SessionStore';
 
 export class AuthFlow {
@@ -77,17 +77,17 @@ export class AuthFlow {
       payload = jwt.verify(token, config.jwtSecret) as JwtPayload;
     } catch (error) {
       // Keeps the library message (`jwt expired`, `jwt malformed`) and adds the stable code.
-      throw unauthenticated(error instanceof Error ? error.message : 'Invalid token');
+      throw new AuthenticationError(error instanceof Error ? error.message : 'Invalid token');
     }
 
     const userId = payload.sub;
     if (!userId) {
-      throw unauthenticated('Invalid token payload');
+      throw new AuthenticationError('Invalid token payload');
     }
 
     const user = await UserModel.findById(userId);
     if (!user) {
-      throw unauthenticated('User not found');
+      throw new AuthenticationError('User not found');
     }
 
     return user;
@@ -107,12 +107,12 @@ export class AuthFlow {
   /** Guards worker-only operations: anything except BACKEND_SERVICE_TOKEN is rejected. */
   requireService(req: Request): void {
     if (!this.isService(req)) {
-      throw unauthenticated();
+      throw new AuthenticationError();
     }
   }
 
   private async startSession(user: User): Promise<AuthPayload> {
-    const refreshToken = await this.sessions.issue(user._id);
+    const refreshToken = await this.sessions.start(user._id);
     return { token: this.buildToken(user), refreshToken, user };
   }
 
@@ -126,7 +126,7 @@ export class AuthFlow {
     const header = req.headers.authorization || '';
     const token = header.replace('Bearer', '').trim();
     if (!token) {
-      throw unauthenticated();
+      throw new AuthenticationError();
     }
     return token;
   }

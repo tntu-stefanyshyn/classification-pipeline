@@ -22,7 +22,7 @@ The owner is the user whose id is stored in the `createdById` field of the exper
 
 ## Errors
 
-Every authentication failure has `extensions.code: "UNAUTHENTICATED"`. Clients decide on the code, not on the message, which is meant for people.
+Every authentication failure has `extensions.code: "UNAUTHENTICATED"`. Clients decide on the code, not on the message, which is meant for people. Services throw the domain `AuthenticationError`; the global resolver middleware `reportAuthenticationErrors` turns it into this code at the GraphQL boundary.
 
 - A request without a token gets `Not authenticated`.
 - A worker operation called with anything other than the service token gets `Not authenticated`.
@@ -43,16 +43,18 @@ Every authentication failure has `extensions.code: "UNAUTHENTICATED"`. Clients d
 Both accept a number of seconds or a number with `s`, `m`, `h` or `d`. An invalid value makes `login` fail with `Invalid duration`.
 
 - `refreshSession(refreshToken)` needs no access token. It returns a new pair, and the presented refresh token stops working (rotation).
-- All refresh tokens rotated from one login form a session (`familyId`). A refresh token that is presented a second time was copied, so the backend revokes the whole session: the copy and the token the legitimate client holds stop working. Of two parallel exchanges of one token, only one succeeds, which counts as reuse too.
+- All refresh tokens rotated from one login form a session (`familyId`). A refresh token that is presented a second time was copied, so the backend revokes the whole session: the copy and the token the legitimate client holds stop working. Two parallel exchanges of one token count as reuse too, so neither leaves a usable token.
 - `logout(refreshToken)` revokes the session. It returns `true` for an unknown token as well, so it can be called again safely.
 - Refresh tokens are stored in the `refresh_tokens` collection only as SHA-256 hashes, with the user, the session, the expiry, and the time a token was used or revoked. A TTL index removes a token once it expires.
+- Each session has a document in `sessions` (its `_id` is the `familyId`). Its `revokedAt` is what rotation and revocation share: `logout` and reuse detection set it before anything else, and `refreshSession` checks it before the exchange and again after the next token is stored. A revocation that lands in between keeps that token from the client, and no token of a revoked session can be exchanged later. A TTL index removes the session after its newest token expires.
 - JWTs issued before refresh tokens existed (valid for 7 days) keep working until they expire. A client that has no refresh token then signs in again.
 
 ### Desktop
 
 - The desktop stores both tokens in `localStorage` (`auth_token`, `auth_refresh_token`) and clears them together.
 - On an `UNAUTHENTICATED` error the session link (`desktop/src/graphql/sessionLink.ts`) refreshes the session and repeats the operation once with the new token. Requests that fail at the same time wait for the same refresh, because a refresh token can be exchanged only once. The repeated operation is not refreshed again, so there is no loop.
-- The refresh request is a plain `fetch` outside the Apollo links: it is never retried and never carries the expired access token.
+- Every sign-in and sign-out starts a new session generation (`tokenService.getGeneration()`); a refresh keeps it. The auth link records the generation and the access token on each operation. A refresh, its result (new tokens or an expired session) and the retry apply only while that generation is current, so a late answer cannot undo a sign-out or touch another account, and a new session never waits for the refresh of the previous one. A request that failed with an access token that was refreshed since is retried without another refresh.
+- The refresh request is a plain `fetch` outside the Apollo links: it is never retried and never carries the expired access token. It sends the generated `RefreshSession` and `Logout` documents (`desktop/src/graphql/mutations/*.graphql`).
 - When the refresh token is rejected (or missing), the desktop clears both tokens and the Apollo cache and opens the login page with the "session has ended" notice. When the backend cannot be reached, the user stays signed in and sees the usual network error.
 - Signing out clears the tokens at once and then calls `logout`. Offline, the refresh token simply expires on the server.
 

@@ -17,7 +17,9 @@ const generatedModulePaths = [
   '../src/graphql/mutations/generated/enqueueExperimentRuns',
   '../src/graphql/mutations/generated/generateExperimentGraph',
   '../src/graphql/mutations/generated/login',
+  '../src/graphql/mutations/generated/logout',
   '../src/graphql/mutations/generated/pauseExperimentRuns',
+  '../src/graphql/mutations/generated/refreshSession',
   '../src/graphql/mutations/generated/register',
   '../src/graphql/mutations/generated/resumeExperimentRuns',
   '../src/graphql/mutations/generated/stopExperimentRun',
@@ -191,6 +193,7 @@ test('graphql client builds error, session and auth links with translated messag
   stubResolvedModule(t, clientCompiledFile, '../services/tokenService', {
     tokenService: {
       getToken: () => 'secret-token',
+      getGeneration: () => 7,
       subscribe: (listener: (token: string | null) => void) => tokenListeners.push(listener),
     },
   });
@@ -224,6 +227,8 @@ test('graphql client builds error, session and auth links with translated messag
         existing: 'header',
         authorization: 'Bearer secret-token',
       },
+      sessionGeneration: 7,
+      sessionToken: 'secret-token',
     },
   ]);
   assert.deepEqual(translated, ['translated:GraphQL failure', 'translated:Network failure']);
@@ -293,12 +298,22 @@ test('tokenService keeps both tokens together and reports an expired session', (
   assert.equal(module.useAuthToken(), 'saved-token');
   assert.equal(module.tokenService.getRefreshToken(), null);
 
+  const initialGeneration = module.tokenService.getGeneration();
   module.tokenService.setSession({ token: 'next-token', refreshToken: 'next-refresh' });
   assert.equal(module.useAuthToken(), 'next-token');
   assert.equal(module.tokenService.getRefreshToken(), 'next-refresh');
   assert.equal(module.useSessionExpired(), false);
+  const signedInGeneration = module.tokenService.getGeneration();
+  assert.notEqual(signedInGeneration, initialGeneration);
+
+  // A refresh rotates the tokens within the same session.
+  module.tokenService.replaceTokens({ token: 'rotated-token', refreshToken: 'rotated-refresh' });
+  assert.equal(module.useAuthToken(), 'rotated-token');
+  assert.equal(module.tokenService.getRefreshToken(), 'rotated-refresh');
+  assert.equal(module.tokenService.getGeneration(), signedInGeneration);
 
   module.tokenService.expireSession();
+  assert.notEqual(module.tokenService.getGeneration(), signedInGeneration);
   assert.equal(module.useAuthToken(), null);
   assert.equal(module.tokenService.getRefreshToken(), null);
   assert.equal(module.useSessionExpired(), true);
@@ -311,7 +326,7 @@ test('tokenService keeps both tokens together and reports an expired session', (
   assert.deepEqual([...storedValues.keys()], []);
   unsubscribe();
 
-  assert.deepEqual(listenerCalls, ['next-token', null, 'third-token', null]);
+  assert.deepEqual(listenerCalls, ['next-token', 'rotated-token', null, 'third-token', null]);
 });
 
 test('types and localization exports stay aligned', () => {

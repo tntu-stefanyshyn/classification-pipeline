@@ -107,7 +107,7 @@ test('a request that fails again after the retry is not refreshed again', async 
   assert.equal(result.errors?.[0]?.extensions?.code, 'UNAUTHENTICATED');
 });
 
-for (const outcome of ['expired', 'unavailable'] as const) {
+for (const outcome of ['expired', 'unavailable', 'superseded'] as const) {
   test(`a refresh that ends ${outcome} passes the original error on without a retry`, async (t) => {
     const { createSessionLink } = loadLink(t);
     const backend = createBackend([unauthenticated, success]);
@@ -139,4 +139,28 @@ test('other errors are not treated as an ended session', async (t) => {
 
   assert.deepEqual(result, notFound);
   assert.equal(refreshes, 0);
+});
+
+test('the refresh is asked for the session and token the request was sent with', async (t) => {
+  const { createSessionLink } = loadLink(t);
+  const backend = createBackend([unauthenticated, success]);
+  const asked: unknown[][] = [];
+
+  const result = await new Promise<FetchResult>((resolve, reject) => {
+    execute(
+      ApolloLink.from([
+        createSessionLink(async (...args: unknown[]) => {
+          asked.push(args);
+          return 'superseded';
+        }),
+        backend.link,
+      ]),
+      { query: ME, context: { sessionGeneration: 3, sessionToken: 'account-a-access' } }
+    ).subscribe({ next: resolve, error: reject });
+  });
+
+  assert.deepEqual(asked, [[3, 'account-a-access']]);
+  // The user signed out or in meanwhile: the request is not repeated with someone else's token.
+  assert.deepEqual(result, unauthenticated);
+  assert.equal(backend.tokens.length, 1);
 });

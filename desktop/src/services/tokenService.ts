@@ -15,6 +15,9 @@ export type AuthSession = {
 class TokenService {
   private listeners = new Set<TokenListener>();
   private sessionExpired = false;
+  // Changes on every sign-in and sign-out, not on a token refresh: work started for one session
+  // (a refresh, a retried request) must not touch the next one.
+  private generation = 0;
 
   getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
@@ -24,14 +27,24 @@ class TokenService {
     return localStorage.getItem(REFRESH_TOKEN_KEY);
   }
 
-  setSession({ token, refreshToken }: AuthSession) {
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  getGeneration() {
+    return this.generation;
+  }
+
+  /** A sign-in: starts a new session. */
+  setSession(session: AuthSession) {
+    this.generation += 1;
     this.sessionExpired = false;
-    this.notify(token);
+    this.store(session);
+  }
+
+  /** A refresh: the same session with rotated tokens. */
+  replaceTokens(session: AuthSession) {
+    this.store(session);
   }
 
   clearToken() {
+    this.generation += 1;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     this.notify(null);
@@ -50,6 +63,12 @@ class TokenService {
   subscribe(listener: TokenListener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private store({ token, refreshToken }: AuthSession) {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    this.notify(token);
   }
 
   private notify(token: string | null) {

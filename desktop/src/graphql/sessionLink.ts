@@ -1,21 +1,25 @@
 import { Observable } from '@apollo/client';
 import { onError } from '@apollo/client/link/error';
-import { isUnauthenticated, refreshSession, type RefreshOutcome } from './session';
+import { isUnauthenticated, refreshSession } from './session';
 
 const RETRIED = 'sessionRetried';
 
+/** Context the auth link sets on every operation: the session and access token it was sent with. */
+export type SessionContext = { sessionGeneration?: number; sessionToken?: string | null };
+
 /**
- * On UNAUTHENTICATED, refreshes the session once and repeats the operation with the new access
- * token (the auth link below reads it). A repeated failure, or a session that cannot be
- * refreshed, passes the original errors on.
+ * On UNAUTHENTICATED, refreshes the session the operation was sent in and repeats the operation
+ * once with the new access token (the auth link below reads it). A repeated failure, a session
+ * that cannot be refreshed, or one that ended meanwhile passes the original errors on.
  */
-export const createSessionLink = (refresh: () => Promise<RefreshOutcome> = refreshSession) =>
+export const createSessionLink = (refresh: typeof refreshSession = refreshSession) =>
   onError(({ graphQLErrors, operation, forward, response }) => {
-    if (!isUnauthenticated(graphQLErrors) || operation.getContext()[RETRIED]) return;
+    const context = operation.getContext() as SessionContext & { [RETRIED]?: boolean };
+    if (!isUnauthenticated(graphQLErrors) || context[RETRIED]) return;
 
     return new Observable((observer) => {
       let subscription: { unsubscribe: () => void } | undefined;
-      refresh().then(
+      refresh(context.sessionGeneration, context.sessionToken).then(
         (outcome) => {
           if (outcome !== 'refreshed') {
             if (response) observer.next(response);

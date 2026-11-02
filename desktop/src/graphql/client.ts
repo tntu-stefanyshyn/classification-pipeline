@@ -16,6 +16,9 @@ const authLink = setContext((_, { headers }) => {
       ...headers,
       authorization: token ? `Bearer ${token}` : '',
     },
+    // Read by the session link: a failed request is refreshed only within its own session.
+    sessionGeneration: tokenService.getGeneration(),
+    sessionToken: token,
   };
 });
 

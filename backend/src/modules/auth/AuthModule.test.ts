@@ -143,3 +143,35 @@ test('AuthFlow.requireService rejects anything except the service token', (t) =>
   assert.throws(() => flow.requireService(req('Bearer user-jwt')), /Not authenticated/);
   assert.throws(() => flow.requireService(req()), /Not authenticated/);
 });
+
+test('AuthFlow.authenticate returns the service or the user of the request', async (t) => {
+  const original = config.backend.serviceToken;
+  t.after(() => {
+    config.backend.serviceToken = original;
+  });
+  config.backend.serviceToken = 'svc-token';
+  const flow = new AuthFlow();
+  const user = { _id: new Types.ObjectId(), email: 'user@example.com' };
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => user);
+
+  assert.deepEqual(
+    await flow.authenticate({ headers: { authorization: 'Bearer svc-token' } } as any),
+    {
+      kind: 'service',
+    }
+  );
+  assert.deepEqual(
+    await flow.authenticate({ headers: { authorization: 'Bearer user-jwt' } } as any),
+    {
+      kind: 'user',
+      userId: user._id,
+    }
+  );
+});
+
+test('AuthFlow.authenticate rejects a request without credentials', async () => {
+  await assert.rejects(
+    () => new AuthFlow().authenticate({ headers: {} } as any),
+    /Not authenticated/
+  );
+});

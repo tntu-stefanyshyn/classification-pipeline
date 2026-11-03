@@ -58,7 +58,8 @@ export class PipelineResolver {
     @Ctx() context: GraphQLContext,
     @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {
-    await this.access.assertExperimentOwnerOrService(context.req, experimentId);
+    const principal = await this.auth.authenticate(context.req);
+    await this.access.assertExperimentAccess(principal, experimentId);
     return PipelineBaseService.listByExperiment(experimentId, queue);
   }
 
@@ -67,7 +68,8 @@ export class PipelineResolver {
     @Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline | null> {
-    await this.access.assertPipelineOwnerOrService(context.req, pipelineId);
+    const principal = await this.auth.authenticate(context.req);
+    await this.access.assertPipelineAccess(principal, pipelineId);
     return PipelineBaseService.getById(pipelineId);
   }
   // #endregion Query
@@ -97,7 +99,8 @@ export class PipelineResolver {
     @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
-    await this.access.assertPipelineOwnerOrService(context.req, input.pipelineId);
+    const principal = await this.auth.authenticate(context.req);
+    await this.access.assertPipelineAccess(principal, input.pipelineId);
     // Runs start only through claimExperimentRun, which enforces one local run per machine.
     if (input.status === PipelineStatus.running) {
       throw new Error('Запуск можна почати лише через claimExperimentRun');

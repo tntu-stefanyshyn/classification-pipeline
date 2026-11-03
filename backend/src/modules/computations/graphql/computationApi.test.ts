@@ -22,6 +22,9 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
     'requireService',
     () => undefined
   );
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => ({
+    _id: new Types.ObjectId(),
+  }));
   stub(
     t,
     ExperimentAccess.prototype as unknown as Record<string, unknown>,

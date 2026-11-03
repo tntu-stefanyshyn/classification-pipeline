@@ -23,7 +23,8 @@ export class ComputationResolver {
     @Arg('experimentId', () => ID) experimentId: string,
     @Ctx() context: GraphQLContext
   ): Promise<OptimizationResult> {
-    await this.access.assertExperimentOwner(context.req, experimentId);
+    const user = await this.auth.me(context.req);
+    await this.access.assertExperimentOwner(user._id, experimentId);
     return this.manager.optimize(experimentId);
   }
 
@@ -32,7 +33,8 @@ export class ComputationResolver {
     @Arg('input', () => EnqueueExperimentRunsInput) input: EnqueueExperimentRunsInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
-    await this.access.assertExperimentOwner(context.req, input.experimentId);
+    const user = await this.auth.me(context.req);
+    await this.access.assertExperimentOwner(user._id, input.experimentId);
     await this.manager.enqueueRuns(input);
     return true;
   }
@@ -42,7 +44,8 @@ export class ComputationResolver {
     @Arg('input', () => StopExperimentRunInput) input: StopExperimentRunInput,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline> {
-    await this.access.assertPipelineOwner(context.req, input.runId);
+    const user = await this.auth.me(context.req);
+    await this.access.assertPipelineOwner(user._id, input.runId);
     return this.manager.stopRun(input.runId);
   }
 
@@ -62,7 +65,8 @@ export class ComputationResolver {
     @Arg('experimentId', () => ID) experimentId: string,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline[]> {
-    await this.access.assertExperimentOwner(context.req, experimentId);
+    const user = await this.auth.me(context.req);
+    await this.access.assertExperimentOwner(user._id, experimentId);
     return this.manager.pauseExperimentRuns(experimentId);
   }
 
@@ -71,7 +75,8 @@ export class ComputationResolver {
     @Arg('experimentId', () => ID) experimentId: string,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline[]> {
-    await this.access.assertExperimentOwner(context.req, experimentId);
+    const user = await this.auth.me(context.req);
+    await this.access.assertExperimentOwner(user._id, experimentId);
     return this.manager.resumeExperimentRuns(experimentId);
   }
 

@@ -101,6 +101,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
 
   stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
     requireService: () => undefined,
+    me: async () => ({ _id: new Types.ObjectId() }),
   } as any);
   stub(t, resolver as unknown as Record<string, unknown>, 'access', {
     assertExperimentOwner: async () => undefined,

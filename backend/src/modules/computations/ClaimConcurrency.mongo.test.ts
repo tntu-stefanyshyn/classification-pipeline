@@ -442,8 +442,11 @@ test(
     const [runId] = await seedQueuedRuns(1, ComputationQueue.local);
     const resolver = new PipelineResolver();
     // The caller rules have their own suite in computationAuth.test.ts.
+    stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
+      authenticate: async () => ({ kind: 'service' }),
+    } as any);
     stub(t, resolver as unknown as Record<string, unknown>, 'access', {
-      assertPipelineOwnerOrService: async () => undefined,
+      assertPipelineAccess: async () => undefined,
     } as any);
     const context = { req: { headers: {} } } as any;
     const changeStatus = (status: PipelineStatus, message?: string) =>

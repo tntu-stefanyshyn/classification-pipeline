@@ -321,10 +321,11 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
 
   stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
     requireService: () => undefined,
+    authenticate: async () => ({ kind: 'service' }),
   } as any);
   stub(t, resolver as unknown as Record<string, unknown>, 'access', {
-    assertExperimentOwnerOrService: async () => undefined,
-    assertPipelineOwnerOrService: async () => undefined,
+    assertExperimentAccess: async () => undefined,
+    assertPipelineAccess: async () => undefined,
   } as any);
   stub(
     t,

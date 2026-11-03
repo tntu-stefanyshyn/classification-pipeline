@@ -6,6 +6,11 @@ described in the [setup guide](../../SETUP.md#troubleshooting).
 
 ## The run fails with "Невалідний файл" or `EEG_FILE_EMPTY`
 
+**Symptom:** the pipeline returns to **Idle**, and the **Current message** in its results (the **i**
+button in the pipeline row) ends with `ValueError: Невалідний файл` or `EEG_FILE_EMPTY`.
+
+![The error in the pipeline results](images/15-invalid-file-error.png)
+
 **Cause:** the dataset does not meet the [dataset format](dataset-format.md). The upload only checks
 the file extension, so the content is validated when the run starts.
 
@@ -60,7 +65,8 @@ appears when the backend starts without the AWS Batch settings.
 [AWS Jobs (AWS Batch)](../operations/aws-batch.md), restart the backend, or use the **Local**
 execution mode.
 
-## The PDF report button is missing
+## The PDF button is missing at the top of the page
 
-**Download PDF** appears only when the experiment status is `completed`. Finish the computations and
-the optimization first.
+The **Download PDF** button at the top of the experiment page appears only when the experiment
+status is `completed`. Finish the computations and the optimization first. The **Optimization** card
+has its own **Download PDF** button.

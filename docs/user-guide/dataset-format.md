@@ -32,7 +32,10 @@ focused;0.494;-1.864;1.879;-0.807
 
 ## What happens with a wrong file
 
-| Problem in the file                       | Result when the computation runs                                     |
+The computation fails, the pipeline goes back to **Idle**, and the error is shown in the **Current
+message** of the pipeline results (the **i** button in the pipeline row).
+
+| Problem in the file                       | Error in the pipeline results                                        |
 | ----------------------------------------- | -------------------------------------------------------------------- |
 | Comma instead of a semicolon              | The run fails with "Невалідний файл".                                |
 | Decimal comma (`1,5`) in a feature column | The run fails with "Невалідний файл".                                |

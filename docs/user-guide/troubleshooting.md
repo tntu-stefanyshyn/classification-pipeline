@@ -20,6 +20,23 @@ the experiment. While the experiment is still being configured you can change th
 **Edit**. After computations have started the file cannot be replaced; create a new experiment
 instead.
 
+## The run fails because of the classes or the train/test split
+
+**Symptom:** the pipeline returns to **Idle**, and the **Current message** in its results (the **i**
+button in the pipeline row) shows one of these errors from the classification library:
+
+| Error                                                                    | Cause                                                      | Fix                                                                                |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| "The number of classes has to be greater than one"                       | The first column has only one distinct label.              | Add rows of at least one more class.                                               |
+| "The least populated class in y has only 1 member, which is too few"     | A class has a single row.                                  | Add rows to that class or remove it from the file.                                 |
+| "The test_size = N should be greater or equal to the number of classes"  | The prediction part is smaller than the number of classes. | Increase **Prediction data percentage** or add rows.                               |
+| "The train_size = N should be greater or equal to the number of classes" | The training part is smaller than the number of classes.   | Decrease **Prediction data percentage** or add rows (a one-row file always fails). |
+
+**Cause and fix in short:** the rows are split by **Prediction data percentage**, and both parts need
+at least one row for every class. See [Classification requirements](dataset-format.md#classification-requirements).
+The settings cannot be changed after the computations have started, so create a new experiment
+with the corrected settings or file.
+
 ## "Add a CSV file to the experiment before starting computations."
 
 **Cause:** the experiment has no file. **Move to computing** stays disabled until a file is attached.
@@ -40,7 +57,7 @@ The settings form shows the reason:
 
 - "The weight sum must equal 100%." Set the four metric weights so they add up to 100.
 - "Select at least one computation mode." Choose **Local**, **Cloud** or both.
-- "Cross-validation folds must be an integer greater than 0."
+- "Cross-validation folds must be an integer greater than 0." The value must be from 1 to 20; larger values are rejected by the backend.
 - "Prediction data percentage must be an integer from 1 to 99."
 
 ## "All pipelines must contain a classification stage."

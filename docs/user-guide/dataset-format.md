@@ -6,17 +6,40 @@ before you upload it.
 
 ## Requirements
 
-| Requirement                     | Details                                                                               |
-| ------------------------------- | ------------------------------------------------------------------------------------- |
-| File type                       | A `.csv` file. The app rejects other extensions with "Only CSV files are supported."  |
-| Separator                       | A semicolon (`;`). A comma-separated file is rejected.                                |
-| Header                          | The first row holds the column names.                                                 |
-| Columns                         | At least 3: the class label followed by at least 2 feature columns.                   |
-| First column                    | The class label of the row. Any text or number; spaces around the value are removed.  |
-| Other columns                   | Numeric features only. Use a dot as the decimal separator (`1.25`, not `1,25`).       |
-| Missing values                  | Not allowed. Every cell must be filled.                                               |
-| Infinite values (`inf`, `-inf`) | Not allowed.                                                                          |
-| Rows                            | At least 1 data row below the header; use enough rows for the chosen number of folds. |
+| Requirement                     | Details                                                                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| File type                       | A `.csv` file. The app rejects other extensions with "Only CSV files are supported."                                                    |
+| Separator                       | A semicolon (`;`). A comma-separated file is rejected.                                                                                  |
+| Header                          | The first row holds the column names.                                                                                                   |
+| Columns                         | At least 3: the class label followed by at least 2 feature columns.                                                                     |
+| First column                    | The class label of the row. Any text or number; spaces around the value are removed.                                                    |
+| Other columns                   | Numeric features only. Use a dot as the decimal separator (`1.25`, not `1,25`).                                                         |
+| Missing values                  | Not allowed. Every cell must be filled.                                                                                                 |
+| Infinite values (`inf`, `-inf`) | Not allowed.                                                                                                                            |
+| Rows                            | At least 1 data row below the header; see [Classification requirements](#classification-requirements) for the minimum that a run needs. |
+
+## Classification requirements
+
+A file that follows the table above can still fail when the classification starts. The computation
+splits the rows several times into a training part and a prediction part, keeping the share of
+every class in both parts (a stratified random split). The size of the prediction part is set by
+**Prediction data percentage** in the graph settings (not by the number of splits). This gives
+these requirements:
+
+| Requirement                                  | Details                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| At least two classes                         | The first column must contain at least two different labels.                              |
+| At least two rows per class                  | A class with a single row cannot be present in both the training and the prediction part. |
+| Prediction part not smaller than the classes | The prediction part (rows × percentage) must hold at least one row for every class.       |
+| Training part not smaller than the classes   | The training part (the remaining rows) must also hold at least one row for every class.   |
+
+For example, the 60-row example below has two classes, so the prediction part must have at
+least 2 rows. A **Prediction data percentage** of 1% gives only 1 row and the run fails; choose a
+larger percentage. A file with a single data row fails because its training part is empty.
+Use more rows per class than the minimum to get meaningful results.
+
+See [Troubleshooting](troubleshooting.md#the-run-fails-because-of-the-classes-or-the-train-test-split)
+for the errors and the fix.
 
 ## Example
 

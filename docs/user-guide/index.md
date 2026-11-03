@@ -108,13 +108,13 @@ experiment cannot move on without saved settings.
 
 ![The Graph structure settings form](images/09-graph-settings.png)
 
-| Setting                                    | Meaning                                                                                 |
-| ------------------------------------------ | --------------------------------------------------------------------------------------- |
-| Metric weights (%)                         | How important accuracy, F1, ROC AUC and NTPS are. The four weights must add up to 100%. |
-| Cross-validation folds                     | Into how many parts the data is split for validation. An integer greater than 0.        |
-| Hyper-optimization time per pipeline (min) | How long the optimization may spend on one pipeline. An integer greater than 0.         |
-| Prediction data percentage (%)             | The share of data held back for prediction, from 1 to 99.                               |
-| Execution modes                            | **Local** (on your computer), **Cloud**, or both. At least one is required.             |
+| Setting                                    | Meaning                                                                                                                                                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Metric weights (%)                         | How important accuracy, F1, ROC AUC and NTPS are. The four weights must add up to 100%.                                                                                                                            |
+| Cross-validation folds                     | How many times the data is randomly split into a training and a prediction part (repeated stratified random splits). An integer from 1 to 20. Rows can appear in several splits; the parts are not disjoint folds. |
+| Hyper-optimization time per pipeline (min) | How long the optimization may spend on one pipeline. An integer greater than 0.                                                                                                                                    |
+| Prediction data percentage (%)             | The share of data held back for prediction in every split, from 1 to 99. It must leave at least one row per class in both parts; see [Classification requirements](dataset-format.md#classification-requirements). |
+| Execution modes                            | **Local** (on your computer), **Cloud**, or both. At least one is required.                                                                                                                                        |
 
 NTPS is the normalized time to process one sample of data.
 

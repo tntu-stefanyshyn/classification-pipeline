@@ -11,7 +11,7 @@ how the desktop constructor and the experiment details page apply them.
 - **Path**: a chain of nodes from a root node to a leaf.
 - **Pipeline** (run): the computation of one path in one queue. One pipeline is generated for every combination of path and selected queue when the experiment moves to `computing`. With both `local` and `cloud` selected there are two pipelines per path.
 - **Queue**: where a pipeline is executed: `local` (the desktop worker) or `cloud` (the backend Docker worker or AWS Batch).
-- **Fold**: the number of cross-validation folds, set in the graph settings.
+- **Fold**: one repetition of the validation. The graph setting "Cross-validation folds" (1 to 20) is the number of repeated stratified random train/test splits; the test share is the prediction data percentage, and a row can appear in several splits.
 - **Metric weights**: the importance of the four metrics (`accuracy`, `f1`, `rocAuc`, `ntps`), set in the graph settings. They add up to 1 (100% in the UI).
 - **Integral score**: the single score of a pipeline in the optimization: the weighted sum of its normalized metrics using the metric weights. A lower score is better, and the pipeline with the lowest score is the best one.
 

@@ -13,7 +13,7 @@ how the desktop constructor and the experiment details page apply them.
 - **Queue**: where a pipeline is executed: `local` (the desktop worker) or `cloud` (the backend Docker worker or AWS Batch).
 - **Fold**: one repetition of the validation. The graph setting "Cross-validation folds" (1 to 20) is the number of repeated stratified random train/test splits; the test share is the prediction data percentage, and a row can appear in several splits.
 - **Metric weights**: the importance of the four metrics (`accuracy`, `f1`, `rocAuc`, `ntps`), set in the graph settings. They add up to 1 (100% in the UI).
-- **Integral score**: the single score of a pipeline in the optimization: the weighted sum of its normalized metrics using the metric weights. A lower score is better, and the pipeline with the lowest score is the best one.
+- **Integral score**: the single score of a pipeline in the optimization: the weighted sum of its normalized metrics using the metric weights. Accuracy, F1 and ROC AUC enter it as `1 - value` (a higher value lowers the score), and NTPS enters it directly (a shorter processing time lowers the score). A lower score is better, and the pipeline with the lowest score is the best one.
 
 ## Experiment status lifecycle
 

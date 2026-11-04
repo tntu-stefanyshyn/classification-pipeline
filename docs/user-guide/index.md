@@ -163,7 +163,8 @@ available.
    **History** log.
 
 The score of a pipeline is the integral value: the weighted sum of its normalized metrics using the
-metric weights. **A lower score is better.** Choose **Restart optimization** to run it again.
+metric weights. A higher accuracy, F1 or ROC AUC and a shorter processing time (NTPS) lower the
+score. **A lower score is better.** Choose **Restart optimization** to run it again.
 
 ![The optimization results](images/13-optimization.png)
 

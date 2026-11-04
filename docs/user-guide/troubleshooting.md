@@ -23,14 +23,15 @@ instead.
 ## The run fails because of the classes or the train/test split
 
 **Symptom:** the pipeline returns to **Idle**, and the **Current message** in its results (the **i**
-button in the pipeline row) shows one of these errors from the classification library:
+button in the pipeline row) shows one of these errors from the classification library (the same text is in the **Latest activity** column):
 
-| Error                                                                    | Cause                                                      | Fix                                                                                |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| "The number of classes has to be greater than one"                       | The first column has only one distinct label.              | Add rows of at least one more class.                                               |
-| "The least populated class in y has only 1 member, which is too few"     | A class has a single row.                                  | Add rows to that class or remove it from the file.                                 |
-| "The test_size = N should be greater or equal to the number of classes"  | The prediction part is smaller than the number of classes. | Increase **Prediction data percentage** or add rows.                               |
-| "The train_size = N should be greater or equal to the number of classes" | The training part is smaller than the number of classes.   | Decrease **Prediction data percentage** or add rows (a one-row file always fails). |
+| Error                                                                                          | Cause                                                      | Fix                                                                |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `The number of classes has to be greater than one; got 1 class`                                | The first column has only one distinct label.              | Add rows of at least one more class.                               |
+| `The least populated classes in y have only 1 member, which is too few` (it names the classes) | A class has a single row.                                  | Add rows to that class or remove it from the file.                 |
+| `The test_size = N should be greater or equal to the number of classes = M`                    | The prediction part is smaller than the number of classes. | Increase **Prediction data percentage** or add rows.               |
+| `The train_size = N should be greater or equal to the number of classes = M`                   | The training part is smaller than the number of classes.   | Decrease **Prediction data percentage** or add rows.               |
+| `With n_samples=N, test_size=… and train_size=None, the resulting train set will be empty`     | The file has too few rows for the chosen percentage.       | Add rows (a one-row file always fails) or decrease the percentage. |
 
 **Cause and fix in short:** the rows are split by **Prediction data percentage**, and both parts need
 at least one row for every class. See [Classification requirements](dataset-format.md#classification-requirements).
@@ -57,7 +58,7 @@ The settings form shows the reason:
 
 - "The weight sum must equal 100%." Set the four metric weights so they add up to 100.
 - "Select at least one computation mode." Choose **Local**, **Cloud** or both.
-- "Cross-validation folds must be an integer greater than 0." The value must be from 1 to 20; larger values are rejected by the backend.
+- "Cross-validation folds must be an integer greater than 0." Use a value from 1 to 20. A larger value shows the same message followed by the maximum (`... greater than 0. 20.`).
 - "Prediction data percentage must be an integer from 1 to 99."
 
 ## "All pipelines must contain a classification stage."
@@ -79,8 +80,10 @@ The message means "Cloud worker disabled: AWS Batch or the results bucket is not
 appears when the backend starts without the AWS Batch settings.
 
 **Fix:** configure AWS Batch and the results bucket as described in
-[AWS Jobs (AWS Batch)](../operations/aws-batch.md), restart the backend, or use the **Local**
-execution mode.
+[AWS Jobs (AWS Batch)](../operations/aws-batch.md) and restart the backend. The execution mode
+cannot be changed after the experiment has moved to computing, and the optimization waits for
+unfinished Cloud pipelines, so the Local pipelines alone do not finish an experiment that selected
+both modes. To work without the cloud, create a new experiment with only **Local** selected.
 
 ## The PDF button is missing at the top of the page
 

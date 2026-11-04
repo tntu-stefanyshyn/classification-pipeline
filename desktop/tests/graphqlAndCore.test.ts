@@ -161,19 +161,10 @@ test('graphql client builds error, session and auth links with translated messag
   const clientCompiledFile = path.resolve(__dirname, '../src/graphql/client.js');
   const { stub: apolloStub } = createApolloStub();
   const translated: string[] = [];
-  const setContextResults: unknown[] = [];
+  const authLinkTokens: unknown[] = [];
   const processedErrors: Array<{ message?: string; originalMessage?: string }> = [];
 
   stubResolvedModule(t, clientCompiledFile, '@apollo/client', apolloStub);
-  stubResolvedModule(t, clientCompiledFile, '@apollo/client/link/context', {
-    __esModule: true,
-    setContext: (
-      resolver: (value: unknown, context: { headers: Record<string, string> }) => unknown
-    ) => {
-      setContextResults.push(resolver({}, { headers: { existing: 'header' } }));
-      return { kind: 'auth-link' };
-    },
-  });
   stubResolvedModule(t, clientCompiledFile, '@apollo/client/link/error', {
     __esModule: true,
     onError: (
@@ -190,15 +181,16 @@ test('graphql client builds error, session and auth links with translated messag
     },
   });
   const tokenListeners: Array<(token: string | null) => void> = [];
-  stubResolvedModule(t, clientCompiledFile, '../services/tokenService', {
-    tokenService: {
-      getToken: () => 'secret-token',
-      getGeneration: () => 7,
-      subscribe: (listener: (token: string | null) => void) => tokenListeners.push(listener),
-    },
-  });
+  const tokenService = {
+    subscribe: (listener: (token: string | null) => void) => tokenListeners.push(listener),
+  };
+  stubResolvedModule(t, clientCompiledFile, '../services/tokenService', { tokenService });
   stubResolvedModule(t, clientCompiledFile, './sessionLink', {
     createSessionLink: () => ({ kind: 'session-link' }),
+    createAuthLink: (tokens: unknown) => {
+      authLinkTokens.push(tokens);
+      return { kind: 'auth-link' };
+    },
   });
   stubResolvedModule(t, clientCompiledFile, '../config/config', {
     config: {
@@ -221,16 +213,8 @@ test('graphql client builds error, session and auth links with translated messag
     clientModulePath
   );
 
-  assert.deepEqual(setContextResults, [
-    {
-      headers: {
-        existing: 'header',
-        authorization: 'Bearer secret-token',
-      },
-      sessionGeneration: 7,
-      sessionToken: 'secret-token',
-    },
-  ]);
+  // The auth link itself is tested in sessionLink.test.ts, together with the retries it guards.
+  assert.deepEqual(authLinkTokens, [tokenService]);
   assert.deepEqual(translated, ['translated:GraphQL failure', 'translated:Network failure']);
   assert.deepEqual(
     processedErrors.map((error) => ({

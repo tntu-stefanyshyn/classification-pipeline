@@ -1,26 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ApolloClient, HttpLink, InMemoryCache, from } from '@apollo/client';
-import { setContext } from '@apollo/client/link/context';
 import { onError } from '@apollo/client/link/error';
 import { tokenService } from '../services/tokenService';
 import { config } from '../config/config';
 import { translateGraphQLError } from '../utils/formError';
-import { createSessionLink } from './sessionLink';
+import { createAuthLink, createSessionLink } from './sessionLink';
 
 const httpLink = new HttpLink({ uri: config.renderer.graphqlEndpoint });
-
-const authLink = setContext((_, { headers }) => {
-  const token = tokenService.getToken();
-  return {
-    headers: {
-      ...headers,
-      authorization: token ? `Bearer ${token}` : '',
-    },
-    // Read by the session link: a failed request is refreshed only within its own session.
-    sessionGeneration: tokenService.getGeneration(),
-    sessionToken: token,
-  };
-});
 
 const errorLink = onError(({ graphQLErrors = [], networkError = [] }) => {
   const errors = [graphQLErrors, networkError].flat();
@@ -33,7 +19,7 @@ const errorLink = onError(({ graphQLErrors = [], networkError = [] }) => {
 });
 
 export const apolloClient = new ApolloClient({
-  link: from([errorLink, createSessionLink(), authLink, httpLink]),
+  link: from([errorLink, createSessionLink(), createAuthLink(tokenService), httpLink]),
   cache: new InMemoryCache(),
 });
 

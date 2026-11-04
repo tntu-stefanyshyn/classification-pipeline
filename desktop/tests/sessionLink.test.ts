@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { ApolloLink, Observable, execute, gql, type FetchResult } from '@apollo/client';
+import { ApolloLink, HttpLink, Observable, execute, gql, type FetchResult } from '@apollo/client';
 
 import { loadFreshModule, stubResolvedModule } from './testUtils';
 import type { RefreshOutcome } from '../src/graphql/session';
 
 const sessionLinkPath = path.resolve(__dirname, '../src/graphql/sessionLink');
+const sessionPath = path.resolve(__dirname, '../src/graphql/session');
+const tokenServicePath = path.resolve(__dirname, '../src/services/tokenService');
+const SAVE = gql`
+  mutation SaveExperiment {
+    saveExperiment
+  }
+`;
 const ME = gql`
   query Me {
     me {
@@ -163,4 +170,169 @@ test('the refresh is asked for the session and token the request was sent with',
   // The user signed out or in meanwhile: the request is not repeated with someone else's token.
   assert.deepEqual(result, unauthenticated);
   assert.equal(backend.tokens.length, 1);
+});
+
+// A token service with sessions, like the real one: signIn starts a new generation.
+const createTokens = () => {
+  const state = { generation: 1, token: 'account-a' as string | null };
+  return {
+    state,
+    service: { getGeneration: () => state.generation, getToken: () => state.token },
+    signIn: (token: string) => {
+      state.generation += 1;
+      state.token = token;
+    },
+  };
+};
+
+// Answers with the given results in turn and records the Authorization header of every request.
+const createRecordingBackend = (results: FetchResult[]) => {
+  const authorizations: string[] = [];
+  const link = new ApolloLink(
+    (operation) =>
+      new Observable<FetchResult>((observer) => {
+        authorizations.push(operation.getContext().headers?.authorization);
+        observer.next(results[Math.min(authorizations.length - 1, results.length - 1)]);
+        observer.complete();
+      })
+  );
+  return { link, authorizations };
+};
+
+test('the auth link sends the current access token and records its session', async (t) => {
+  const { createAuthLink } = loadLink(t);
+  const tokens = createTokens();
+  const contexts: Record<string, unknown>[] = [];
+  const capture = new ApolloLink((operation) => {
+    contexts.push(operation.getContext());
+    return Observable.of(success);
+  });
+
+  await new Promise<FetchResult>((resolve, reject) => {
+    execute(ApolloLink.from([createAuthLink(tokens.service), capture]), {
+      query: ME,
+      context: { headers: { existing: 'header' } },
+    }).subscribe({ next: resolve, error: reject });
+  });
+
+  assert.deepEqual(contexts[0].headers, { existing: 'header', authorization: 'Bearer account-a' });
+  assert.equal(contexts[0].sessionGeneration, 1);
+  assert.equal(contexts[0].sessionToken, 'account-a');
+});
+
+test('a retry within the same session is sent with the refreshed token', async (t) => {
+  const { createAuthLink, createSessionLink } = loadLink(t);
+  const tokens = createTokens();
+  const backend = createRecordingBackend([unauthenticated, success]);
+  const refresh = async (): Promise<RefreshOutcome> => {
+    tokens.state.token = 'account-a-fresh';
+    return 'refreshed';
+  };
+
+  const result = await run(
+    ApolloLink.from([createSessionLink(refresh), createAuthLink(tokens.service), backend.link])
+  );
+
+  assert.deepEqual(result, success);
+  assert.deepEqual(backend.authorizations, ['Bearer account-a', 'Bearer account-a-fresh']);
+});
+
+test('a retry is dropped when the session changes after the refresh succeeds', async (t) => {
+  const { createAuthLink, createSessionLink } = loadLink(t);
+  const tokens = createTokens();
+  const backend = createRecordingBackend([unauthenticated, success]);
+  const refresh = async (): Promise<RefreshOutcome> => {
+    tokens.state.token = 'account-a-fresh';
+    // Another account signs in after the refresh stored its tokens, before the retry is sent.
+    queueMicrotask(() => tokens.signIn('account-b'));
+    return 'refreshed';
+  };
+
+  const result = await run(
+    ApolloLink.from([createSessionLink(refresh), createAuthLink(tokens.service), backend.link])
+  );
+
+  assert.deepEqual(backend.authorizations, ['Bearer account-a']);
+  assert.deepEqual(result, unauthenticated);
+});
+
+test('a mutation of one account is not replayed as the account that signed in meanwhile', async (t) => {
+  // The real token service, refresh and HTTP link; only the transport is mocked.
+  const stored = new Map<string, string>();
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => stored.delete(key),
+    },
+  });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  const requests: Array<[string, string | null]> = [];
+  const respond = (operationName: string) => {
+    if (operationName === 'RefreshSession') {
+      return { data: { refreshSession: { token: 'account-a-fresh', refreshToken: 'a-next' } } };
+    }
+    const attempts = requests.filter(([name]) => name === operationName).length;
+    return attempts === 1 ? unauthenticated : { data: { saveExperiment: true } };
+  };
+  const transport = async (_url: unknown, init?: RequestInit) => {
+    const { query } = JSON.parse(String(init?.body));
+    const operationName = /(?:query|mutation) (\w+)/.exec(query)![1];
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const authorization = Object.entries(headers).find(
+      ([name]) => name.toLowerCase() === 'authorization'
+    );
+    requests.push([operationName, authorization?.[1] || null]);
+    return new Response(JSON.stringify(respond(operationName)), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = transport as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+
+  const { tokenService } =
+    loadFreshModule<typeof import('../src/services/tokenService')>(tokenServicePath);
+  stubResolvedModule(t, `${sessionPath}.js`, '../services/tokenService', { tokenService });
+  stubResolvedModule(t, `${sessionPath}.js`, '../config/config', {
+    config: { renderer: { graphqlEndpoint: 'http://backend/graphql' } },
+  });
+  const session = loadFreshModule<typeof import('../src/graphql/session')>(sessionPath);
+  stubResolvedModule(t, `${sessionLinkPath}.js`, './session', session);
+  const { createAuthLink, createSessionLink } =
+    loadFreshModule<typeof import('../src/graphql/sessionLink')>(sessionLinkPath);
+
+  tokenService.setSession({ token: 'account-a', refreshToken: 'a-refresh' });
+  // Account B signs in as soon as account A's refreshed tokens are stored.
+  tokenService.subscribe((token) => {
+    if (token === 'account-a-fresh') {
+      queueMicrotask(() => tokenService.setSession({ token: 'account-b', refreshToken: 'b' }));
+    }
+  });
+  const link = ApolloLink.from([
+    createSessionLink(),
+    createAuthLink(tokenService),
+    new HttpLink({ uri: 'http://backend/graphql', fetch: transport as typeof fetch }),
+  ]);
+
+  const result = await new Promise<FetchResult>((resolve, reject) => {
+    execute(link, { query: SAVE }).subscribe({ next: resolve, error: reject });
+  });
+
+  assert.deepEqual(requests, [
+    ['SaveExperiment', 'Bearer account-a'],
+    ['RefreshSession', null],
+  ]);
+  assert.equal(result.errors?.[0]?.extensions?.code, 'UNAUTHENTICATED');
+  assert.equal(tokenService.getToken(), 'account-b');
 });

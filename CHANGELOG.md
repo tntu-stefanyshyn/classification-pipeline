@@ -31,3 +31,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Runs on the `local` queue no longer fail with `Not authenticated`.
 - Compute containers now send the token with every progress update and with the final result.
+- Pipeline history entries written from worker progress updates now store the run status, so a query that selects `history { status }` no longer fails. The `pipeline-history-missing-status-to-running` migration fills in the status of existing entries at startup.

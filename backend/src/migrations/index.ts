@@ -1,7 +1,12 @@
 import type { Migration } from './types';
 import { pipelineLegacyStatusesToIdleMigration } from './pipelineLegacyStatusesToIdleMigration';
+import { pipelineHistoryMissingStatusMigration } from './pipelineHistoryMissingStatusMigration';
 
-const migrations: Migration[] = [pipelineLegacyStatusesToIdleMigration];
+// Every migration runs on each start, so each one must change nothing on a second run.
+const migrations: Migration[] = [
+  pipelineLegacyStatusesToIdleMigration,
+  pipelineHistoryMissingStatusMigration,
+];
 
 export const runMigrations = async (): Promise<number> => {
   let totalUpdated = 0;

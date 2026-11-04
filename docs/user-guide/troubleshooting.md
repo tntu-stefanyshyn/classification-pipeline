@@ -71,19 +71,30 @@ and select at least one classification technology.
 ## The run stays in "Queued"
 
 A local run waits for the desktop worker. Keep the desktop app open and make sure Docker is
-running. See "Local runs stay queued" in the [setup guide](../../SETUP.md#troubleshooting). A cloud
-run waits for a worker on the backend or in AWS Batch.
+running. See "Local runs stay queued" in the [setup guide](../../SETUP.md#troubleshooting). Local
+runs can also fail with `Not authenticated`, so prefer the Cloud queue for now. A cloud run waits
+for a worker on the backend: the Docker worker or AWS Batch.
 
 ## Cloud runs do not start, and the backend prints "Хмарний воркер вимкнено"
 
 The message means "Cloud worker disabled: AWS Batch or the results bucket is not configured". It
-appears when the backend starts without the AWS Batch settings.
+concerns only the AWS Batch worker. The **Cloud** queue does not require AWS Batch: the backend
+Docker worker also executes it, with a local Docker image.
 
-**Fix:** configure AWS Batch and the results bucket as described in
-[AWS Jobs (AWS Batch)](../operations/aws-batch.md) and restart the backend. The execution mode
-cannot be changed after the experiment has moved to computing, and the optimization waits for
-unfinished Cloud pipelines, so the Local pipelines alone do not finish an experiment that selected
-both modes. To work without the cloud, create a new experiment with only **Local** selected.
+**Fix, without AWS Batch** (works for an experiment that is already computing): in
+`backend/.env` set `BACKEND_CLOUD_WORKER_ENABLED=false`, `BACKEND_LOCAL_WORKER_ENABLED=true` and
+`BACKEND_SERVICE_TOKEN` to a long random string, build the `aws-jobs` image and restart the
+backend, as described in the [setup guide](../../SETUP.md#3-configure-the-backend-and-s3-uploads).
+The worker then takes the queued Cloud pipelines of the existing experiment, and the optimization
+can start after they finish. Do not recreate the experiment with **Local** only: the Local queue
+currently fails with `Not authenticated`.
+
+**Fix, with AWS Batch:** configure AWS Batch and the results bucket as described in
+[AWS Jobs (AWS Batch)](../operations/aws-batch.md) and restart the backend.
+
+The execution mode cannot be changed after the experiment has moved to computing, and the
+optimization waits for unfinished pipelines of every selected mode, so choose the mode before
+**Move to computing**.
 
 ## The PDF button is missing at the top of the page
 

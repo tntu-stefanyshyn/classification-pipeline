@@ -103,8 +103,13 @@ Open the graph with **Constructor** on the experiment page.
 
 Choose **Edit settings** (on the experiment page or in the constructor). The form starts with
 equal metric weights (25% each), 5 folds, 30 minutes of optimization per pipeline, 20% of data for
-prediction and the **Local** mode. Save the form even if you keep the defaults, because the
-experiment cannot move on without saved settings.
+prediction and the **Local** mode. For this walkthrough select **Cloud** and clear **Local**:
+the Cloud queue is executed by the backend Docker worker and needs no AWS account for
+computations (configure it as in the [setup guide](../../SETUP.md#3-configure-the-backend-and-s3-uploads)).
+The **Local** queue is currently unreliable: the desktop application starts its compute container
+without the backend token, so runs can fail with `Not authenticated` (see the
+[setup guide](../../SETUP.md#troubleshooting)). Save the form even if you keep the other defaults,
+because the experiment cannot move on without saved settings.
 
 ![The Graph structure settings form](images/09-graph-settings.png)
 
@@ -114,7 +119,7 @@ experiment cannot move on without saved settings.
 | Cross-validation folds                     | How many times the data is randomly split into a training and a prediction part (repeated stratified random splits). An integer from 1 to 20. Rows can appear in several splits; the parts are not disjoint folds. |
 | Hyper-optimization time per pipeline (min) | How long the optimization may spend on one pipeline. An integer greater than 0.                                                                                                                                    |
 | Prediction data percentage (%)             | The share of data held back for prediction in every split, from 1 to 99. It must leave at least one row per class in both parts; see [Classification requirements](dataset-format.md#classification-requirements). |
-| Execution modes                            | **Local** (on your computer), **Cloud**, or both. At least one is required.                                                                                                                                        |
+| Execution modes                            | **Cloud** (the backend Docker worker or AWS Batch; recommended), **Local** (the desktop application, currently unreliable) or both. At least one is required.                                                      |
 
 NTPS is the normalized time to process one sample of data.
 
@@ -140,8 +145,8 @@ colors each pipeline by its status:
   application open until it finishes. The square button stops a running pipeline and returns it to
   idle. **Move all to waiting** puts every local pipeline that is idle or running into the queue.
 - **Cloud queue:** the pipelines are queued automatically when you choose **Move to computing**
-  and are executed by the backend (Docker worker or AWS Batch), one after another. This needs the
-  cloud worker to be configured.
+  and are executed by the backend (Docker worker or AWS Batch), one after another. This needs
+  a backend worker to be configured: the Docker worker works without AWS Batch.
 - The **i** button in the **Results** column opens the details of the latest run: the metrics for
   every cross-validation fold, the confusion matrices, the dataset information, the device that
   executed the run, and the execution history.

@@ -15,8 +15,9 @@ export const isUnauthenticated = (errors?: readonly GraphQLFormattedError[]) =>
   Boolean(errors?.some((error) => error.extensions?.code === UNAUTHENTICATED));
 
 /**
- * `expired`: the session is over and was cleared. `unavailable`: try again later, still signed in.
- * `superseded`: the user signed out or in meanwhile, so the result belongs to no current session.
+ * `expired`: the session is over and was cleared. `unavailable`: the backend answered with another
+ * error, try again later, still signed in. `superseded`: the user signed out or in meanwhile, so
+ * the result belongs to no current session. A network failure rejects with its error instead.
  */
 export type RefreshOutcome = 'refreshed' | 'expired' | 'unavailable' | 'superseded';
 
@@ -40,15 +41,12 @@ const exchangeRefreshToken = async (generation: number): Promise<RefreshOutcome>
     return 'expired';
   }
 
-  let result: OperationResult<RefreshSessionMutation>;
-  try {
-    result = await postOperation<RefreshSessionMutation, RefreshSessionMutationVariables>(
-      RefreshSessionDocument,
-      { refreshToken }
-    );
-  } catch {
-    return 'unavailable';
-  }
+  // A dropped connection rejects with its own error and keeps the session: the caller then sees
+  // the network error, not the expired access token that started the refresh.
+  const result = await postOperation<RefreshSessionMutation, RefreshSessionMutationVariables>(
+    RefreshSessionDocument,
+    { refreshToken }
+  );
 
   // A late answer must not undo a sign-out or overwrite (or clear) a newer sign-in.
   if (tokenService.getGeneration() !== generation) return 'superseded';

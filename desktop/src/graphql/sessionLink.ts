@@ -47,7 +47,8 @@ export const createAuthLink = (tokens: Pick<typeof tokenService, 'getToken' | 'g
  * On UNAUTHENTICATED, refreshes the session the operation was sent in and repeats the operation
  * once with the new access token (the auth link below reads it). A repeated failure, a session
  * that cannot be refreshed, or one that ended meanwhile (before the refresh or before the retry
- * is sent) passes the original errors on.
+ * is sent) passes the original errors on. A refresh that cannot reach the backend ends the
+ * operation with that network error instead, so the user sees the connection problem.
  */
 export const createSessionLink = (refresh: typeof refreshSession = refreshSession) =>
   onError(({ graphQLErrors, operation, forward, response }) => {

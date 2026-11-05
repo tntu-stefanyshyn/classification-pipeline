@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { ApolloLink, HttpLink, Observable, execute, gql, type FetchResult } from '@apollo/client';
+import {
+  ApolloClient,
+  ApolloError,
+  ApolloLink,
+  HttpLink,
+  InMemoryCache,
+  Observable,
+  execute,
+  gql,
+  type FetchResult,
+} from '@apollo/client';
 
 import { loadFreshModule, stubResolvedModule } from './testUtils';
 import type { RefreshOutcome } from '../src/graphql/session';
@@ -127,6 +137,25 @@ for (const outcome of ['expired', 'unavailable', 'superseded'] as const) {
     assert.equal(backend.tokens.length, 1);
   });
 }
+
+test('a refresh that fails passes its error on instead of the expired token', async (t) => {
+  const { createSessionLink } = loadLink(t);
+  const backend = createBackend([unauthenticated, success]);
+  const dropped = new TypeError('fetch failed');
+
+  await assert.rejects(
+    run(
+      ApolloLink.from([
+        createSessionLink(async () => {
+          throw dropped;
+        }),
+        backend.link,
+      ])
+    ),
+    (error) => error === dropped
+  );
+  assert.equal(backend.tokens.length, 1);
+});
 
 test('other errors are not treated as an ended session', async (t) => {
   const { createSessionLink } = loadLink(t);
@@ -256,8 +285,12 @@ test('a retry is dropped when the session changes after the refresh succeeds', a
   assert.deepEqual(result, unauthenticated);
 });
 
-test('a mutation of one account is not replayed as the account that signed in meanwhile', async (t) => {
-  // The real token service, refresh and HTTP link; only the transport is mocked.
+// The real token service, refresh and HTTP link; only the transport is mocked. `respond` gets
+// the operation name and how many times it was sent; throwing from it is a dropped connection.
+const loadRealSession = (
+  t: TestContext,
+  respond: (operationName: string, attempt: number) => unknown
+) => {
   const stored = new Map<string, string>();
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {
@@ -275,13 +308,6 @@ test('a mutation of one account is not replayed as the account that signed in me
   });
 
   const requests: Array<[string, string | null]> = [];
-  const respond = (operationName: string) => {
-    if (operationName === 'RefreshSession') {
-      return { data: { refreshSession: { token: 'account-a-fresh', refreshToken: 'a-next' } } };
-    }
-    const attempts = requests.filter(([name]) => name === operationName).length;
-    return attempts === 1 ? unauthenticated : { data: { saveExperiment: true } };
-  };
   const transport = async (_url: unknown, init?: RequestInit) => {
     const { query } = JSON.parse(String(init?.body));
     const operationName = /(?:query|mutation) (\w+)/.exec(query)![1];
@@ -290,7 +316,8 @@ test('a mutation of one account is not replayed as the account that signed in me
       ([name]) => name.toLowerCase() === 'authorization'
     );
     requests.push([operationName, authorization?.[1] || null]);
-    return new Response(JSON.stringify(respond(operationName)), {
+    const attempt = requests.filter(([name]) => name === operationName).length;
+    return new Response(JSON.stringify(respond(operationName, attempt)), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -311,7 +338,21 @@ test('a mutation of one account is not replayed as the account that signed in me
   stubResolvedModule(t, `${sessionLinkPath}.js`, './session', session);
   const { createAuthLink, createSessionLink } =
     loadFreshModule<typeof import('../src/graphql/sessionLink')>(sessionLinkPath);
+  const link = ApolloLink.from([
+    createSessionLink(),
+    createAuthLink(tokenService),
+    new HttpLink({ uri: 'http://backend/graphql', fetch: transport as typeof fetch }),
+  ]);
+  return { tokenService, link, requests };
+};
 
+test('a mutation of one account is not replayed as the account that signed in meanwhile', async (t) => {
+  const { tokenService, link, requests } = loadRealSession(t, (operationName, attempt) => {
+    if (operationName === 'RefreshSession') {
+      return { data: { refreshSession: { token: 'account-a-fresh', refreshToken: 'a-next' } } };
+    }
+    return attempt === 1 ? unauthenticated : { data: { saveExperiment: true } };
+  });
   tokenService.setSession({ token: 'account-a', refreshToken: 'a-refresh' });
   // Account B signs in as soon as account A's refreshed tokens are stored.
   tokenService.subscribe((token) => {
@@ -319,11 +360,6 @@ test('a mutation of one account is not replayed as the account that signed in me
       queueMicrotask(() => tokenService.setSession({ token: 'account-b', refreshToken: 'b' }));
     }
   });
-  const link = ApolloLink.from([
-    createSessionLink(),
-    createAuthLink(tokenService),
-    new HttpLink({ uri: 'http://backend/graphql', fetch: transport as typeof fetch }),
-  ]);
 
   const result = await new Promise<FetchResult>((resolve, reject) => {
     execute(link, { query: SAVE }).subscribe({ next: resolve, error: reject });
@@ -335,4 +371,32 @@ test('a mutation of one account is not replayed as the account that signed in me
   ]);
   assert.equal(result.errors?.[0]?.extensions?.code, 'UNAUTHENTICATED');
   assert.equal(tokenService.getToken(), 'account-b');
+});
+
+test('a refresh that loses the connection shows the network error and keeps the session', async (t) => {
+  const dropped = new TypeError('fetch failed');
+  const { tokenService, link, requests } = loadRealSession(t, (operationName) => {
+    if (operationName === 'RefreshSession') throw dropped;
+    return unauthenticated;
+  });
+  tokenService.setSession({ token: 'account-a', refreshToken: 'a-refresh' });
+  const client = new ApolloClient({ link, cache: new InMemoryCache() });
+
+  const error = await client.mutate({ mutation: SAVE }).then(
+    () => assert.fail('the mutation must fail'),
+    (failure: unknown) => failure
+  );
+
+  // What the caller sees: the dropped connection, not the expired access token.
+  assert.ok(error instanceof ApolloError);
+  assert.equal(error.networkError, dropped);
+  assert.deepEqual(error.graphQLErrors, []);
+  assert.equal(error.message, 'fetch failed');
+  assert.deepEqual(requests, [
+    ['SaveExperiment', 'Bearer account-a'],
+    ['RefreshSession', null],
+  ]);
+  // Still signed in: the refresh can be tried again once the connection is back.
+  assert.equal(tokenService.getToken(), 'account-a');
+  assert.equal(tokenService.getRefreshToken(), 'a-refresh');
 });

@@ -139,18 +139,35 @@ test('a session without a refresh token ends without calling the backend', async
   assert.deepEqual(tokens.calls, [['expireSession']]);
 });
 
-test('a network failure or a server error keeps the session', async (t) => {
-  const responses = [
-    async () => {
-      throw new TypeError('fetch failed');
-    },
-    async () => ({ data: null, errors: [{ message: 'Internal server error' }] }),
-  ];
-  let index = 0;
+test('a network failure rejects with its error and keeps the session', async (t) => {
+  const dropped = new TypeError('fetch failed');
   const tokens = createTokens('still-valid');
-  const { module } = loadSession(t, () => responses[index++](), tokens);
+  const { module, calls } = loadSession(
+    t,
+    async () => {
+      throw dropped;
+    },
+    tokens
+  );
 
-  assert.equal(await module.refreshSession(), 'unavailable');
+  const failing = [module.refreshSession(1, 'access-1'), module.refreshSession(1, 'access-1')];
+
+  // Every request waiting for the refresh gets the same error, and the next refresh tries again.
+  for (const refresh of failing) await assert.rejects(refresh, (error) => error === dropped);
+  await assert.rejects(module.refreshSession(), (error) => error === dropped);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(tokens.calls, []);
+  assert.equal(tokens.state.refreshToken, 'still-valid');
+});
+
+test('a server error keeps the session', async (t) => {
+  const tokens = createTokens('still-valid');
+  const { module } = loadSession(
+    t,
+    async () => ({ data: null, errors: [{ message: 'Internal server error' }] }),
+    tokens
+  );
+
   assert.equal(await module.refreshSession(), 'unavailable');
   assert.deepEqual(tokens.calls, []);
 });

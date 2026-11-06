@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { graphql, type GraphQLSchema } from 'graphql';
 import { buildSchemaSync, type NonEmptyArray } from 'type-graphql';
 
+import { reportAuthenticationErrors } from '../modules/auth/graphql/reportAuthenticationErrors';
 import type { GraphQLContext } from '../types/context';
 
 type ResolverClass = new (...args: any[]) => unknown;
@@ -16,6 +17,8 @@ type ExecuteGraphqlOptions = {
 export const buildGraphqlSchema = (resolvers: ResolverClass[]): GraphQLSchema => {
   return buildSchemaSync({
     resolvers: resolvers as NonEmptyArray<ResolverClass>,
+    // The same boundary as buildAppSchema, so tests see the error codes clients see.
+    globalMiddlewares: [reportAuthenticationErrors],
     validate: { forbidUnknownValues: false },
   });
 };

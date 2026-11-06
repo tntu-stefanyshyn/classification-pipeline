@@ -10,6 +10,7 @@ import { Storage } from './modules/storage/graphql/Storage';
 import { Files } from './modules/files/graphql/Files';
 import { ComputationResolver } from './modules/computations';
 import { PipelineResolver } from './core/pipeline/graphql/pipeline';
+import { reportAuthenticationErrors } from './modules/auth/graphql/reportAuthenticationErrors';
 
 /** Builds the GraphQL schema; with `emitSchemaFile` it also writes the SDL file. */
 export const buildAppSchema = (emitSchemaFile?: string) =>
@@ -26,6 +27,7 @@ export const buildAppSchema = (emitSchemaFile?: string) =>
       PipelineResolver,
     ],
     orphanedTypes: [User],
+    globalMiddlewares: [reportAuthenticationErrors],
     validate: { forbidUnknownValues: false },
     ...(emitSchemaFile ? { emitSchemaFile } : {}),
   });

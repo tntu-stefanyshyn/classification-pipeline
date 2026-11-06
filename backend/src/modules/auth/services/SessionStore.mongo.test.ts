@@ -206,3 +206,116 @@ test(
     assert.ok((await SessionModel.findOne().lean())!.expiresAt > before);
   }
 );
+
+const hashOf = (token: string) => createHash('sha256').update(token).digest('hex');
+
+test(
+  'a used token presented after it expired still ends the session it was copied from',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    // Someone else exchanged the copy and keeps the session alive with its successors.
+    const copied = await flow.refreshSession(session.refreshToken);
+    await RefreshTokenModel.updateOne(
+      { tokenHash: hashOf(session.refreshToken) },
+      { $set: { expiresAt: new Date(Date.now() - 1000) } }
+    );
+
+    await rejectsAsExpired(flow.refreshSession(session.refreshToken));
+    await rejectsAsExpired(flow.refreshSession(copied.refreshToken));
+  }
+);
+
+test(
+  'a token whose record MongoDB already removed still ends its active session',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    const copied = await flow.refreshSession(session.refreshToken);
+    // What the TTL index does once the used token expires.
+    await RefreshTokenModel.deleteOne({ tokenHash: hashOf(session.refreshToken) });
+
+    await rejectsAsExpired(flow.refreshSession(session.refreshToken));
+    await rejectsAsExpired(flow.refreshSession(copied.refreshToken));
+    assert.ok((await SessionModel.findOne().lean())?.revokedAt);
+  }
+);
+
+test('a forged token that names a session does not end it', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const [sessionId, nonce] = session.refreshToken.split('.');
+
+  await rejectsAsExpired(flow.refreshSession(`${sessionId}.${nonce}.not-our-signature`));
+  assert.equal(await flow.logout(`${sessionId}.other.not-our-signature`), true);
+
+  // Only a token the backend signed can name the session to end.
+  assert.ok(await flow.refreshSession(session.refreshToken));
+});
+
+test('the same attempt after a lost answer gets the same refresh token', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+
+  // The first answer never reached the client, so it repeats the exchange with the same attempt.
+  const lost = await flow.refreshSession(session.refreshToken, 'attempt-1');
+  const repeated = await flow.refreshSession(session.refreshToken, 'attempt-1');
+
+  assert.equal(repeated.refreshToken, lost.refreshToken);
+  assert.ok(await flow.refreshSession(repeated.refreshToken, 'attempt-2'));
+  assert.equal((await SessionModel.findOne().lean())?.revokedAt, undefined);
+});
+
+test('parallel exchanges of one attempt return the same refresh token', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+
+  const [first, second] = await Promise.all([
+    flow.refreshSession(session.refreshToken, 'attempt-1'),
+    flow.refreshSession(session.refreshToken, 'attempt-1'),
+  ]);
+
+  assert.equal(first.refreshToken, second.refreshToken);
+  assert.ok(await flow.refreshSession(first.refreshToken));
+});
+
+test('another attempt with a used token is still reuse', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+
+  await rejectsAsExpired(flow.refreshSession(session.refreshToken, 'attempt-2'));
+  await rejectsAsExpired(flow.refreshSession(session.refreshToken));
+  await rejectsAsExpired(flow.refreshSession(next.refreshToken));
+});
+
+test('repeating an attempt whose refresh token was used since is reuse', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+  const third = await flow.refreshSession(next.refreshToken, 'attempt-2');
+
+  await rejectsAsExpired(flow.refreshSession(session.refreshToken, 'attempt-1'));
+  await rejectsAsExpired(flow.refreshSession(third.refreshToken));
+});
+
+test('an attempt whose successor was never stored can be completed', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const create = RefreshTokenModel.create.bind(RefreshTokenModel);
+  let failures = 1;
+  stub(t, RefreshTokenModel as unknown as Record<string, unknown>, 'create', (async (
+    ...args: Parameters<typeof create>
+  ) => {
+    if (failures-- > 0) throw new Error('connection lost');
+    return create(...args);
+  }) as any);
+
+  // The old token was marked as used, but its successor was not stored.
+  await assert.rejects(flow.refreshSession(session.refreshToken, 'attempt-1'), /connection lost/);
+  const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+
+  assert.ok(await flow.refreshSession(next.refreshToken));
+});

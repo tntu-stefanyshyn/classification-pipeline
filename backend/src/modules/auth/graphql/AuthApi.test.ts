@@ -153,8 +153,8 @@ test('Auth GraphQL exposes refreshSession and logout without an access token', a
     t,
     AuthFlow.prototype as unknown as Record<string, unknown>,
     'refreshSession',
-    async (refreshToken: string) => {
-      calls.push(['refreshSession', refreshToken]);
+    async (refreshToken: string, attemptId?: string | null) => {
+      calls.push(['refreshSession', refreshToken, attemptId]);
       return {
         token: 'next-access',
         refreshToken: 'next-refresh',
@@ -174,10 +174,10 @@ test('Auth GraphQL exposes refreshSession and logout without an access token', a
 
   const refreshed = await executeGraphql(
     schema,
-    `mutation($refreshToken: String!) {
-      refreshSession(refreshToken: $refreshToken) { token refreshToken user { _id } }
+    `mutation($refreshToken: String!, $attemptId: String) {
+      refreshSession(refreshToken: $refreshToken, attemptId: $attemptId) { token refreshToken user { _id } }
     }`,
-    { variables: { refreshToken: 'old-refresh' } }
+    { variables: { refreshToken: 'old-refresh', attemptId: 'attempt-1' } }
   );
   const loggedOut = await executeGraphql(
     schema,
@@ -195,7 +195,7 @@ test('Auth GraphQL exposes refreshSession and logout without an access token', a
   });
   assert.deepEqual(toPlainValue(loggedOut.data), { logout: true });
   assert.deepEqual(calls, [
-    ['refreshSession', 'old-refresh'],
+    ['refreshSession', 'old-refresh', 'attempt-1'],
     ['logout', 'next-refresh'],
   ]);
 });

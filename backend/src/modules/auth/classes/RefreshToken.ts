@@ -2,8 +2,8 @@ import { index, prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 
-// MongoDB removes a token once it expires; used and revoked tokens stay until then, so a reused
-// token is still recognised as reused.
+// MongoDB removes a token once it expires; used and revoked tokens stay until then. A reused token
+// is recognised after that too: the token itself names its session (see SessionStore).
 @index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 @index({ familyId: 1 })
 export class RefreshToken extends TimeStamps {
@@ -26,6 +26,10 @@ export class RefreshToken extends TimeStamps {
   /** Set when the token is exchanged for the next one. */
   @prop()
   usedAt?: Date;
+
+  /** SHA-256 of the client's attempt id of that exchange: its repeat gets the same successor. */
+  @prop()
+  attemptHash?: string;
 
   @prop()
   revokedAt?: Date;

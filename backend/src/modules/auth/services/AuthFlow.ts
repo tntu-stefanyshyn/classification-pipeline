@@ -49,9 +49,13 @@ export class AuthFlow {
     return this.startSession(user);
   }
 
-  /** Exchanges a refresh token for a new pair; the presented token stops working. */
-  async refreshSession(refreshToken: string): Promise<AuthPayload> {
-    const next = await this.sessions.rotate(refreshToken);
+  /**
+   * Exchanges a refresh token for a new pair; the presented token stops working. Repeating the
+   * same `attemptId` after a lost answer returns the same refresh token instead of ending the
+   * session as reuse.
+   */
+  async refreshSession(refreshToken: string, attemptId?: string | null): Promise<AuthPayload> {
+    const next = await this.sessions.rotate(refreshToken, attemptId);
     const user = await UserModel.findById(next.userId);
     if (!user) {
       await this.sessions.revoke(next.refreshToken);

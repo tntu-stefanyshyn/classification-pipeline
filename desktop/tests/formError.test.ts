@@ -6,6 +6,7 @@ import {
   setFormikFormErrorFromApollo,
   translateGraphQLError,
 } from '../src/utils/formError';
+import { toAuthSession } from '../src/utils/authSession';
 
 test('translateGraphQLError maps known backend codes and preserves unknown text', () => {
   assert.equal(
@@ -28,6 +29,17 @@ test('translateGraphQLError decides on extensions.code before the message', () =
     translateGraphQLError({ message: 'jwt expired', extensions: { code: 'UNAUTHENTICATED' } }),
     'jwt expired'
   );
+});
+
+test('toAuthSession takes the tokens of a login or registration answer', () => {
+  assert.deepEqual(toAuthSession({ token: 'access', refreshToken: 'refresh', user: {} } as any), {
+    token: 'access',
+    refreshToken: 'refresh',
+  });
+  assert.equal(toAuthSession({ token: 'access', refreshToken: null }), null);
+  assert.equal(toAuthSession({ token: '', refreshToken: 'refresh' }), null);
+  assert.equal(toAuthSession(null), null);
+  assert.equal(toAuthSession(undefined), null);
 });
 
 test('getErrorMessage prefers graphQL errors, then network errors, then fallback', () => {

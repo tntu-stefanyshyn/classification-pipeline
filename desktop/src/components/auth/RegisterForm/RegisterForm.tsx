@@ -3,6 +3,7 @@ import type { FC } from 'react';
 import { InputField } from '../../inputs/InputField';
 import { SubmitButton } from '../../inputs/SubmitButton';
 import { FormError } from '../../inputs/FormError';
+import { toAuthSession } from '../../../utils/authSession';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
 import { createRegisterSchema } from './constants/registerSchema';
 import { useRegisterMutation } from './graphql';
@@ -25,8 +26,8 @@ const RegisterForm: FC<RegisterFormProps> = ({ onSuccess }) => {
           onError: (apolloError) => setFormikFormErrorFromApollo(apolloError, setFieldError),
         });
 
-        const session = result.data?.register;
-        if (session?.token) onSuccess({ token: session.token, refreshToken: session.refreshToken });
+        const session = toAuthSession(result.data?.register);
+        if (session) onSuccess(session);
       }}
     >
       <Form className="auth-form" noValidate>

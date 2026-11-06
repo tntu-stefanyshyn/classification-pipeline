@@ -3,6 +3,7 @@ import type { FC } from 'react';
 import { InputField } from '../../inputs/InputField';
 import { SubmitButton } from '../../inputs/SubmitButton';
 import { FormError } from '../../inputs/FormError';
+import { toAuthSession } from '../../../utils/authSession';
 import { setFormikFormErrorFromApollo } from '../../../utils/formError';
 import { createLoginSchema } from './constants/loginSchema';
 import { useLoginMutation } from './graphql';
@@ -24,8 +25,8 @@ const LoginForm: FC<LoginFormProps> = ({ onSuccess }) => {
           onError: (apolloError) => setFormikFormErrorFromApollo(apolloError, setFieldError),
         });
 
-        const session = result.data?.login;
-        if (session?.token) onSuccess({ token: session.token, refreshToken: session.refreshToken });
+        const session = toAuthSession(result.data?.login);
+        if (session) onSuccess(session);
       }}
     >
       <Form className="auth-form" noValidate>

@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 
 import { UserModel } from '../../../core/user';
 import { stub } from '../../../test/testUtils';
-import { AuthenticationError } from '../errors';
+import { AuthenticationError } from '../classes/AuthenticationError';
 import { RefreshTokenModel } from '../models/RefreshTokenModel';
 import { SessionModel } from '../models/SessionModel';
 import { AuthFlow } from './AuthFlow';

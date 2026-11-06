@@ -17,8 +17,9 @@ import {
   durationToSeconds,
   refreshTokenTtlSeconds,
 } from './constants/token';
-import { AuthenticationError } from './errors';
-import { reportAuthenticationErrors, UNAUTHENTICATED } from './graphql/reportAuthenticationErrors';
+import { AuthenticationError } from './classes/AuthenticationError';
+import { UNAUTHENTICATED } from './constants/errorCodes';
+import { reportAuthenticationErrors } from './graphql/reportAuthenticationErrors';
 
 test('auth classes store assigned values and resolver delegates to AuthFlow', async (t) => {
   const payload = new AuthPayload();

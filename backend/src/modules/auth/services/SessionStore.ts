@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { Types } from 'mongoose';
 
+import { AuthenticationError } from '../classes/AuthenticationError';
 import { refreshTokenTtlSeconds } from '../constants/token';
-import { sessionExpired } from '../errors';
 import { RefreshTokenModel } from '../models/RefreshTokenModel';
 import { SessionModel } from '../models/SessionModel';
 
@@ -29,10 +29,10 @@ export class SessionStore {
   async rotate(token: string): Promise<{ userId: Types.ObjectId; refreshToken: string }> {
     const record = await this.find(token);
     if (!record || record.revokedAt || record.expiresAt <= new Date()) {
-      throw sessionExpired();
+      throw AuthenticationError.sessionExpired();
     }
     if (!(await this.isActive(record.familyId))) {
-      throw sessionExpired();
+      throw AuthenticationError.sessionExpired();
     }
     if (!record.usedAt) {
       // Conditional, so of two exchanges of one token only one wins.
@@ -44,14 +44,14 @@ export class SessionStore {
         const refreshToken = await this.issue(record.userId, record.familyId);
         if (!(await this.isActive(record.familyId))) {
           // Revoked while the successor was being stored: it must not reach the client.
-          throw sessionExpired();
+          throw AuthenticationError.sessionExpired();
         }
         return { userId: record.userId, refreshToken };
       }
     }
     // A used token presented again was copied: end the whole session, the copy included.
     await this.revokeSession(record.familyId);
-    throw sessionExpired();
+    throw AuthenticationError.sessionExpired();
   }
 
   async revoke(token: string): Promise<void> {

@@ -8,7 +8,9 @@ export class AuthenticationError extends Error {
     super(message);
     this.name = 'AuthenticationError';
   }
-}
 
-/** The refresh token is unknown, expired, used or revoked: the client has to log in again. */
-export const sessionExpired = () => new AuthenticationError('Session expired');
+  /** The refresh token is unknown, expired, used or revoked: the client has to log in again. */
+  static sessionExpired() {
+    return new AuthenticationError('Session expired');
+  }
+}

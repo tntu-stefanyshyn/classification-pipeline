@@ -10,7 +10,7 @@ import { AuthPayload } from '../classes/AuthPayload';
 import type { Principal } from '../classes/Principal';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
-import { AuthenticationError, sessionExpired } from '../errors';
+import { AuthenticationError } from '../classes/AuthenticationError';
 import { SessionStore } from './SessionStore';
 
 export class AuthFlow {
@@ -54,7 +54,7 @@ export class AuthFlow {
     const user = await UserModel.findById(next.userId);
     if (!user) {
       await this.sessions.revoke(next.refreshToken);
-      throw sessionExpired();
+      throw AuthenticationError.sessionExpired();
     }
     return { token: this.buildToken(user), refreshToken: next.refreshToken, user };
   }

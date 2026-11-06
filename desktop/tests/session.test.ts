@@ -10,7 +10,15 @@ type FetchCall = { headers: Record<string, string>; query: string; variables: un
 
 // A token service with sessions: signIn and signOut start a new generation, like the real one.
 const createTokens = (refreshToken: string | null) => {
-  const state = { generation: 1, token: 'access-1' as string | null, refreshToken };
+  const state = {
+    generation: 1,
+    token: 'access-1' as string | null,
+    refreshToken,
+    // Like the real one: kept until the exchange succeeds or the session changes.
+    attemptId: null as string | null,
+    pendingLogouts: [] as string[],
+  };
+  let attempts = 0;
   const calls: unknown[][] = [];
   return {
     state,
@@ -19,26 +27,38 @@ const createTokens = (refreshToken: string | null) => {
       getGeneration: () => state.generation,
       getToken: () => state.token,
       getRefreshToken: () => state.refreshToken,
+      getRefreshAttemptId: () => (state.attemptId ??= `attempt-${++attempts}`),
       replaceTokens: (session: { token: string; refreshToken: string }) => {
         calls.push(['replaceTokens', session]);
         state.token = session.token;
         state.refreshToken = session.refreshToken;
+        state.attemptId = null;
       },
       expireSession: () => {
         calls.push(['expireSession']);
         state.generation += 1;
-        state.token = state.refreshToken = null;
+        state.token = state.refreshToken = state.attemptId = null;
       },
       clearToken: () => {
         calls.push(['clearToken']);
         state.generation += 1;
-        state.token = state.refreshToken = null;
+        state.token = state.refreshToken = state.attemptId = null;
+      },
+      getPendingLogouts: () => [...state.pendingLogouts],
+      addPendingLogout: (token: string) => {
+        calls.push(['addPendingLogout', token]);
+        state.pendingLogouts.push(token);
+      },
+      removePendingLogout: (token: string) => {
+        calls.push(['removePendingLogout', token]);
+        state.pendingLogouts = state.pendingLogouts.filter((pending) => pending !== token);
       },
     },
     signIn: (token: string, nextRefreshToken: string) => {
       state.generation += 1;
       state.token = token;
       state.refreshToken = nextRefreshToken;
+      state.attemptId = null;
     },
   };
 };
@@ -91,8 +111,11 @@ test('refreshSession sends the generated document and rotates the tokens', async
   assert.equal(await module.refreshSession(), 'refreshed');
 
   assert.equal(calls.length, 1);
-  assert.match(calls[0].query, /mutation RefreshSession\(\$refreshToken: String!\)/);
-  assert.deepEqual(calls[0].variables, { refreshToken: 'old-refresh' });
+  assert.match(
+    calls[0].query,
+    /mutation RefreshSession\(\$refreshToken: String!, \$attemptId: String\)/
+  );
+  assert.deepEqual(calls[0].variables, { refreshToken: 'old-refresh', attemptId: 'attempt-1' });
   // No access token: the refresh must work after it expired.
   assert.deepEqual(calls[0].headers, { 'content-type': 'application/json' });
   assert.deepEqual(tokens.calls, [
@@ -158,6 +181,30 @@ test('a network failure rejects with its error and keeps the session', async (t)
   assert.equal(calls.length, 2);
   assert.deepEqual(tokens.calls, []);
   assert.equal(tokens.state.refreshToken, 'still-valid');
+});
+
+test('a refresh whose answer was lost is repeated as the same attempt', async (t) => {
+  const answers = [
+    async () => {
+      throw new TypeError('fetch failed');
+    },
+    async () => refreshed('new-access', 'new-refresh'),
+    async () => refreshed('third-access', 'third-refresh'),
+  ];
+  let index = 0;
+  const tokens = createTokens('old-refresh');
+  const { module, calls } = loadSession(t, () => answers[index++](), tokens);
+
+  await assert.rejects(module.refreshSession(), TypeError);
+  assert.equal(await module.refreshSession(), 'refreshed');
+  // The backend may have rotated the token before the answer was lost: the same id gets the same
+  // new tokens back instead of being treated as reuse.
+  assert.deepEqual(calls[1].variables, calls[0].variables);
+  assert.deepEqual(calls[0].variables, { refreshToken: 'old-refresh', attemptId: 'attempt-1' });
+
+  // The new refresh token is exchanged in a new attempt.
+  assert.equal(await module.refreshSession(), 'refreshed');
+  assert.deepEqual(calls[2].variables, { refreshToken: 'new-refresh', attemptId: 'attempt-2' });
 });
 
 test('a server error keeps the session', async (t) => {
@@ -231,7 +278,10 @@ test('a new session does not wait for the refresh of the previous one', async (t
   assert.equal(await current, 'refreshed');
   assert.equal(await previous, 'superseded');
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls[1].variables, { refreshToken: 'account-b-refresh' });
+  assert.deepEqual(calls[1].variables, {
+    refreshToken: 'account-b-refresh',
+    attemptId: 'attempt-2',
+  });
   assert.equal(tokens.state.token, 'account-b-next');
 });
 
@@ -243,7 +293,7 @@ test('a request of a previous session is not refreshed', async (t) => {
   assert.equal(calls.length, 0);
 });
 
-test('endSession signs out locally first and then revokes the session', async (t) => {
+test('endSession signs out locally first and keeps the revocation until the backend confirms it', async (t) => {
   const order: string[] = [];
   const tokens = createTokens('current-refresh');
   const { module, calls } = loadSession(
@@ -255,25 +305,58 @@ test('endSession signs out locally first and then revokes the session', async (t
     tokens
   );
 
-  await module.endSession();
+  assert.equal(await module.endSession(), true);
 
-  assert.deepEqual(tokens.calls, [['clearToken']]);
-  assert.deepEqual(order, ['fetch after 1 token change(s)']);
+  assert.deepEqual(tokens.calls, [
+    ['addPendingLogout', 'current-refresh'],
+    ['clearToken'],
+    ['removePendingLogout', 'current-refresh'],
+  ]);
+  assert.deepEqual(order, ['fetch after 2 token change(s)']);
   assert.match(calls[0].query, /mutation Logout\(\$refreshToken: String!\)/);
   assert.deepEqual(calls[0].variables, { refreshToken: 'current-refresh' });
+  assert.deepEqual(tokens.state.pendingLogouts, []);
 });
 
-test('endSession works offline', async (t) => {
-  const tokens = createTokens('current-refresh');
-  const { module } = loadSession(
-    t,
+test('a logout the backend did not confirm stays pending', async (t) => {
+  const answers = [
+    // Reachable, but the session was not revoked: its refresh token still works.
+    async () => ({ data: null, errors: [{ message: 'Internal server error' }] }),
     async () => {
       throw new TypeError('fetch failed');
     },
+  ];
+  let index = 0;
+  const tokens = createTokens('current-refresh');
+  const { module, calls } = loadSession(t, () => answers[index++](), tokens);
+
+  assert.equal(await module.endSession(), false);
+  assert.equal(await module.revokePendingLogouts(), false);
+
+  // Signed out locally either way; the token is kept only to revoke it later.
+  assert.equal(tokens.state.token, null);
+  assert.equal(tokens.state.refreshToken, null);
+  assert.deepEqual(tokens.state.pendingLogouts, ['current-refresh']);
+  assert.equal(calls.length, 2);
+});
+
+test('a pending logout is sent again until the backend confirms it', async (t) => {
+  const tokens = createTokens(null);
+  tokens.state.pendingLogouts = ['earlier-session', 'other-session'];
+  const { module, calls } = loadSession(
+    t,
+    async (call) =>
+      (call.variables as { refreshToken: string }).refreshToken === 'earlier-session'
+        ? { data: { logout: true } }
+        : { data: null, errors: [{ message: 'Internal server error' }] },
     tokens
   );
 
-  await module.endSession();
+  assert.equal(await module.revokePendingLogouts(), false);
 
-  assert.deepEqual(tokens.calls, [['clearToken']]);
+  assert.deepEqual(
+    calls.map((call) => call.variables),
+    [{ refreshToken: 'earlier-session' }, { refreshToken: 'other-session' }]
+  );
+  assert.deepEqual(tokens.state.pendingLogouts, ['other-session']);
 });

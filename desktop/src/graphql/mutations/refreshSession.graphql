@@ -1,5 +1,5 @@
-mutation RefreshSession($refreshToken: String!) {
-  refreshSession(refreshToken: $refreshToken) {
+mutation RefreshSession($refreshToken: String!, $attemptId: String) {
+  refreshSession(refreshToken: $refreshToken, attemptId: $attemptId) {
     token
     refreshToken
   }

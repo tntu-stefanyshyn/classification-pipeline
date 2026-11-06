@@ -57,6 +57,53 @@ test('App derives auth state from token and wires router callbacks', (t) => {
   ]);
 });
 
+test('App tells the user when the backend has not confirmed a sign-out', async (t) => {
+  ignoreCssImports(t);
+  ensureFile(path.resolve(__dirname, '../src/index.css'));
+
+  const routerProps: any[] = [];
+  const warnings: unknown[] = [];
+
+  stubResolvedModule(t, appCompiledFile, '../router/AppRouter', {
+    AppRouter: (props: any) => {
+      routerProps.push(props);
+      return React.createElement('div', null, 'router');
+    },
+  });
+  stubResolvedModule(t, appCompiledFile, '../graphql/client', {
+    apolloClient: { kind: 'apollo-client' },
+  });
+  stubResolvedModule(t, appCompiledFile, '../services/tokenService', {
+    tokenService: { setSession: () => undefined },
+    useAuthToken: () => 'token-1',
+  });
+  let confirmed = false;
+  stubResolvedModule(t, appCompiledFile, '../graphql/session', {
+    endSession: async () => confirmed,
+  });
+  stubResolvedModule(t, appCompiledFile, '@apollo/client/react', {
+    ApolloProvider: ({ children }: any) => React.createElement(React.Fragment, null, children),
+  });
+  stubResolvedModule(t, appCompiledFile, 'react-toastify', {
+    ToastContainer: () => React.createElement('div', null, 'toast'),
+    toast: { warn: (message: unknown) => warnings.push(message) },
+  });
+
+  const module = loadFreshModule<typeof import('../src/App/App')>(appModulePath);
+  renderToStaticMarkup(React.createElement(module.default));
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  routerProps[0].onLogout();
+  await flush();
+  confirmed = true;
+  routerProps[0].onLogout();
+  await flush();
+
+  assert.deepEqual(warnings, [
+    'Ви вийшли на цьому пристрої. Сервер завершить сеанс, щойно буде доступний.',
+  ]);
+});
+
 test('App passes unauthenticated state when no token is present', (t) => {
   ignoreCssImports(t);
   ensureFile(path.resolve(__dirname, '../src/index.css'));

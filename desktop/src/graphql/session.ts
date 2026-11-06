@@ -1,7 +1,11 @@
 import { print, type DocumentNode, type GraphQLFormattedError } from 'graphql';
 import { config } from '../config/config';
 import { tokenService } from '../services/tokenService';
-import { LogoutDocument, type LogoutMutationVariables } from './mutations/generated/logout';
+import {
+  LogoutDocument,
+  type LogoutMutation,
+  type LogoutMutationVariables,
+} from './mutations/generated/logout';
 import {
   RefreshSessionDocument,
   type RefreshSessionMutation,
@@ -42,10 +46,12 @@ const exchangeRefreshToken = async (generation: number): Promise<RefreshOutcome>
   }
 
   // A dropped connection rejects with its own error and keeps the session: the caller then sees
-  // the network error, not the expired access token that started the refresh.
+  // the network error, not the expired access token that started the refresh. The attempt id
+  // stays until the exchange succeeds, so if the backend rotated the token but the answer was
+  // lost, the next try gets the same new tokens instead of ending the session as reuse.
   const result = await postOperation<RefreshSessionMutation, RefreshSessionMutationVariables>(
     RefreshSessionDocument,
-    { refreshToken }
+    { refreshToken, attemptId: tokenService.getRefreshAttemptId() }
   );
 
   // A late answer must not undo a sign-out or overwrite (or clear) a newer sign-in.
@@ -87,14 +93,33 @@ export const refreshSession = (
   return pendingRefresh.promise;
 };
 
-/** Signs out locally at once, then asks the backend to revoke the session (best effort). */
-export const endSession = async () => {
-  const refreshToken = tokenService.getRefreshToken();
-  tokenService.clearToken();
-  if (!refreshToken) return;
-  try {
-    await postOperation<unknown, LogoutMutationVariables>(LogoutDocument, { refreshToken });
-  } catch {
-    // Offline: the refresh token simply expires on the server.
+/**
+ * Asks the backend to revoke every signed-out session it has not confirmed yet. A session stays
+ * pending until `logout` answers `true`: after a network failure and after an error answer, the
+ * refresh token could still be exchanged. Returns whether no session is left pending.
+ */
+export const revokePendingLogouts = async (): Promise<boolean> => {
+  for (const refreshToken of tokenService.getPendingLogouts()) {
+    try {
+      const result = await postOperation<LogoutMutation, LogoutMutationVariables>(LogoutDocument, {
+        refreshToken,
+      });
+      if (result.data?.logout === true) tokenService.removePendingLogout(refreshToken);
+    } catch {
+      // Unreachable: kept for the next try.
+    }
   }
+  return tokenService.getPendingLogouts().length === 0;
+};
+
+/**
+ * Signs out locally at once, then revokes the session on the backend. Resolves to `false` when
+ * the backend has not confirmed it yet; the revocation is then repeated later.
+ */
+export const endSession = async (): Promise<boolean> => {
+  const refreshToken = tokenService.getRefreshToken();
+  // Kept before the tokens are cleared, so the revocation survives a restart of the app.
+  if (refreshToken) tokenService.addPendingLogout(refreshToken);
+  tokenService.clearToken();
+  return revokePendingLogouts();
 };

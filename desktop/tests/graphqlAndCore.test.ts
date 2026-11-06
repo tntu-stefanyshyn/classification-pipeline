@@ -290,11 +290,18 @@ test('tokenService keeps both tokens together and reports an expired session', (
   const signedInGeneration = module.tokenService.getGeneration();
   assert.notEqual(signedInGeneration, initialGeneration);
 
+  // One refresh token keeps its attempt id until it is exchanged, also across a restart.
+  const attemptId = module.tokenService.getRefreshAttemptId();
+  assert.match(attemptId, /^[0-9a-f]{32}$/);
+  assert.equal(module.tokenService.getRefreshAttemptId(), attemptId);
+  assert.equal(storedValues.get('auth_refresh_attempt'), attemptId);
+
   // A refresh rotates the tokens within the same session.
   module.tokenService.replaceTokens({ token: 'rotated-token', refreshToken: 'rotated-refresh' });
   assert.equal(module.useAuthToken(), 'rotated-token');
   assert.equal(module.tokenService.getRefreshToken(), 'rotated-refresh');
   assert.equal(module.tokenService.getGeneration(), signedInGeneration);
+  assert.notEqual(module.tokenService.getRefreshAttemptId(), attemptId);
 
   module.tokenService.expireSession();
   assert.notEqual(module.tokenService.getGeneration(), signedInGeneration);
@@ -305,12 +312,27 @@ test('tokenService keeps both tokens together and reports an expired session', (
   // Signing in again hides the notice; signing out does not show it.
   module.tokenService.setSession({ token: 'third-token', refreshToken: 'third-refresh' });
   assert.equal(module.useSessionExpired(), false);
+  module.tokenService.getRefreshAttemptId();
   module.tokenService.clearToken();
   assert.equal(module.useSessionExpired(), false);
   assert.deepEqual([...storedValues.keys()], []);
   unsubscribe();
 
+  // Sign-outs waiting for the backend survive clearToken and are kept once each.
+  module.tokenService.addPendingLogout('first-refresh');
+  module.tokenService.addPendingLogout('second-refresh');
+  module.tokenService.addPendingLogout('first-refresh');
+  module.tokenService.clearToken();
+  assert.deepEqual(module.tokenService.getPendingLogouts(), ['second-refresh', 'first-refresh']);
+  module.tokenService.removePendingLogout('second-refresh');
+  module.tokenService.removePendingLogout('first-refresh');
+  assert.deepEqual(module.tokenService.getPendingLogouts(), []);
+  assert.deepEqual([...storedValues.keys()], []);
+  storedValues.set('auth_pending_logouts', 'not json');
+  assert.deepEqual(module.tokenService.getPendingLogouts(), []);
+
   assert.deepEqual(listenerCalls, ['next-token', 'rotated-token', null, 'third-token', null]);
+  storedValues.delete('auth_pending_logouts');
 });
 
 test('types and localization exports stay aligned', () => {

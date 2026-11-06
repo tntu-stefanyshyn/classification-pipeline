@@ -38,8 +38,15 @@ least 2 rows. A **Prediction data percentage** of 1% gives only 1 row and the ru
 larger percentage. A file with a single data row fails because its training part is empty.
 Use more rows per class than the minimum to get meaningful results.
 
-See [Troubleshooting](troubleshooting.md#the-run-fails-because-of-the-classes-or-the-train-test-split)
+See [Troubleshooting](troubleshooting.md#the-run-fails-because-of-the-classes-or-the-traintest-split)
 for the errors and the fix.
+
+## File size
+
+The classifier gets slower much faster than the number of rows grows. In a test, a file with
+180,000 rows needed hours for four pipelines, while a 6,000-row sample of it finished in a few
+minutes. Try the workflow on a stratified sample first (the same share of every class). See also
+[Troubleshooting](troubleshooting.md#computations-take-hours-on-a-large-file).
 
 ## Example
 

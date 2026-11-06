@@ -157,6 +157,35 @@ test('a refresh that fails passes its error on instead of the expired token', as
   assert.equal(backend.tokens.length, 1);
 });
 
+test('a request canceled while the refresh is pending is not sent again', async (t) => {
+  const { createSessionLink } = loadLink(t);
+  const backend = createBackend([unauthenticated, success]);
+  let finish!: (outcome: RefreshOutcome) => void;
+  let started!: () => void;
+  const refreshing = new Promise<void>((resolve) => (started = resolve));
+  const refresh = () =>
+    new Promise<RefreshOutcome>((resolve) => {
+      finish = resolve;
+      started();
+    });
+  const received: unknown[] = [];
+
+  const subscription = execute(ApolloLink.from([createSessionLink(refresh), backend.link]), {
+    query: SAVE,
+  }).subscribe({
+    next: (result) => received.push(result),
+    error: (error) => received.push(error),
+    complete: () => received.push('complete'),
+  });
+  await refreshing;
+  subscription.unsubscribe();
+  finish('refreshed');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(backend.tokens.length, 1);
+  assert.deepEqual(received, []);
+});
+
 test('other errors are not treated as an ended session', async (t) => {
   const { createSessionLink } = loadLink(t);
   const notFound: FetchResult = { errors: [{ message: 'Експеремент не знайдено' }] as any };

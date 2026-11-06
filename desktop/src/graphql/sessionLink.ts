@@ -1,6 +1,5 @@
-import { Observable } from '@apollo/client';
+import { ApolloLink, Observable, type FetchResult } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
-import { onError } from '@apollo/client/link/error';
 import type { tokenService } from '../services/tokenService';
 import { isUnauthenticated, refreshSession } from './session';
 
@@ -49,32 +48,66 @@ export const createAuthLink = (tokens: Pick<typeof tokenService, 'getToken' | 'g
  * that cannot be refreshed, or one that ended meanwhile (before the refresh or before the retry
  * is sent) passes the original errors on. A refresh that cannot reach the backend ends the
  * operation with that network error instead, so the user sees the connection problem.
+ *
+ * A plain link rather than `onError`: the `onError` of Apollo Client 3 does not unsubscribe from
+ * the retry it starts, so an operation canceled during the refresh would still be sent again.
  */
 export const createSessionLink = (refresh: typeof refreshSession = refreshSession) =>
-  onError(({ graphQLErrors, operation, forward, response }) => {
-    const context = operation.getContext() as OperationContext;
-    if (!isUnauthenticated(graphQLErrors) || context[RETRIED]) return;
+  new ApolloLink(
+    (operation, forward) =>
+      new Observable<FetchResult>((observer) => {
+        let retry: { unsubscribe: () => void } | undefined;
+        // Set when the caller unsubscribes, possibly while the refresh is still pending.
+        let canceled = false;
+        // The first answer was UNAUTHENTICATED: the refresh or the retry ends the operation.
+        let refreshing = false;
 
-    return new Observable((observer) => {
-      let subscription: { unsubscribe: () => void } | undefined;
-      const passOn = () => {
-        if (response) observer.next(response);
-        observer.complete();
-      };
-      refresh(context.sessionGeneration, context.sessionToken).then(
-        (outcome) => {
-          if (outcome !== 'refreshed') return passOn();
-          // sessionGeneration stays as the first attempt set it: the auth link checks it.
-          operation.setContext({ [RETRIED]: true });
-          subscription = forward(operation).subscribe({
-            next: (result) => observer.next(result),
-            error: (error) =>
-              error instanceof SessionChangedError ? passOn() : observer.error(error),
-            complete: () => observer.complete(),
-          });
-        },
-        (error) => observer.error(error)
-      );
-      return () => subscription?.unsubscribe();
-    });
-  });
+        const refreshAndRetry = (response: FetchResult) => {
+          const context = operation.getContext() as OperationContext;
+          const passOn = () => {
+            observer.next(response);
+            observer.complete();
+          };
+          refresh(context.sessionGeneration, context.sessionToken).then(
+            (outcome) => {
+              // Nobody waits for the result any more: a canceled mutation must not be sent again.
+              if (canceled) return;
+              if (outcome !== 'refreshed') return passOn();
+              // sessionGeneration stays as the first attempt set it: the auth link checks it.
+              operation.setContext({ [RETRIED]: true });
+              retry = forward(operation).subscribe({
+                next: (result) => observer.next(result),
+                error: (error) =>
+                  error instanceof SessionChangedError ? passOn() : observer.error(error),
+                complete: () => observer.complete(),
+              });
+            },
+            (error) => {
+              if (!canceled) observer.error(error);
+            }
+          );
+        };
+
+        const first = forward(operation).subscribe({
+          next: (result) => {
+            const context = operation.getContext() as OperationContext;
+            if (isUnauthenticated(result.errors) && !context[RETRIED]) {
+              refreshing = true;
+              refreshAndRetry(result);
+              return;
+            }
+            observer.next(result);
+          },
+          error: (error) => observer.error(error),
+          complete: () => {
+            if (!refreshing) observer.complete();
+          },
+        });
+
+        return () => {
+          canceled = true;
+          first.unsubscribe();
+          retry?.unsubscribe();
+        };
+      })
+  );

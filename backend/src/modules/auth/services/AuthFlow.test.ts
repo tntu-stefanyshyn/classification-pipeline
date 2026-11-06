@@ -7,6 +7,7 @@ import { Types } from 'mongoose';
 import { config } from '../../../config/config';
 import { UserModel } from '../../../core/user';
 import { stub } from '../../../test/testUtils';
+import { InvalidCredentialsError } from '../classes/InvalidCredentialsError';
 import { RefreshTokenModel } from '../models/RefreshTokenModel';
 import { SessionModel } from '../models/SessionModel';
 import { AuthFlow } from './AuthFlow';
@@ -133,15 +134,15 @@ test('AuthFlow.login rejects invalid credentials', async (t) => {
     passwordHash: 'stored-hash',
   };
 
-  stub(t, UserModel as unknown as Record<string, unknown>, 'findOne', async () => user);
+  let found: typeof user | null = user;
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findOne', async () => found);
   stub(t, bcrypt as unknown as Record<string, unknown>, 'compare', async () => false);
+  const login = () => authFlow.login({ email: 'user@example.com', password: 'secret' } as any);
+  const invalidCredentials = (error: unknown) =>
+    error instanceof InvalidCredentialsError && error.message === 'Invalid credentials';
 
-  await assert.rejects(
-    () =>
-      authFlow.login({
-        email: 'user@example.com',
-        password: 'secret',
-      } as any),
-    /Invalid credentials/
-  );
+  // A wrong password and an unknown email look the same to the client.
+  await assert.rejects(login, invalidCredentials);
+  found = null;
+  await assert.rejects(login, invalidCredentials);
 });

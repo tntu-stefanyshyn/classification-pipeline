@@ -8,6 +8,7 @@ import {
   executeGraphql,
   toPlainValue,
 } from '../../../test/graphqlTestUtils';
+import { UserModel } from '../../../core/user';
 import { stub } from '../../../test/testUtils';
 import { AuthFlow } from '../services/AuthFlow';
 import { Auth } from './Auth';
@@ -206,4 +207,18 @@ test('Auth GraphQL reports authentication failures with the UNAUTHENTICATED code
 
   assert.equal(result.errors?.[0]?.message, 'Not authenticated');
   assert.equal(result.errors?.[0]?.extensions?.code, 'UNAUTHENTICATED');
+});
+
+test('Auth GraphQL reports a failed login with the INVALID_CREDENTIALS code', async (t) => {
+  const schema = buildGraphqlSchema([Auth]);
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findOne', async () => null);
+
+  const result = await executeGraphql(
+    schema,
+    `mutation { login(input: { email: "nobody@example.com", password: "secret" }) { token } }`
+  );
+
+  assert.equal(result.errors?.[0]?.message, 'Invalid credentials');
+  // Not UNAUTHENTICATED: a wrong password must not make the client refresh a session.
+  assert.equal(result.errors?.[0]?.extensions?.code, 'INVALID_CREDENTIALS');
 });

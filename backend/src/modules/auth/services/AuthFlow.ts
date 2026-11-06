@@ -11,6 +11,7 @@ import type { Principal } from '../classes/Principal';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
 import { AuthenticationError } from '../classes/AuthenticationError';
+import { InvalidCredentialsError } from '../classes/InvalidCredentialsError';
 import { SessionStore } from './SessionStore';
 
 export class AuthFlow {
@@ -37,12 +38,12 @@ export class AuthFlow {
     const email = input.email.toLowerCase().trim();
     const user = await UserModel.findOne({ email });
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     const passwordValid = await bcrypt.compare(input.password, user.passwordHash);
     if (!passwordValid) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     return this.startSession(user);

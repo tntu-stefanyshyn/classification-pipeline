@@ -18,7 +18,8 @@ import {
   refreshTokenTtlSeconds,
 } from './constants/token';
 import { AuthenticationError } from './classes/AuthenticationError';
-import { UNAUTHENTICATED } from './constants/errorCodes';
+import { InvalidCredentialsError } from './classes/InvalidCredentialsError';
+import { INVALID_CREDENTIALS, UNAUTHENTICATED } from './constants/errorCodes';
 import { reportAuthenticationErrors } from './graphql/reportAuthenticationErrors';
 
 test('auth classes store assigned values and resolver delegates to AuthFlow', async (t) => {
@@ -222,7 +223,7 @@ test('a 7-day token issued before this change keeps working until it expires', a
   assert.equal(await flow.me({ headers: { authorization: `Bearer ${legacy}` } } as any), user);
 });
 
-test('reportAuthenticationErrors adds the UNAUTHENTICATED code and passes other errors on', async () => {
+test('reportAuthenticationErrors adds the auth error codes and passes other errors on', async () => {
   const run = (error: Error) =>
     reportAuthenticationErrors({} as any, async () => {
       throw error;
@@ -232,6 +233,11 @@ test('reportAuthenticationErrors adds the UNAUTHENTICATED code and passes other 
     assert.equal(error.message, 'jwt expired');
     assert.equal(error.extensions?.code, UNAUTHENTICATED);
     assert.ok(error.originalError instanceof AuthenticationError);
+    return true;
+  });
+  await assert.rejects(run(new InvalidCredentialsError()), (error: any) => {
+    assert.equal(error.message, 'Invalid credentials');
+    assert.equal(error.extensions?.code, INVALID_CREDENTIALS);
     return true;
   });
   const other = new Error('Експеремент не знайдено');

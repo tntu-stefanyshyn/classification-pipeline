@@ -101,3 +101,22 @@ optimization waits for unfinished pipelines of every selected mode, so choose th
 The **Download PDF** button at the top of the experiment page appears only when the experiment
 status is `completed`. Finish the computations and the optimization first. The **Optimization** card
 has its own **Download PDF** button.
+
+## The PDF download fails with "Failed to generate experiment report"
+
+**Cause:** the backend renders the report with Chromium. The Docker image of the backend includes it;
+a backend started manually (`npm run start:backend`) does not, and the backend log shows that
+Puppeteer could not find a browser.
+
+**Fix:** start the backend with Docker Compose, or install Chrome or Chromium and set
+`PUPPETEER_EXECUTABLE_PATH` to its executable before starting the backend.
+
+## Computations take hours on a large file
+
+The SVM classifier gets slower much faster than the number of rows grows, and every pipeline runs
+one after another. In a test, the first pipeline of a file with 180,000 rows (three classes, 16
+features) was still running after 25 minutes, while a 6,000-row sample of the same file completed
+all four pipelines and the optimization in a few minutes.
+
+**Fix:** try the workflow on a sample of the data first. A stratified sample with the same share of
+every class keeps the results representative.

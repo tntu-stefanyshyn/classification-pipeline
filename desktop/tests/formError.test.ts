@@ -16,6 +16,20 @@ test('translateGraphQLError maps known backend codes and preserves unknown text'
   assert.equal(translateGraphQLError(undefined), null);
 });
 
+test('translateGraphQLError decides on extensions.code before the message', () => {
+  assert.equal(
+    translateGraphQLError({
+      message: 'Invalid credentials',
+      extensions: { code: 'INVALID_CREDENTIALS' },
+    }),
+    'Неправильна пошта або пароль.'
+  );
+  assert.equal(
+    translateGraphQLError({ message: 'jwt expired', extensions: { code: 'UNAUTHENTICATED' } }),
+    'jwt expired'
+  );
+});
+
 test('getErrorMessage prefers graphQL errors, then network errors, then fallback', () => {
   assert.equal(
     getErrorMessage([{ message: 'BAD_USER_INPUT' } as any], { name: 'NetworkError' } as any),

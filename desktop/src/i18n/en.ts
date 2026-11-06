@@ -84,6 +84,7 @@ const en = {
   },
   errors: {
     badUserInput: 'Check the entered data.',
+    invalidCredentials: 'Wrong email or password.',
     logoutPending:
       'You are signed out on this device. The server will end the session as soon as it can be reached.',
     network: 'Cannot reach the server. Try again later.',

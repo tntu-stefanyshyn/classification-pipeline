@@ -1,16 +1,10 @@
 import 'dotenv/config';
 import 'reflect-metadata';
 import { ApolloServer } from 'apollo-server-express';
-import cors from 'cors';
-import express from 'express';
-import mongoose, { Types } from 'mongoose';
+import mongoose from 'mongoose';
 
-import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
-import { PipelineModel } from './core/pipeline/models/PipelineModel';
 import { WorkflowModel } from './core/workflow/model/WorkflowModel';
-import { GraphManager } from './modules/experiments/services/GraphManager';
-import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
-import { UploadedFileModel } from './modules/files/models/UploadedFileModel';
+import { createHttpApp } from './app';
 import { config } from './config/config';
 import { buildAppSchema } from './schema';
 import { GraphQLContext } from './types/context';
@@ -31,107 +25,7 @@ async function bootstrap() {
   });
   await apollo.start();
 
-  const app = express();
-  app.use(cors());
-  app.use(express.json());
-  apollo.applyMiddleware({ app: app as any, path: '/graphql' });
-
-  const graphManager = new GraphManager();
-  app.get('/experiments/:experimentId/report', async (req, res) => {
-    try {
-      const experimentId = (req.params.experimentId ?? '').trim();
-      if (!experimentId) {
-        res.status(400).json({ error: 'Experiment _id is required' });
-        return;
-      }
-      if (!Types.ObjectId.isValid(experimentId)) {
-        res.status(400).json({ error: 'Experiment _id is invalid' });
-        return;
-      }
-
-      const experiment = await ExperimentModel.findById(experimentId).lean();
-      if (!experiment) {
-        res.status(404).json({ error: 'Experiment not found' });
-        return;
-      }
-
-      const graph = await graphManager.getByExperimentId(experimentId);
-      const pipelines = await PipelineModel.find({ experimentId }).lean();
-      const sourceFile = experiment.fileId
-        ? await UploadedFileModel.findById(experiment.fileId).lean()
-        : null;
-      const report = await buildGraphReportPdf({
-        experimentId,
-        experimentName: experiment.name,
-        description: experiment.description,
-        createdAt: experiment.createdAt ? new Date(experiment.createdAt) : undefined,
-        graph: {
-          settings: graph.settings
-            ? {
-                metrics: graph.settings.metrics
-                  ? {
-                      accuracy: graph.settings.metrics.accuracy,
-                      f1: graph.settings.metrics.f1,
-                      rocAuc: graph.settings.metrics.rocAuc,
-                      ntps: graph.settings.metrics.ntps,
-                    }
-                  : undefined,
-                queues: graph.settings.queues ? [...graph.settings.queues] : [],
-                folds: graph.settings.folds,
-                hyperOptimizationMinutesPerPipeline:
-                  graph.settings.hyperOptimizationMinutesPerPipeline,
-                predictDataPercent: graph.settings.predictDataPercent,
-              }
-            : undefined,
-          computationMode: graph.computationMode ?? undefined,
-        },
-        file: sourceFile
-          ? {
-              filename: sourceFile.filename,
-              sizeMb: sourceFile.sizeMb,
-              status: sourceFile.status,
-              uploadedAt: sourceFile.uploadedAt ? new Date(sourceFile.uploadedAt) : undefined,
-              uploadedByName: sourceFile.uploadedByName,
-            }
-          : undefined,
-        nodes: graph.nodes ?? [],
-        pipelines: pipelines.map((pipeline) => ({
-          _id: String(pipeline._id),
-          queue: pipeline.queue,
-          pathNodeIds: (pipeline.pathNodeIds ?? []).map((id: any) => String(id)),
-          computingResult: pipeline.computingResult as any,
-          optimizationScores: pipeline.optimizationScores as number[] | undefined,
-          machineInfo: pipeline.machineInfo as any,
-          createdAt: pipeline.createdAt ? new Date(pipeline.createdAt) : undefined,
-          updatedAt: pipeline.updatedAt ? new Date(pipeline.updatedAt) : undefined,
-        })),
-        optimization: experiment.optimization
-          ? {
-              bestPipelineId: experiment.optimization.bestPipelineId?.toString(),
-              bestScore: experiment.optimization.bestScore ?? undefined,
-              progress: experiment.optimization.progress ?? undefined,
-              status: experiment.optimization.status ?? undefined,
-              history:
-                (experiment.optimization.history as any[])?.map((item) => ({
-                  createdAt: item.createdAt ? new Date(item.createdAt) : undefined,
-                  message: item.message,
-                  status: item.status,
-                })) ?? [],
-            }
-          : undefined,
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="experiment-${experimentId}-report.pdf"`
-      );
-      res.status(200).send(report);
-    } catch (error) {
-      console.error('Failed to generate experiment report', error);
-      res.status(500).json({ error: 'Failed to generate experiment report' });
-    }
-  });
+  const app = createHttpApp(apollo);
 
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);

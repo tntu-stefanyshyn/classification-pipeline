@@ -24,7 +24,8 @@ how the desktop constructor and the experiment details page apply them.
 | `completed`    | Set when optimization has finished.                                                       |
 
 Allowed transitions: `creating → configuring → computing → optimization → completed`, and
-`completed → optimization` (optimization can be run again).
+`completed → optimization` (optimization can be run again). The diagram and what each transition
+does are in [Lifecycle](../architecture/lifecycle.md#experiment).
 An experiment cannot enter `computing` without an attached, available CSV file.
 
 ## Pipeline status lifecycle
@@ -40,7 +41,15 @@ Allowed transitions: `idle → queued`, `queued → running`, `queued → idle` 
 paused), `running → completed`, `running → idle` (when the run is stopped).
 
 There is no `stopped` or `failed` status: stopping a run returns the pipeline to `idle` with the
-status message "Зупинено користувачем". The pipeline history records every status change.
+status message "Зупинено користувачем". The pipeline history records every status change. The diagram
+and the side effects are in [Lifecycle](../architecture/lifecycle.md#pipeline).
+
+## Graph and paths
+
+- **Generation.** `generateExperimentGraph` builds the graph from the technologies the user selects for each stage (`GraphManager.generateGraphFromSelections`). At least one `CLASSIFICATION` technology is required, and each technology must belong to the stage it is selected for. Every selected technology gets a node under each node of the previous stages, and a stage without a selection is skipped.
+- **Optional stages.** A stage before classification does not have to be on every path: the nodes of later stages are attached to the nodes of the stage and also to the nodes that came before it. For example, 2 preprocessing technologies and 3 classification technologies give 2 + 9 nodes and 9 paths (6 with a preprocessing step and 3 without).
+- **Paths.** `buildGraphPaths` takes every node without a parent (or whose parent is not in the graph) as a root and walks the graph depth first. A path is the list of node ids from a root to a leaf; a node that is already on the current path is not visited again, so a cycle cannot loop forever. Each path becomes one pipeline per selected queue.
+- **Node rules** (checked when the graph is saved): node ids are unique, a node cannot be its own parent, the parent must exist, and the stage must come after the stage of the parent. Node settings start from the defaults of the technology.
 
 ## Validations
 
@@ -99,6 +108,7 @@ A run (pipeline) can be stopped or paused, queued again and claimed by a new exe
 - The metrics `accuracy`, `f1`, `rocAuc` and `ntps` are stored in the range 0..1.
 - The UI takes the weights as percentages (0-100); the sum must be 100% (1 in the data).
 - The computation types are a multi-select (local and cloud). A run cannot start without a selection.
+- Limits checked by the backend (`GraphManager.normalizeGraphSettings`): `folds` is an integer from 1 to 20 (default 5), `hyperOptimizationMinutesPerPipeline` is at least 1 (default 30), `predictDataPercent` is an integer from 1 to 99 (default 20), and the queues are unique with at least one selected.
 
 ## Running computations (`ExperimentDetailsPage`)
 

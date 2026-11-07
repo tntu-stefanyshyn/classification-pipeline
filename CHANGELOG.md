@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `docs/index.md`, `docs/getting-started`, `docs/architecture`, `docs/domain`, `docs/api` and `docs/operations` sections.
 - `docs/api/authentication.md` describes the user JWT and service token rules.
+- MongoDB indexes for workflows (`instanceId` + `type`, `type` + `status`), uploaded files (`uploadedById` + `uploadedAt`) and experiments (`fileId`), so status reads, run claiming and file lists no longer scan whole collections. Existing databases get them on the next backend start.
+- Applied migrations are recorded in the `applied_migrations` collection, so each migration runs once.
 
 ### Security
 

@@ -20,6 +20,11 @@ import { PipelineStatus } from '../../pipeline/enums';
     },
   }
 )
+// Status reads by instance (`getWorkflow`, the `$lookup` from pipelines). Not unique: `getWorkflow`
+// sorts by `createdAt`, and a unique build would stop the backend on a database with duplicates.
+@index({ instanceId: 1, type: 1 })
+// The `$match` of the `claimNextRun` aggregation and the queue summaries.
+@index({ type: 1, status: 1 })
 @ObjectType()
 export class Workflow extends TimeStamps {
   @Field(() => ID)

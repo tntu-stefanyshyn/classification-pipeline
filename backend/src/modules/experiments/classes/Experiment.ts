@@ -22,7 +22,7 @@ export class Experiment extends TimeStamps {
   description?: string;
 
   @Field(() => ID, { nullable: true })
-  @prop({ type: () => Types.ObjectId })
+  @prop({ type: () => Types.ObjectId, index: true })
   fileId?: Types.ObjectId;
 
   @Field(() => [PipelineMachineInfo], { nullable: true })

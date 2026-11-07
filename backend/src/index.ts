@@ -136,7 +136,8 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
-    // The per-machine local-run limit depends on the workflows unique index.
+    // The per-machine local-run limit depends on the workflows unique index; init() waits for
+    // every workflows index. Indexes of other models are built by Mongoose in the background.
     await WorkflowModel.init();
     await runMigrations();
     await runSeeders();

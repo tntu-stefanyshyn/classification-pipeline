@@ -15,6 +15,7 @@ Use this structure for new code in `backend/src`:
   - `constants/`: feature-specific constants.
   - `enums/`: feature-specific enums.
   - `graphql/`: GraphQL resolvers for the feature.
+  - `rest/`: Express handlers of the feature's REST endpoints (for example the PDF report); like resolvers, they authenticate and call services.
   - `utils/`: feature-specific helpers (for example `buildGraphPaths`).
 - `graphql/`: app-level resolvers not tied to a feature (`health`, server info).
 - `config/`: configuration only.
@@ -22,7 +23,8 @@ Use this structure for new code in `backend/src`:
 - `seeders/`: initial data (for example the technology catalog).
 - `mermaid/`: entity-relationship diagrams of the data model (Mermaid sources).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.
-- `index.ts`: bootstrap; wires schema, server, DB and the REST report endpoint.
+- `app.ts`: the HTTP app (CORS, `/graphql`, the REST report endpoint).
+- `index.ts`: bootstrap; builds the schema and the app, connects the DB and starts the workers.
 
 Rules:
 

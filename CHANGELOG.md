@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Run operations and the `pipeline` and `pipelines` queries are limited to the owner of the experiment.
 - Worker operations require the service token.
 - `completePipeline` in aws-jobs no longer prints the token to the logs.
+- The PDF report (`GET /experiments/:experimentId/report`) requires the user JWT and is limited to the owner of the experiment; the desktop app downloads it with the token.
+- CORS allows only the origins in `CORS_ORIGINS` (by default the desktop app), on GraphQL as well.
 
 ### Fixed
 

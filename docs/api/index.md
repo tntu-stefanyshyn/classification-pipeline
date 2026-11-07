@@ -30,10 +30,33 @@ generated with `puppeteer` (Chromium). It contains the experiment name, descript
 date, the graph and its settings, the source file details, the pipelines with their computing
 results and machine information, and the optimization result and history.
 
-Responses: `400` for a missing or invalid experiment `_id`, `404` when the experiment does not
-exist, `500` when the PDF cannot be generated, otherwise `200` with the PDF. The desktop app shows
-the download button only for `completed` experiments. The endpoint currently performs no
-authentication.
+Only the owner of the experiment can download it. The request carries the user JWT in`nAuthorization: Bearer <token>`, like a GraphQL request, so a plain link or a browser tab that
+is not signed in gets nothing. The desktop app downloads the report with `fetch` and saves the
+response as a file (`ReportDownloadButton`).
+
+Responses:
+
+- `401` (with `WWW-Authenticate: Bearer`) without a valid JWT. Nothing about the experiment is
+  read before the caller is known.
+- `400` for a missing or invalid experiment `_id`.
+- `404` when the experiment does not exist or belongs to another user: both get the same answer,
+  so the response does not reveal whether someone else's id exists.
+- `500` when the PDF cannot be generated, otherwise `200` with the PDF.
+
+The desktop app shows the download button on the details page only for `completed` experiments.
+
+## CORS
+
+Browsers may call the API (GraphQL and the report) only from the origins in `CORS_ORIGINS`, a
+comma-separated list. The default is `http://localhost:5173,null`: the Vite dev server of the
+desktop renderer and `null`, the origin of the packaged desktop app, which loads its page from a
+file. Requests from other origins get no `Access-Control-Allow-Origin`, so a page there cannot read
+the answer. Requests without an `Origin` header (workers, `curl`) are not affected. Apollo's own
+CORS is turned off (`applyMiddleware({ cors: false })`), because its default allows every origin
+on `/graphql`.
+
+CORS does not replace authentication: the API uses bearer tokens, not cookies, and every protected
+operation checks the token itself.
 
 A complete API reference (operations, examples and error messages) is planned and is not part of this
 page yet.

@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Run operations and the `pipeline` and `pipelines` queries are limited to the owner of the experiment.
 - Worker operations require the service token.
 - `completePipeline` in aws-jobs no longer prints the token to the logs.
+- `signedUploadUrl` and `createUploadedFile` require a signed-in user. Upload keys are issued under the user (`uploads/<user id>/...`), and a file can be registered only on a key issued to the caller, once, so no record points at another user's dataset or has no owner.
 
 ### Fixed
 

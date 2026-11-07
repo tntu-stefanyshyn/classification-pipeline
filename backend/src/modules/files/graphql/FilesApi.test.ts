@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { Types } from 'mongoose';
 
 import {
@@ -11,6 +11,8 @@ import {
 import { stub } from '../../../test/testUtils';
 import { AuthFlow } from '../../auth/services/AuthFlow';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
+import { uploadKeyPrefix } from '../../storage/utils/uploadKeys';
+import { UploadedFileModel } from '../models/UploadedFileModel';
 import { fileStore } from '../services/FileStore';
 import { Files } from './Files';
 
@@ -173,65 +175,83 @@ test('Files GraphQL exposes file usage and a confirmed delete via the schema', a
   ]);
 });
 
-test('Files GraphQL createUploadedFile tolerates missing auth and forwards normalized payload', async (t) => {
-  const schema = buildGraphqlSchema([Files]);
-  const fileId = new Types.ObjectId();
-  const calls: any[] = [];
-
-  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => {
-    throw new Error('unauthorized');
-  });
-  stub(t, fileStore as unknown as Record<string, unknown>, 'create', async (...args: any[]) => {
-    calls.push(['create', ...args]);
-    return {
-      _id: fileId,
-      filename: 'dataset.csv',
-      sizeMb: 4,
-      status: 'uploaded',
-    };
-  });
-
-  const result = await executeGraphql(
-    schema,
-    `
-      mutation CreateUploadedFile($input: CreateUploadedFileInput!) {
-        createUploadedFile(input: $input) {
-          _id
-          filename
-          sizeMb
-          status
-        }
-      }
-    `,
-    {
-      variables: {
-        input: {
-          filename: 'dataset.csv',
-          storageKey: 'uploads/dataset.csv',
-          sizeMb: 4,
-        },
-      },
-      context: createGraphqlContext({ req: { headers: {} } as any }),
+const CREATE_UPLOADED_FILE = `
+  mutation CreateUploadedFile($input: CreateUploadedFileInput!) {
+    createUploadedFile(input: $input) {
+      _id
+      filename
+      sizeMb
     }
-  );
+  }
+`;
+
+// The real resolver, AuthFlow and FileStore; only the collection is replaced.
+const useUploadedFiles = (t: TestContext, existingKeys: string[] = []) => {
+  const created: any[] = [];
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', (async (query: any) =>
+    existingKeys.includes(query.storageKey) ? { _id: new Types.ObjectId() } : null) as any);
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'create', (async (doc: any) => {
+    created.push(doc);
+    const record = { _id: new Types.ObjectId(), ...doc };
+    return { toObject: () => record };
+  }) as any);
+  return created;
+};
+
+const signIn = (t: TestContext, user: { _id: Types.ObjectId; email: string; name?: string }) =>
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => user);
+
+const createUploadedFile = (storageKey: string, headers: Record<string, string> = {}) =>
+  executeGraphql(buildGraphqlSchema([Files]), CREATE_UPLOADED_FILE, {
+    variables: { input: { filename: 'dataset.csv', storageKey, sizeMb: 4 } },
+    context: createGraphqlContext({ req: { headers } as any }),
+  });
+
+test('Files GraphQL createUploadedFile requires a signed-in user', async (t) => {
+  const created = useUploadedFiles(t);
+  const userId = new Types.ObjectId().toHexString();
+
+  const result = await createUploadedFile(uploadKeyPrefix(userId) + '1-abc-dataset.csv');
+
+  assert.equal(result.data, null);
+  assert.equal(result.errors?.[0]?.message, 'Not authenticated');
+  // Before the fix this created a record without an owner.
+  assert.deepEqual(created, []);
+});
+
+test('Files GraphQL createUploadedFile rejects a key that was not issued to the caller', async (t) => {
+  const created = useUploadedFiles(t, []);
+  const caller = { _id: new Types.ObjectId(), email: 'caller@example.com' };
+  const otherUserId = new Types.ObjectId().toHexString();
+  signIn(t, caller);
+
+  for (const storageKey of [
+    uploadKeyPrefix(otherUserId) + '1700000000000-abc-dataset.csv',
+    'uploads/1700000000000-dataset.csv',
+    `${uploadKeyPrefix(caller._id.toHexString())}nested/../dataset.csv`,
+  ]) {
+    const result = await createUploadedFile(storageKey, { authorization: 'Bearer token' });
+    assert.equal(result.data, null, storageKey);
+    assert.equal(result.errors?.[0]?.message, 'Storage key was not issued to this user');
+  }
+  assert.deepEqual(created, []);
+});
+
+test('Files GraphQL createUploadedFile registers an issued key once, for its owner', async (t) => {
+  const caller = { _id: new Types.ObjectId(), name: ' Tester ', email: 'tester@example.com' };
+  const storageKey = `${uploadKeyPrefix(caller._id.toHexString())}1700000000000-abc-dataset.csv`;
+  const registered = `${uploadKeyPrefix(caller._id.toHexString())}1600000000000-def-dataset.csv`;
+  const created = useUploadedFiles(t, [registered]);
+  signIn(t, caller);
+
+  const result = await createUploadedFile(storageKey, { authorization: 'Bearer token' });
+  const again = await createUploadedFile(registered, { authorization: 'Bearer token' });
 
   assert.equal(result.errors, undefined);
-  assert.deepEqual(toPlainValue(result.data), {
-    createUploadedFile: {
-      _id: fileId.toHexString(),
-      filename: 'dataset.csv',
-      sizeMb: 4,
-      status: 'uploaded',
-    },
-  });
-  assert.deepEqual(toPlainValue(calls), [
-    [
-      'create',
-      {
-        filename: 'dataset.csv',
-        storageKey: 'uploads/dataset.csv',
-        sizeMb: 4,
-      },
-    ],
-  ]);
+  assert.equal((result.data as any).createUploadedFile.filename, 'dataset.csv');
+  assert.equal(created.length, 1);
+  assert.equal(created[0].storageKey, storageKey);
+  assert.equal(String(created[0].uploadedById), caller._id.toHexString());
+  assert.equal(created[0].uploadedByName, 'Tester');
+  assert.equal(again.errors?.[0]?.message, 'File is already registered');
 });

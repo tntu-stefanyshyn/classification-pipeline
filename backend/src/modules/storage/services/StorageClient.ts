@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { config } from '../../../config/config';
+import { buildUploadKey } from '../utils/uploadKeys';
 
 export type SignedUpload = {
   url: string;
@@ -38,7 +39,12 @@ export class StorageClient {
     });
   }
 
-  async getSignedUploadUrl(filename: string, mimeType?: string): Promise<SignedUpload> {
+  /** A presigned upload for a new object under the uploads of `userId`. */
+  async getSignedUploadUrl(
+    userId: string,
+    filename: string,
+    mimeType?: string
+  ): Promise<SignedUpload> {
     const safeName = filename.trim();
     if (!safeName) {
       throw new Error('Filename is required');
@@ -50,7 +56,7 @@ export class StorageClient {
     if (mimeType && !this.csvMimeTypes.has(mimeType)) {
       throw new Error('Only CSV files are allowed');
     }
-    const key = `uploads/${Date.now()}-${safeName}`;
+    const key = buildUploadKey(userId, safeName);
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,

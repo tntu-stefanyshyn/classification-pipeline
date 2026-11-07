@@ -11,6 +11,7 @@ import { Storage } from './graphql/Storage';
 import { SignedUploadRequest } from './classes/SignedUploadRequest';
 import { SignedUploadUrl } from './classes/SignedUploadUrl';
 import { StorageClient } from './services/StorageClient';
+import { buildUploadKey, isUploadKeyOf, uploadKeyPrefix } from './utils/uploadKeys';
 
 const useS3Config = (t: TestContext, values: Partial<typeof config.s3>) => {
   const original = { ...config.s3 };
@@ -56,15 +57,19 @@ test('StorageClient validates configuration and builds signed upload/download UR
   Date.now = () => 1700000000000;
 
   const client = new StorageClient();
-  const upload = await client.getSignedUploadUrl('dataset.csv', 'text/csv');
+  const userId = new Types.ObjectId().toHexString();
+  const upload = await client.getSignedUploadUrl(userId, 'dataset.csv', 'text/csv');
   const download = await client.getSignedDownloadUrl('uploads/dataset.csv');
 
-  assert.equal(upload.key, 'uploads/1700000000000-dataset.csv');
+  assert.match(
+    upload.key,
+    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-dataset\\.csv$`)
+  );
   assert.equal(upload.expiresIn, 321);
   assert.equal(download.key, 'uploads/dataset.csv');
   assert.match(
     upload.url,
-    /uploads-bucket\.s3\.eu-west-1\.amazonaws\.com\/uploads\/1700000000000-dataset\.csv/
+    new RegExp(`uploads-bucket\\.s3\\.eu-west-1\\.amazonaws\\.com/uploads/${userId}/1700000000000-`)
   );
   assert.match(upload.url, /X-Amz-Expires=321/);
   assert.match(
@@ -73,7 +78,7 @@ test('StorageClient validates configuration and builds signed upload/download UR
   );
   assert.match(download.url, /X-Amz-Expires=321/);
   await assert.rejects(
-    () => client.getSignedUploadUrl('dataset.txt', 'text/plain'),
+    () => client.getSignedUploadUrl(userId, 'dataset.txt', 'text/plain'),
     /Only CSV files are allowed/
   );
   await assert.rejects(() => client.getSignedDownloadUrl('  '), /Storage key is required/);
@@ -133,7 +138,12 @@ test('Storage resolver delegates upload and download operations', async (t) => {
   );
 
   assert.equal(
-    await resolver.signedUploadUrl({ filename: 'dataset.csv', mimeType: 'text/csv' } as any),
+    await resolver.signedUploadUrl(
+      { filename: 'dataset.csv', mimeType: 'text/csv' } as any,
+      {
+        req: {},
+      } as any
+    ),
     uploadResult
   );
   await assert.rejects(
@@ -144,7 +154,7 @@ test('Storage resolver delegates upload and download operations', async (t) => {
   const fileId = new Types.ObjectId().toHexString();
   assert.equal(await resolver.signedDownloadUrl(fileId, { req: {} } as any), downloadResult);
   assert.deepEqual(signedCalls, [
-    ['upload', 'dataset.csv', 'text/csv'],
+    ['upload', user._id.toString(), 'dataset.csv', 'text/csv'],
     ['download', 'uploads/key.csv'],
   ]);
 });
@@ -180,4 +190,22 @@ test('Storage.signedDownloadUrl serves the compute service without a user filter
   const context = { req: { headers: { authorization: 'Bearer svc-token' } } } as any;
   await resolver.signedDownloadUrl(fileId, context);
   assert.deepEqual(findOneArgs, [{ _id: fileId }]);
+});
+
+test('upload keys are issued under the user and recognised only for that user', () => {
+  const userId = new Types.ObjectId().toHexString();
+  const otherUserId = new Types.ObjectId().toHexString();
+
+  const key = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
+  const second = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
+
+  assert.match(key, new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-data_.._set\\.csv$`));
+  // Two uploads of one file at the same moment still get different keys.
+  assert.notEqual(second, key);
+  assert.equal(isUploadKeyOf(key, userId), true);
+  assert.equal(isUploadKeyOf(key, otherUserId), false);
+  assert.equal(isUploadKeyOf(`uploads/${userId}/`, userId), false);
+  assert.equal(isUploadKeyOf(`uploads/${userId}/nested/key.csv`, userId), false);
+  assert.equal(isUploadKeyOf('uploads/1700000000000-dataset.csv', userId), false);
+  assert.equal(uploadKeyPrefix(userId), `uploads/${userId}/`);
 });

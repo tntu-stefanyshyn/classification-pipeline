@@ -13,11 +13,18 @@ const authFlow = new AuthFlow();
 export class Storage {
   private readonly storage = new StorageClient();
 
+  /** Signed-in users only: the key is issued under the caller's uploads (see uploadKeys). */
   @Query(() => SignedUploadUrl)
   async signedUploadUrl(
-    @Arg('input', () => SignedUploadRequest) input: SignedUploadRequest
+    @Arg('input', () => SignedUploadRequest) input: SignedUploadRequest,
+    @Ctx() context: GraphQLContext
   ): Promise<SignedUploadUrl> {
-    return this.storage.getSignedUploadUrl(input.filename, input.mimeType || undefined);
+    const user = await authFlow.me(context.req);
+    return this.storage.getSignedUploadUrl(
+      user._id.toString(),
+      input.filename,
+      input.mimeType || undefined
+    );
   }
 
   @Query(() => SignedUploadUrl)

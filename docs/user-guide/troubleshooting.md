@@ -12,7 +12,7 @@ button in the pipeline row) ends with `ValueError: Невалідний файл
 ![The error in the pipeline results](images/15-invalid-file-error.png)
 
 **Cause:** the dataset does not meet the [dataset format](dataset-format.md). The upload only checks
-the file extension, so the content is validated when the run starts.
+the file extension and the file type, so the content is validated when the run starts.
 
 **Fix:** correct the file (semicolon separator, numeric features with a dot decimal separator, no
 empty cells, at least 3 columns and one data row), upload it on the **Files** page and attach it to
@@ -25,16 +25,20 @@ instead.
 **Symptom:** the pipeline returns to **Idle**, and the **Current message** in its results (the **i**
 button in the pipeline row) shows one of these errors from the classification library (the same text is in the **Latest activity** column):
 
-| Error                                                                                          | Cause                                                      | Fix                                                                |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
-| `The number of classes has to be greater than one; got 1 class`                                | The first column has only one distinct label.              | Add rows of at least one more class.                               |
-| `The least populated classes in y have only 1 member, which is too few` (it names the classes) | A class has a single row.                                  | Add rows to that class or remove it from the file.                 |
-| `The test_size = N should be greater or equal to the number of classes = M`                    | The prediction part is smaller than the number of classes. | Increase **Prediction data percentage** or add rows.               |
-| `The train_size = N should be greater or equal to the number of classes = M`                   | The training part is smaller than the number of classes.   | Decrease **Prediction data percentage** or add rows.               |
-| `With n_samples=N, test_size=… and train_size=None, the resulting train set will be empty`     | The file has too few rows for the chosen percentage.       | Add rows (a one-row file always fails) or decrease the percentage. |
+| Error                                                                                          | Cause                                                                                                         | Fix                                                                                          |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `The number of classes has to be greater than one; got 1 class`                                | The first column has only one distinct label.                                                                 | Add rows of at least one more class.                                                         |
+| `The least populated classes in y have only 1 member, which is too few` (it names the classes) | A class has a single row.                                                                                     | Add rows to that class or remove it from the file.                                           |
+| `The test_size = N should be greater or equal to the number of classes = M`                    | The prediction part is smaller than the number of classes.                                                    | Increase **Prediction data percentage** or add rows.                                         |
+| `The train_size = N should be greater or equal to the number of classes = M`                   | The training part is smaller than the number of classes.                                                      | Decrease **Prediction data percentage** or add rows.                                         |
+| `With n_samples=N, test_size=… and train_size=None, the resulting train set will be empty`     | The file has too few rows for the chosen percentage.                                                          | Add rows (a one-row file always fails) or decrease the percentage.                           |
+| `Out of range float values are not JSON compliant`                                             | The prediction part of a split has only one class (a very small class was left out), so ROC AUC is undefined. | Add rows to the smallest class (see the rule in the format page) or increase the percentage. |
 
-**Cause and fix in short:** the rows are split by **Prediction data percentage**, and both parts need
-at least one row for every class. See [Classification requirements](dataset-format.md#classification-requirements).
+**Cause and fix in short:** the rows are split by **Prediction data percentage**, and both parts must
+be at least as large as the number of classes. The split is random and only approximate, so a very
+small class can be missing from the prediction part, which fails the run with the last error in the
+table. Give every class enough rows. See [Classification requirements](dataset-format.md#classification-requirements)
+for the practical rule.
 The settings cannot be changed after the computations have started, so create a new experiment
 with the corrected settings or file.
 

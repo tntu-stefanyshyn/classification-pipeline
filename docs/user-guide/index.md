@@ -30,12 +30,15 @@ experiments), **Experiments** and **Files**.
 ## 2. Upload a dataset
 
 1. Open **Files** and choose **Upload file**.
-2. Select a `.csv` file. Other file types are rejected with "Only CSV files are supported."
+2. Select a `.csv` file. A file with another extension is rejected with "Only CSV files are
+   supported." The same message appears for a `.csv` file whose type reported by the system is
+   not empty and is not `text/csv`, `application/vnd.ms-excel` or `text/plain` (for example, a
+   file that another program registered with its own type). Save such a file again as plain CSV.
 3. The file appears in the **Uploaded files** list with its size and status.
 
 ![The Files page with an uploaded file](images/03-files-upload.png)
 
-The app only checks the file extension. The content is checked when a computation starts, so verify the
+The app only checks the extension and the file type. The content is checked when a computation starts, so verify the
 file against the [dataset format](dataset-format.md) first.
 
 To remove a file choose the trash icon in its row. The file is detached from the experiments that use

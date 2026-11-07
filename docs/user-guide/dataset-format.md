@@ -6,23 +6,23 @@ before you upload it.
 
 ## Requirements
 
-| Requirement                     | Details                                                                                                                                 |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| File type                       | A `.csv` file. The app rejects other extensions with "Only CSV files are supported."                                                    |
-| Separator                       | A semicolon (`;`). A comma-separated file is rejected.                                                                                  |
-| Header                          | The first row holds the column names.                                                                                                   |
-| Columns                         | At least 3: the class label followed by at least 2 feature columns.                                                                     |
-| First column                    | The class label of the row. Any text or number; spaces around the value are removed.                                                    |
-| Other columns                   | Numeric features only. Use a dot as the decimal separator (`1.25`, not `1,25`).                                                         |
-| Missing values                  | Not allowed. Every cell must be filled.                                                                                                 |
-| Infinite values (`inf`, `-inf`) | Not allowed.                                                                                                                            |
-| Rows                            | At least 1 data row below the header; see [Classification requirements](#classification-requirements) for the minimum that a run needs. |
+| Requirement                     | Details                                                                                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File type                       | A `.csv` file whose type is empty, `text/csv`, `application/vnd.ms-excel` or `text/plain`. Anything else is rejected with "Only CSV files are supported." |
+| Separator                       | A semicolon (`;`). A comma-separated file is rejected.                                                                                                    |
+| Header                          | The first row holds the column names.                                                                                                                     |
+| Columns                         | At least 3: the class label followed by at least 2 feature columns.                                                                                       |
+| First column                    | The class label of the row. Any text or number; spaces around the value are removed.                                                                      |
+| Other columns                   | Numeric features only. Use a dot as the decimal separator (`1.25`, not `1,25`).                                                                           |
+| Missing values                  | Not allowed. Every cell must be filled.                                                                                                                   |
+| Infinite values (`inf`, `-inf`) | Not allowed.                                                                                                                                              |
+| Rows                            | At least 1 data row below the header; see [Classification requirements](#classification-requirements) for the minimum that a run needs.                   |
 
 ## Classification requirements
 
 A file that follows the table above can still fail when the classification starts. The computation
 splits the rows several times into a training part and a prediction part, keeping the share of
-every class in both parts (a stratified random split). The size of the prediction part is set by
+every class in both parts approximately (a stratified random split). The size of the prediction part is set by
 **Prediction data percentage** in the graph settings (not by the number of splits). This gives
 these requirements:
 
@@ -36,7 +36,14 @@ these requirements:
 For example, the 60-row example below has two classes, so the prediction part must have at
 least 2 rows. A **Prediction data percentage** of 1% gives only 1 row and the run fails; choose a
 larger percentage. A file with a single data row fails because its training part is empty.
-Use more rows per class than the minimum to get meaningful results.
+
+The split only approximates the share of every class, so even a file that meets all four
+requirements can leave a small class out of the prediction part. For example, with 98 rows in one
+class and 2 in the other, a 20% prediction part contained neither of the two rows in any of 20
+random splits that we tried. ROC AUC cannot be calculated for a prediction part with one class,
+and in the tested version of the worker the run then fails when it sends the result, with
+`Out of range float values are not JSON compliant`. As a practical rule, give the smallest class
+enough rows for about 10 of them to fall into the prediction part (for example, 50 rows at 20%).
 
 See [Troubleshooting](troubleshooting.md#the-run-fails-because-of-the-classes-or-the-traintest-split)
 for the errors and the fix.

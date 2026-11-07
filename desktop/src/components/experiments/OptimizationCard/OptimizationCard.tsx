@@ -16,9 +16,9 @@ import {
   OptimizationStatus,
   PipelineStatus,
 } from '../../../graphql/types.generated';
-import { config } from '../../../config/config';
 import { useI18n } from '../../../i18n';
 import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
+import { ReportDownloadButton } from '../ReportDownloadButton';
 
 type LeaderboardRow = {
   id: string;
@@ -353,12 +353,6 @@ const OptimizationCard: FC = () => {
     return { min: Math.min(...scores), max: Math.max(...scores) };
   }, [sortedLeaderboard]);
 
-  const reportUrl = useMemo(() => {
-    if (!experiment) return '';
-    const baseUrl = config.renderer.graphqlEndpoint.replace(/\/graphql\/?$/, '');
-    return `${baseUrl}/experiments/${experiment._id}/report`;
-  }, [experiment]);
-
   const renderBarWidth = (score: number | null) => {
     if (score === null) return '0%';
     const { min, max } = chartRange;
@@ -399,13 +393,7 @@ const OptimizationCard: FC = () => {
           >
             {optimizationButtonLabel}
           </button>
-          <a
-            className="btn ghost small"
-            href={reportUrl}
-            download={`experiment-${experiment._id}-report.pdf`}
-          >
-            {messages.common.downloadPdf}
-          </a>
+          <ReportDownloadButton experimentId={experiment._id} className="btn ghost small" />
           <button className="btn ghost small" type="button" onClick={() => setHistoryOpen(true)}>
             {messages.optimizationCard.history}
           </button>

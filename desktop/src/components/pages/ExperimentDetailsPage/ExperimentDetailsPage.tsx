@@ -8,7 +8,6 @@ import { FileInput } from '../../inputs/FileInput';
 import { InputField } from '../../inputs/InputField';
 import { TextAreaField } from '../../inputs/TextAreaField';
 import { GraphSettingsModal } from '../../experiments/GraphSettingsModal';
-import { config } from '../../../config/config';
 import { isCsvFile } from '../../../utils/fileValidation';
 import { formatWeightPercent } from '../../../utils/metricWeights';
 import { createValidationSchema } from './constants/validationSchema';
@@ -28,6 +27,7 @@ import { buildGraphPaths } from './utils/buildGraphPaths';
 import { formatTimeAgo } from './utils/formatTimeAgo';
 import ComputationCard from '../../experiments/ComputationCard/ComputationCard';
 import OptimizationCard from '../../experiments/OptimizationCard/OptimizationCard';
+import { ReportDownloadButton } from '../../experiments/ReportDownloadButton';
 import ChangeExperimentStatusButton from '../../experiments/ChangeExperimentStatusButton/ChangeExperimentStatusButton';
 import { useI18n } from '../../../i18n';
 
@@ -101,12 +101,6 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
   const canMoveToComputing =
     experiment?.status === ExperimentStatus.configuring && graphSettingsReady && hasDatasetFile;
 
-  const reportUrl = useMemo(() => {
-    if (!experiment) return '';
-    const baseUrl = config.renderer.graphqlEndpoint.replace(/\/graphql\/?$/, '');
-    return `${baseUrl}/experiments/${experiment._id}/report`;
-  }, [experiment]);
-
   const handleCloseModal = () => {
     setEditModalOpen(false);
     setUploadError(null);
@@ -170,13 +164,7 @@ const ExperimentDetailsPage: FC<ExperimentDetailsPageProps> = ({ onLogout }) => 
             {messages.experimentDetails.refresh}
           </button>
           {experiment?.status === ExperimentStatus.completed ? (
-            <a
-              className="btn ghost"
-              href={reportUrl}
-              download={`experiment-${experiment._id}-report.pdf`}
-            >
-              {messages.common.downloadPdf}
-            </a>
+            <ReportDownloadButton experimentId={experiment._id} />
           ) : null}
           <button
             className="btn primary"

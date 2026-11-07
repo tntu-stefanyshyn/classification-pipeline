@@ -98,6 +98,9 @@ export class SessionStore {
         await this.revokeSession(record.familyId);
         throw AuthenticationError.sessionExpired();
       }
+      // The earlier answer may have failed after storing the successor, before it extended the
+      // session: without this the session would still end at the old token's expiry.
+      await this.extendSession(record.familyId, successor.expiresAt);
     }
     if (!(await this.isActive(record.familyId))) {
       // Revoked while the successor was being stored: it must not reach the client.
@@ -121,8 +124,13 @@ export class SessionStore {
       familyId: sessionId,
       expiresAt,
     });
-    await SessionModel.updateOne({ _id: sessionId }, { $max: { expiresAt } });
+    await this.extendSession(sessionId, expiresAt);
     return token;
+  }
+
+  /** A session lives as long as its newest token; never shortened. */
+  private async extendSession(sessionId: string, expiresAt: Date) {
+    await SessionModel.updateOne({ _id: sessionId }, { $max: { expiresAt } });
   }
 
   private sign(sessionId: string, nonce: string) {

@@ -319,3 +319,37 @@ test('an attempt whose successor was never stored can be completed', { skip }, a
 
   assert.ok(await flow.refreshSession(next.refreshToken));
 });
+
+test(
+  'repeating an attempt whose session was not extended extends it to the successor',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    // The session is about to end with the token that is being exchanged.
+    const soon = new Date(Date.now() + 60_000);
+    await SessionModel.updateMany({}, { $set: { expiresAt: soon } });
+    await RefreshTokenModel.updateMany({}, { $set: { expiresAt: soon } });
+    const updateOne = SessionModel.updateOne.bind(SessionModel) as (...args: unknown[]) => unknown;
+    let failures = 1;
+    stub(t, SessionModel as unknown as Record<string, unknown>, 'updateOne', ((
+      filter: unknown,
+      update: object,
+      ...rest: unknown[]
+    ) => {
+      // The successor is stored, then extending the session fails.
+      if ('$max' in update && failures-- > 0) throw new Error('connection lost');
+      return updateOne(filter, update, ...rest);
+    }) as any);
+
+    await assert.rejects(flow.refreshSession(session.refreshToken, 'attempt-1'), /connection lost/);
+    const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+
+    const successor = (await RefreshTokenModel.findOne({
+      tokenHash: hashOf(next.refreshToken),
+    }).lean())!;
+    const stored = (await SessionModel.findOne().lean())!;
+    assert.equal(stored.expiresAt.getTime(), successor.expiresAt.getTime());
+    assert.ok(stored.expiresAt > soon);
+  }
+);

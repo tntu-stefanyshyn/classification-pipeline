@@ -30,7 +30,8 @@ generated with `puppeteer` (Chromium). It contains the experiment name, descript
 date, the graph and its settings, the source file details, the pipelines with their computing
 results and machine information, and the optimization result and history.
 
-Only the owner of the experiment can download it. The request carries the user JWT in`nAuthorization: Bearer <token>`, like a GraphQL request, so a plain link or a browser tab that
+Only the owner of the experiment can download it. The request carries the user JWT in
+`Authorization: Bearer <token>`, like a GraphQL request, so a plain link or a browser tab that
 is not signed in gets nothing. The desktop app downloads the report with `fetch` and saves the
 response as a file (`ReportDownloadButton`).
 
@@ -41,6 +42,8 @@ Responses:
 - `400` for a missing or invalid experiment `_id`.
 - `404` when the experiment does not exist or belongs to another user: both get the same answer,
   so the response does not reveal whether someone else's id exists.
+- `500` when the JWT cannot be checked (for example the database is unavailable while the user
+  is loaded): the token may be valid, so the answer does not ask to sign in again.
 - `500` when the PDF cannot be generated, otherwise `200` with the PDF.
 
 The desktop app shows the download button on the details page only for `completed` experiments.

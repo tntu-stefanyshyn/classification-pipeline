@@ -21,7 +21,7 @@ An empty `BACKEND_SERVICE_TOKEN` matches nothing, so worker operations stay clos
 
 The owner is the user whose id is stored in the `createdById` field of the experiment. A pipeline belongs to the owner of its experiment.
 
-Uploaded files belong to the user who registered them (`uploadedById`). `signedUploadUrl` issues the S3 key under that user's prefix, `uploads/<user id>/<time>-<random>-<file name>`, and `createUploadedFile` accepts only a key under the caller's prefix that no other file record uses. A record therefore never points at another user's object: deleting a record deletes its S3 object, and `signedDownloadUrl` signs the record's key. Records created before this rule keep their `uploads/<time>-<file name>` keys and work as before.
+Uploaded files belong to the user who registered them (`uploadedById`). `signedUploadUrl` issues the S3 key under that user's prefix, `uploads/<user id>/<time>-<random>-<signature>-<file name>`, and `createUploadedFile` accepts only a key that was issued to the caller and that no other file record uses. The signature is an HMAC (with `JWT_SECRET`) of the user id and the rest of the key, so a key the caller built or changed, even under its own prefix, is rejected without storing the issued keys. A record therefore never points at another user's object: deleting a record deletes its S3 object, and `signedDownloadUrl` signs the record's key. Records created before this rule keep their `uploads/<time>-<file name>` keys and work as before.
 
 Resolvers authenticate the request (`AuthFlow.me` for user operations, `AuthFlow.authenticate` where the service token is also allowed) and pass the user id or the principal to `ExperimentAccess`. It holds the ownership rules and does not depend on HTTP.
 

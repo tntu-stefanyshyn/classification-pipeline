@@ -12,14 +12,14 @@ building and running classification experiments.
 
 ## Where to find things
 
-| Section                                           | Contents                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [Getting started](getting-started/index.md)       | Quick start and the full [setup guide](../SETUP.md) (WSL/Linux, Docker, S3).                |
-| [Architecture](architecture/overview.md)          | System overview, lifecycle, data model, run execution, decisions, known limitations, code conventions. |
-| [Domain](domain/experiments.md)                   | Experiment and pipeline statuses, validations, graph rules, PDF report.                     |
-| [API](api/index.md)                               | GraphQL and REST endpoints, GraphQL usage in the desktop app.                               |
-| [Operations](operations/ci.md)                    | CI and the Windows installer, running computations in [AWS Batch](operations/aws-batch.md). |
-| [aws-jobs](../aws-jobs/README.md)                 | Python jobs and the Docker images used for computations.                                    |
+| Section                                     | Contents                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [Getting started](getting-started/index.md) | Quick start and the full [setup guide](../SETUP.md) (WSL/Linux, Docker, S3).                           |
+| [Architecture](architecture/overview.md)    | System overview, lifecycle, data model, run execution, decisions, known limitations, code conventions. |
+| [Domain](domain/experiments.md)             | Experiment and pipeline statuses, validations, graph rules, PDF report.                                |
+| [API](api/index.md)                         | GraphQL and REST endpoints, GraphQL usage in the desktop app.                                          |
+| [Operations](operations/ci.md)              | CI and the Windows installer, running computations in [AWS Batch](operations/aws-batch.md).            |
+| [aws-jobs](../aws-jobs/README.md)           | Python jobs and the Docker images used for computations.                                               |
 
 ### All pages
 

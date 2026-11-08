@@ -25,17 +25,16 @@ const bearer = (user: { _id: Types.ObjectId; email: string }) =>
 
 // The real handler, AuthFlow and report service over a real HTTP server; only the database and
 // the PDF renderer are replaced.
+const users = [owner, otherUser];
+const findUser = async (id: string) =>
+  users.find((user) => user._id.toString() === String(id)) ?? null;
+
 const startServer = async (
   t: TestContext,
-  render: (input: any) => Promise<Buffer> = async () => pdf
+  render: (input: any) => Promise<Buffer> = async () => pdf,
+  findById: (id: string) => Promise<unknown> = findUser
 ) => {
-  const users = [owner, otherUser];
-  stub(
-    t,
-    UserModel as unknown as Record<string, unknown>,
-    'findById',
-    (async (id: string) => users.find((user) => user._id.toString() === String(id)) ?? null) as any
-  );
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findById', findById as any);
   const experimentQueries: Record<string, unknown>[] = [];
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOne', ((
     query: Record<string, unknown>
@@ -88,6 +87,35 @@ test('the report needs a valid access token', async (t) => {
     assert.deepEqual(await response.json(), { error: 'Not authenticated' });
   }
   // Nothing about the experiment is read before the caller is known.
+  assert.deepEqual(experimentQueries, []);
+});
+
+test('a token of a user that no longer exists is a 401', async (t) => {
+  const { request } = await startServer(t);
+  const removed = { _id: new Types.ObjectId(), email: 'removed@example.com' };
+
+  const response = await request(experimentId.toString(), bearer(removed));
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'Not authenticated' });
+});
+
+test('a database failure while checking the token is a server error, not a 401', async (t) => {
+  const { request, experimentQueries } = await startServer(t, undefined, async () => {
+    throw new Error('MongoServerSelectionError: connection refused');
+  });
+  const logged: unknown[][] = [];
+  stub(t, console as unknown as Record<string, unknown>, 'error', (...args: unknown[]) => {
+    logged.push(args);
+  });
+
+  const response = await request(experimentId.toString(), bearer(owner));
+
+  assert.equal(response.status, 500);
+  // A valid user is not asked to sign in again.
+  assert.equal(response.headers.get('www-authenticate'), null);
+  assert.deepEqual(await response.json(), { error: 'Failed to authenticate the request' });
+  assert.equal(logged.length, 1);
   assert.deepEqual(experimentQueries, []);
 });
 

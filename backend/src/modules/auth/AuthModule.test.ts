@@ -8,6 +8,7 @@ import { User } from '../../core/user';
 import { UserModel } from '../../core/user/models/UserModel';
 import { stub } from '../../test/testUtils';
 import { Auth } from './graphql/Auth';
+import { AuthenticationError } from './classes/AuthenticationError';
 import { AuthPayload } from './classes/AuthPayload';
 import { LoginInput } from './classes/LoginInput';
 import { RegisterInput } from './classes/RegisterInput';
@@ -109,6 +110,33 @@ test('AuthFlow.me rejects missing authentication headers outside development', a
   (config as any).isDev = false;
 
   await assert.rejects(() => authFlow.me({ headers: {} } as any), /Not authenticated/);
+});
+
+test('AuthFlow.me fails with AuthenticationError only for credential problems', async (t) => {
+  const authFlow = new AuthFlow();
+  const signed = (payload: object) => ({
+    headers: { authorization: `Bearer ${jwt.sign(payload, config.jwtSecret)}` },
+  });
+  let findById = async (): Promise<unknown> => null;
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findById', (() => findById()) as any);
+
+  for (const req of [
+    { headers: {} },
+    { headers: { authorization: 'Bearer not-a-jwt' } },
+    signed({}),
+    signed({ sub: new Types.ObjectId().toString() }),
+  ]) {
+    await assert.rejects(() => authFlow.me(req as any), AuthenticationError);
+  }
+
+  const outage = new Error('connection refused');
+  findById = async () => {
+    throw outage;
+  };
+  await assert.rejects(
+    () => authFlow.me(signed({ sub: new Types.ObjectId().toString() }) as any),
+    (error) => error === outage
+  );
 });
 
 test('AuthFlow.isService accepts only the configured service token', (t) => {

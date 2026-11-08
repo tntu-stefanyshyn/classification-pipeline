@@ -10,6 +10,7 @@ import { AuthPayload } from '../classes/AuthPayload';
 import type { Principal } from '../classes/Principal';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
+import { AuthenticationError } from '../classes/AuthenticationError';
 
 export class AuthFlow {
   async register(input: RegisterInput): Promise<AuthPayload> {
@@ -54,16 +55,23 @@ export class AuthFlow {
     // }
 
     const token = this.extractToken(req);
-    const payload = jwt.verify(token, config.jwtSecret) as JwtPayload;
+    let payload: JwtPayload;
+    try {
+      payload = jwt.verify(token, config.jwtSecret) as JwtPayload;
+    } catch (error) {
+      // Keeps the library message (`jwt expired`, `jwt malformed`) and adds the stable code.
+      throw new AuthenticationError(error instanceof Error ? error.message : 'Invalid token');
+    }
 
     const userId = payload.sub;
     if (!userId) {
-      throw new Error('Invalid token payload');
+      throw new AuthenticationError('Invalid token payload');
     }
 
+    // A database failure here is not an authentication failure and is passed on as it is.
     const user = await UserModel.findById(userId);
     if (!user) {
-      throw new Error('User not found');
+      throw new AuthenticationError('User not found');
     }
 
     return user;
@@ -90,7 +98,7 @@ export class AuthFlow {
   /** Guards worker-only operations: anything except BACKEND_SERVICE_TOKEN is rejected. */
   requireService(req: Request): void {
     if (!this.isService(req)) {
-      throw new Error('Not authenticated');
+      throw new AuthenticationError();
     }
   }
 
@@ -104,7 +112,7 @@ export class AuthFlow {
     const header = req.headers.authorization || '';
     const token = header.replace('Bearer', '').trim();
     if (!token) {
-      throw new Error('Not authenticated');
+      throw new AuthenticationError();
     }
     return token;
   }

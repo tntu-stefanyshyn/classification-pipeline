@@ -1,13 +1,16 @@
 import type { RequestHandler } from 'express';
 import { Types } from 'mongoose';
 
+import { AuthenticationError } from '../../auth/classes/AuthenticationError';
 import { AuthFlow } from '../../auth/services/AuthFlow';
 import { ExperimentReportService } from '../services/ExperimentReportService';
 
 /**
  * `GET /experiments/:experimentId/report`: the PDF report, for the owner of the experiment only.
  * The request needs the owner's JWT in `Authorization: Bearer`, like a GraphQL request; without a
- * valid one the answer is 401. An experiment of another user gets the same 404 as a missing one.
+ * valid one the answer is 401. A failure to check it (the database is unavailable) is a 500, so a
+ * valid user is not sent to sign in again. An experiment of another user gets the same 404 as a
+ * missing one.
  */
 export const createExperimentReportHandler =
   (auth = new AuthFlow(), reports = new ExperimentReportService()): RequestHandler =>
@@ -15,9 +18,15 @@ export const createExperimentReportHandler =
     let userId: Types.ObjectId;
     try {
       userId = (await auth.me(req))._id;
-    } catch {
-      res.setHeader('WWW-Authenticate', 'Bearer');
-      res.status(401).json({ error: 'Not authenticated' });
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        res.setHeader('WWW-Authenticate', 'Bearer');
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      // The credential may be valid (the user could not be loaded): signing in again would not help.
+      console.error('Failed to authenticate the report request', error);
+      res.status(500).json({ error: 'Failed to authenticate the request' });
       return;
     }
 

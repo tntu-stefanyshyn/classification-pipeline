@@ -33,7 +33,8 @@ type RefreshTokenRecord = NonNullable<Awaited<ReturnType<SessionStore['find']>>>
  *
  * An exchange may carry the client's attempt id. Its successor is derived from the token and that
  * id, so when the answer is lost the same attempt gets the same successor again; any other
- * exchange of a used token is still reuse.
+ * exchange of a used token is still reuse. The successor also proves the attempt after MongoDB
+ * removed the used token: only an exchange of that token in that attempt can have stored it.
  */
 export class SessionStore {
   /** Starts a session for a login and returns its first refresh token. */
@@ -51,7 +52,15 @@ export class SessionStore {
     if (!record) {
       // Removed after it expired. If its session is still active, it was continued without it.
       const sessionId = this.sessionOf(token);
-      if (sessionId && (await this.isActive(sessionId))) await this.revokeSession(sessionId);
+      if (!sessionId || !(await this.isActive(sessionId))) {
+        throw AuthenticationError.sessionExpired();
+      }
+      if (attemptId) {
+        // Exchanged just before it expired and the answer was lost: the successor of that attempt
+        // outlives the token, and only an exchange of this token in this attempt could store it.
+        return this.resend(sessionId, this.sign(sessionId, this.successorNonce(token, attemptId)));
+      }
+      await this.revokeSession(sessionId);
       throw AuthenticationError.sessionExpired();
     }
     if (record.revokedAt || !(await this.isActive(record.familyId))) {
@@ -93,20 +102,33 @@ export class SessionStore {
     } catch (error) {
       // Stored already by an earlier answer of the same attempt.
       if (!isDuplicateKey(error)) throw error;
-      const successor = await this.find(refreshToken);
-      if (!successor || successor.usedAt || successor.revokedAt) {
-        await this.revokeSession(record.familyId);
-        throw AuthenticationError.sessionExpired();
-      }
-      // The earlier answer may have failed after storing the successor, before it extended the
-      // session: without this the session would still end at the old token's expiry.
-      await this.extendSession(record.familyId, successor.expiresAt);
+      return this.resend(record.familyId, refreshToken);
     }
-    if (!(await this.isActive(record.familyId))) {
+    return this.handOut(record.familyId, record.userId, refreshToken);
+  }
+
+  /**
+   * Hands out again the successor an earlier answer of the same attempt stored, while it is
+   * unused. Without it (never stored, or removed after it expired) the attempt is reuse.
+   */
+  private async resend(sessionId: string, refreshToken: string) {
+    const successor = await this.find(refreshToken);
+    if (!successor || successor.usedAt || successor.revokedAt) {
+      await this.revokeSession(sessionId);
+      throw AuthenticationError.sessionExpired();
+    }
+    // The earlier answer may have failed after storing the successor, before it extended the
+    // session: without this the session would still end at the old token's expiry.
+    await this.extendSession(sessionId, successor.expiresAt);
+    return this.handOut(sessionId, successor.userId, refreshToken);
+  }
+
+  private async handOut(sessionId: string, userId: Types.ObjectId, refreshToken: string) {
+    if (!(await this.isActive(sessionId))) {
       // Revoked while the successor was being stored: it must not reach the client.
       throw AuthenticationError.sessionExpired();
     }
-    return { userId: record.userId, refreshToken };
+    return { userId, refreshToken };
   }
 
   private successorNonce(token: string, attemptId?: string | null) {

@@ -353,3 +353,47 @@ test(
     assert.ok(stored.expiresAt > soon);
   }
 );
+
+test(
+  'the same attempt gets its refresh token after MongoDB removed the used token',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    // Exchanged just before it expired; the answer was lost and the TTL index removed the token.
+    const lost = await flow.refreshSession(session.refreshToken, 'attempt-1');
+    await RefreshTokenModel.deleteOne({ tokenHash: hashOf(session.refreshToken) });
+
+    const repeated = await flow.refreshSession(session.refreshToken, 'attempt-1');
+
+    assert.equal(repeated.refreshToken, lost.refreshToken);
+    assert.equal((await SessionModel.findOne().lean())?.revokedAt, undefined);
+    assert.ok(await flow.refreshSession(repeated.refreshToken, 'attempt-2'));
+  }
+);
+
+test('another attempt with a removed used token is still reuse', { skip }, async (t) => {
+  await useDatabase(t);
+  const { flow, session } = await startSession();
+  const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+  await RefreshTokenModel.deleteOne({ tokenHash: hashOf(session.refreshToken) });
+
+  await rejectsAsExpired(flow.refreshSession(session.refreshToken, 'attempt-2'));
+  await rejectsAsExpired(flow.refreshSession(next.refreshToken));
+  assert.ok((await SessionModel.findOne().lean())?.revokedAt);
+});
+
+test(
+  'repeating an attempt whose token was removed and whose successor was used is reuse',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { flow, session } = await startSession();
+    const next = await flow.refreshSession(session.refreshToken, 'attempt-1');
+    const third = await flow.refreshSession(next.refreshToken, 'attempt-2');
+    await RefreshTokenModel.deleteOne({ tokenHash: hashOf(session.refreshToken) });
+
+    await rejectsAsExpired(flow.refreshSession(session.refreshToken, 'attempt-1'));
+    await rejectsAsExpired(flow.refreshSession(third.refreshToken));
+  }
+);

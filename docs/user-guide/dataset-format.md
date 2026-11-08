@@ -12,11 +12,19 @@ before you upload it.
 | Separator                       | A semicolon (`;`). A comma-separated file is rejected.                                                                                                    |
 | Header                          | The first row holds the column names.                                                                                                                     |
 | Columns                         | At least 3: the class label followed by at least 2 feature columns.                                                                                       |
-| First column                    | The class label of the row. Any text or number; spaces around the value are removed.                                                                      |
+| First column                    | The class label of the row: text or a number, except the values listed below the table. Spaces around the value are removed.                              |
 | Other columns                   | Numeric features only. Use a dot as the decimal separator (`1.25`, not `1,25`).                                                                           |
 | Missing values                  | Not allowed. Every cell must be filled.                                                                                                                   |
 | Infinite values (`inf`, `-inf`) | Not allowed.                                                                                                                                              |
 | Rows                            | At least 1 data row below the header; see [Classification requirements](#classification-requirements) for the minimum that a run needs.                   |
+
+**Class labels that count as missing values.** The file is read with pandas, which treats some
+texts as an empty cell, so a file whose first column contains one of them is rejected as invalid
+(see [what happens with a wrong file](#what-happens-with-a-wrong-file)). The rejected labels are
+`NA`, `N/A`, `n/a`, `NULL`, `null`, `NaN`, `nan`, `None`, `<NA>`, `#N/A`, `#N/A N/A`, `#NA`,
+`-NaN`, `-nan`, `-1.#IND`, `-1.#QNAN`, `1.#IND` and `1.#QNAN`. The check is case-sensitive: `none`,
+`NAN`, `Na` and `Null` are accepted. Rename such labels (for example `NA` to `class_na`) before you
+upload the file.
 
 ## Classification requirements
 
@@ -79,6 +87,7 @@ message** of the pipeline results (the **i** button in the pipeline row).
 | Text in a feature column                  | The run fails with "Невалідний файл".                                |
 | An empty cell                             | The run fails with "Невалідний файл".                                |
 | `inf` in a feature column                 | The run fails with "Невалідний файл".                                |
+| A class label such as `NA` or `null`      | The run fails with "Невалідний файл".                                |
 | Only the label and one feature column     | The run fails with "Невалідний файл".                                |
 | A header row and no data rows             | The run fails with `EEG_FILE_EMPTY`.                                 |
 | A completely empty file                   | The run fails with a pandas error ("No columns to parse from file"). |

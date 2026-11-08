@@ -144,16 +144,32 @@ colors each pipeline by its status:
 | Yellow     | Running   |
 | Green      | Completed |
 
-- **Local queue:** pipelines start as **Idle**. The play button in a row puts the pipeline into the
-  queue, and the desktop application executes it on your computer with Docker, so keep the
-  application open until it finishes. The square button stops a running pipeline and returns it to
-  idle. **Move all to waiting** puts every local pipeline that is idle or running into the queue.
+- **Local queue:** the desktop application executes the pipelines on your computer with Docker, so
+  keep the application open until they finish. If **Cloud** is also selected, the local pipelines
+  start as **Idle** and the play button in a row puts a pipeline into the queue. If **Local** is the
+  only selected mode, they are queued automatically when you choose **Move to computing**.
+  **Move all to waiting** puts every local pipeline that is idle or running into the queue.
 - **Cloud queue:** the pipelines are queued automatically when you choose **Move to computing**
   and are executed by the backend (Docker worker or AWS Batch), one after another. This needs
   a backend worker to be configured: the Docker worker works without AWS Batch.
 - The **i** button in the **Results** column opens the details of the latest run: the metrics for
   every cross-validation fold, the confusion matrices, the dataset information, the device that
   executed the run, and the execution history.
+
+**Stop, pause and resume**
+
+- **Stop a pipeline:** while a pipeline is **Running**, in either queue, the square button in its
+  row stops it and returns it to **Idle**. The play button then appears, and it puts the pipeline
+  into the queue again. A **Queued** pipeline has no stop button, and the optimization cannot be
+  stopped either.
+- After a stop, **Latest activity** can still show a leftover message from the stopped run, and the
+  stopped computation can keep using your computer for a few minutes before it ends (seen with
+  Docker Desktop on Windows). The result of a stopped run is not saved.
+- **Pause and resume:** the application has no pause or resume button, so you cannot pause the
+  queued pipelines of an experiment. The backend API has the operations `pauseExperimentRuns` (it
+  returns the queued and running pipelines to **Idle**) and `resumeExperimentRuns` (it queues the
+  idle pipelines again), but the interface does not use them. To interrupt the work, stop the running
+  pipeline and start it later with the play button.
 
 ![Pipelines waiting in the queue, one completed](images/11-computing-statuses.png)
 

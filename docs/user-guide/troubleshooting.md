@@ -15,7 +15,8 @@ button in the pipeline row) ends with `ValueError: Невалідний файл
 the file extension and the file type, so the content is validated when the run starts.
 
 **Fix:** correct the file (semicolon separator, numeric features with a dot decimal separator, no
-empty cells, at least 3 columns and one data row), upload it on the **Files** page and attach it to
+empty cells, no class label such as `NA` or `null` (see the
+[list of rejected labels](dataset-format.md#requirements)), at least 3 columns and one data row), upload it on the **Files** page and attach it to
 the experiment. While the experiment is still being configured you can change the file with
 **Edit**. After computations have started the file cannot be replaced; create a new experiment
 instead.

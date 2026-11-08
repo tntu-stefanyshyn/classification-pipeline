@@ -16,9 +16,14 @@ comment naming the query that needs it. Mongoose creates missing indexes on ever
 (`autoIndex`); there is no separate step for existing databases, including production.
 
 - MongoDB 7 builds an index in the background: reads and writes continue while it builds. The
-  backend waits only for the `workflows` indexes (`WorkflowModel.init()` in `index.ts`), because
-  the one-local-run-per-machine rule depends on the unique one. Other models build theirs without
-  the backend waiting.
+  backend must not wait for a build on a large collection either, so startup waits for nothing
+  except what correctness needs:
+  - `WorkflowModel.init()` in `index.ts` waits for every index declared on `Workflow`. Declare
+    there only the unique per-machine index (the one-local-run-per-machine rule depends on it).
+  - The workflow read indexes live in `createWorkflowReadIndexes` (`WorkflowModel.ts`), which
+    `index.ts` starts without awaiting; until a build finishes, queries just scan. A failure is
+    logged and does not stop the backend.
+  - Indexes declared on other classes are built by Mongoose in the background and not awaited.
 - Prefer non-unique indexes unless the code relies on uniqueness. A unique index that cannot be
   built (duplicates already stored) makes `WorkflowModel.init()` fail and stops the backend.
 - Removing or changing an index in a class does not drop the old one in the database; drop it by
@@ -36,8 +41,9 @@ Current indexes added for reads: `workflows` (`instanceId`, `type`) and (`type`,
 A migration is a `{ name, run }` object in `backend/src/migrations`, added to the list in
 `migrations/index.ts`. `run` returns the number of changed documents.
 
-- `runMigrations` runs at startup, after the database connects. A migration whose `name` is in the
-  `applied_migrations` collection is skipped. After a successful run the name and `appliedAt` are
+- `runMigrations` runs at startup, after the database connects. It first creates the unique index
+  on `applied_migrations.name` (so backends starting together cannot record a name twice), then
+  skips every migration whose `name` is already in the collection. After a successful run the name and `appliedAt` are
   stored, so a migration that throws runs again on the next start.
 - Never rename a migration that has shipped: the new name would run again.
 - Still write each migration to change nothing on a second run. It can run twice when two backends

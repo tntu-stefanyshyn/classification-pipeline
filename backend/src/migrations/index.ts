@@ -12,6 +12,9 @@ const migrations: Migration[] = [
 
 export const runMigrations = async (list: Migration[] = migrations): Promise<number> => {
   let totalUpdated = 0;
+  // The unique index must exist before the first write, or backends starting together on an empty
+  // registry can both insert the same name. Mongoose builds it in the background otherwise.
+  await AppliedMigrationModel.createIndexes();
   const applied = new Set((await AppliedMigrationModel.find().lean()).map(({ name }) => name));
 
   for (const migration of list) {

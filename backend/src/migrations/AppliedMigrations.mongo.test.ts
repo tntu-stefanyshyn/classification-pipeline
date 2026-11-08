@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 
 import { PipelineStatus } from '../core/pipeline/enums';
 import { PipelineModel } from '../core/pipeline/models/PipelineModel';
-import { WorkflowModel } from '../core/workflow/model/WorkflowModel';
+import { createWorkflowReadIndexes, WorkflowModel } from '../core/workflow/model/WorkflowModel';
 import { ExperimentModel } from '../modules/experiments/models/ExperimentModel';
 import { UploadedFileModel } from '../modules/files/models/UploadedFileModel';
 import { AppliedMigrationModel } from './AppliedMigration';
@@ -89,10 +89,35 @@ test('the real migrations run once on a database where they already ran', { skip
 });
 
 test(
-  'the collections that are read by owner or status have supporting indexes',
+  'backends starting together on an empty registry record each migration once',
   { skip },
   async (t) => {
     await useDatabase(t);
+    // Mongoose builds the registry index once per process, in the background: settle it, then start
+    // from a registry without the index, as on the first start after an upgrade.
+    await AppliedMigrationModel.init();
+    await AppliedMigrationModel.createCollection();
+    await AppliedMigrationModel.collection.dropIndexes();
+    const shared = counting('shared');
+
+    await Promise.all(Array.from({ length: 8 }, () => runMigrations([shared])));
+
+    assert.equal(await AppliedMigrationModel.countDocuments({ name: 'shared' }), 1);
+    const indexes = await AppliedMigrationModel.listIndexes();
+    assert.ok(indexes.some(({ key, unique }) => JSON.stringify(key) === '{"name":1}' && unique));
+  }
+);
+
+test(
+  'the read indexes exist and are not built through Workflow, so startup does not wait',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    await Promise.all([
+      createWorkflowReadIndexes(),
+      UploadedFileModel.createIndexes(),
+      ExperimentModel.createIndexes(),
+    ]);
     const keysOf = async (model: { listIndexes: () => Promise<{ key: object }[]> }) =>
       (await model.listIndexes()).map(({ key }) => JSON.stringify(key));
 
@@ -101,5 +126,10 @@ test(
     assert.ok(workflows.includes('{"type":1,"status":1}'));
     assert.ok((await keysOf(UploadedFileModel)).includes('{"uploadedById":1,"uploadedAt":-1}'));
     assert.ok((await keysOf(ExperimentModel)).includes('{"fileId":1}'));
+    // WorkflowModel.init() waits for every index declared on the class: only the unique one may be.
+    assert.deepEqual(
+      WorkflowModel.schema.indexes().map(([fields]) => Object.keys(fields)),
+      [['machineHostname']]
+    );
   }
 );

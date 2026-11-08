@@ -11,7 +11,7 @@ import {
 import { stub } from '../../../test/testUtils';
 import { AuthFlow } from '../../auth/services/AuthFlow';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
-import { uploadKeyPrefix } from '../../storage/utils/uploadKeys';
+import { buildUploadKey, uploadKeyPrefix } from '../../storage/utils/uploadKeys';
 import { UploadedFileModel } from '../models/UploadedFileModel';
 import { fileStore } from '../services/FileStore';
 import { Files } from './Files';
@@ -211,7 +211,7 @@ test('Files GraphQL createUploadedFile requires a signed-in user', async (t) => 
   const created = useUploadedFiles(t);
   const userId = new Types.ObjectId().toHexString();
 
-  const result = await createUploadedFile(uploadKeyPrefix(userId) + '1-abc-dataset.csv');
+  const result = await createUploadedFile(buildUploadKey(userId, 'dataset.csv'));
 
   assert.equal(result.data, null);
   assert.equal(result.errors?.[0]?.message, 'Not authenticated');
@@ -225,10 +225,15 @@ test('Files GraphQL createUploadedFile rejects a key that was not issued to the 
   const otherUserId = new Types.ObjectId().toHexString();
   signIn(t, caller);
 
+  const callerPrefix = uploadKeyPrefix(caller._id.toHexString());
   for (const storageKey of [
-    uploadKeyPrefix(otherUserId) + '1700000000000-abc-dataset.csv',
+    // Issued, but to another user.
+    buildUploadKey(otherUserId, 'dataset.csv'),
     'uploads/1700000000000-dataset.csv',
-    `${uploadKeyPrefix(caller._id.toHexString())}nested/../dataset.csv`,
+    `${callerPrefix}nested/../dataset.csv`,
+    // Under the caller's prefix, but built by the caller: signedUploadUrl never issued it.
+    `${callerPrefix}1700000000000-abcdefabcdef-dataset.csv`,
+    `${callerPrefix}1700000000000-abcdefabcdef-${'0'.repeat(32)}-dataset.csv`,
   ]) {
     const result = await createUploadedFile(storageKey, { authorization: 'Bearer token' });
     assert.equal(result.data, null, storageKey);
@@ -239,8 +244,8 @@ test('Files GraphQL createUploadedFile rejects a key that was not issued to the 
 
 test('Files GraphQL createUploadedFile registers an issued key once, for its owner', async (t) => {
   const caller = { _id: new Types.ObjectId(), name: ' Tester ', email: 'tester@example.com' };
-  const storageKey = `${uploadKeyPrefix(caller._id.toHexString())}1700000000000-abc-dataset.csv`;
-  const registered = `${uploadKeyPrefix(caller._id.toHexString())}1600000000000-def-dataset.csv`;
+  const storageKey = buildUploadKey(caller._id.toHexString(), 'dataset.csv');
+  const registered = buildUploadKey(caller._id.toHexString(), 'dataset.csv');
   const created = useUploadedFiles(t, [registered]);
   signIn(t, caller);
 

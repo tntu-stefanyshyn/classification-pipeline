@@ -11,7 +11,7 @@ import { Storage } from './graphql/Storage';
 import { SignedUploadRequest } from './classes/SignedUploadRequest';
 import { SignedUploadUrl } from './classes/SignedUploadUrl';
 import { StorageClient } from './services/StorageClient';
-import { buildUploadKey, isUploadKeyOf, uploadKeyPrefix } from './utils/uploadKeys';
+import { buildUploadKey, isUploadKeyIssuedTo, uploadKeyPrefix } from './utils/uploadKeys';
 
 const useS3Config = (t: TestContext, values: Partial<typeof config.s3>) => {
   const original = { ...config.s3 };
@@ -63,7 +63,7 @@ test('StorageClient validates configuration and builds signed upload/download UR
 
   assert.match(
     upload.key,
-    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-dataset\\.csv$`)
+    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-[0-9a-f]{32}-dataset\\.csv$`)
   );
   assert.equal(upload.expiresIn, 321);
   assert.equal(download.key, 'uploads/dataset.csv');
@@ -199,13 +199,39 @@ test('upload keys are issued under the user and recognised only for that user', 
   const key = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
   const second = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
 
-  assert.match(key, new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-data_.._set\\.csv$`));
+  assert.match(
+    key,
+    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-[0-9a-f]{32}-data_.._set\\.csv$`)
+  );
   // Two uploads of one file at the same moment still get different keys.
   assert.notEqual(second, key);
-  assert.equal(isUploadKeyOf(key, userId), true);
-  assert.equal(isUploadKeyOf(key, otherUserId), false);
-  assert.equal(isUploadKeyOf(`uploads/${userId}/`, userId), false);
-  assert.equal(isUploadKeyOf(`uploads/${userId}/nested/key.csv`, userId), false);
-  assert.equal(isUploadKeyOf('uploads/1700000000000-dataset.csv', userId), false);
+  assert.equal(isUploadKeyIssuedTo(key, userId), true);
+  assert.equal(isUploadKeyIssuedTo(second, userId), true);
+  assert.equal(isUploadKeyIssuedTo(key, otherUserId), false);
+  // The same key moved under another user's prefix keeps a signature for the first user.
+  assert.equal(isUploadKeyIssuedTo(key.replace(userId, otherUserId), otherUserId), false);
+  assert.equal(isUploadKeyIssuedTo(`uploads/${userId}/`, userId), false);
+  assert.equal(isUploadKeyIssuedTo(`uploads/${userId}/nested/key.csv`, userId), false);
+  assert.equal(isUploadKeyIssuedTo('uploads/1700000000000-dataset.csv', userId), false);
   assert.equal(uploadKeyPrefix(userId), `uploads/${userId}/`);
+});
+
+test('a key the caller built or changed under its own prefix was not issued', () => {
+  const userId = new Types.ObjectId().toHexString();
+  const key = buildUploadKey(userId, 'set.csv', 1700000000000);
+  const [, stamp, signature] = /\/(\d+-[0-9a-f]{12})-([0-9a-f]{32})-/.exec(key)!;
+  const flip = (hex: string) => hex.slice(0, -1) + (hex.endsWith('0') ? '1' : '0');
+
+  for (const forged of [
+    // The format of the issued keys, without a signature the backend made.
+    `${uploadKeyPrefix(userId)}1700000000000-abcdefabcdef-dataset.csv`,
+    `${uploadKeyPrefix(userId)}1700000000000-abcdefabcdef-${'0'.repeat(32)}-dataset.csv`,
+    // An issued key with any part changed.
+    key.replace(signature, flip(signature)),
+    key.replace(stamp, stamp.replace('1700000000000', '1700000000001')),
+    key.replace('set.csv', 'other.csv'),
+    key.toUpperCase(),
+  ]) {
+    assert.equal(isUploadKeyIssuedTo(forged, userId), false, forged);
+  }
 });

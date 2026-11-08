@@ -10,7 +10,7 @@ import { UploadedFile } from './classes/UploadedFile';
 import { Files } from './graphql/Files';
 import { UploadedFileModel, uploadedFilesCollectionName } from './models/UploadedFileModel';
 import { FileStore, fileStore } from './services/FileStore';
-import { uploadKeyPrefix } from '../storage/utils/uploadKeys';
+import { buildUploadKey, uploadKeyPrefix } from '../storage/utils/uploadKeys';
 
 test('uploaded file classes and model metadata are available', () => {
   const uploadedFile = new UploadedFile();
@@ -76,8 +76,8 @@ test('FileStore.create validates and normalizes uploaded file data', async (t) =
     }
   );
 
-  const storageKey = `${uploadKeyPrefix(uploadedById)}1700000000000-abc-dataset.csv`;
-  const registeredKey = `${uploadKeyPrefix(uploadedById)}1600000000000-def-dataset.csv`;
+  const storageKey = buildUploadKey(uploadedById, 'dataset.csv', 1700000000000);
+  const registeredKey = buildUploadKey(uploadedById, 'dataset.csv', 1600000000000);
   stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', (async (query: any) =>
     query.storageKey === registeredKey ? { _id: new Types.ObjectId() } : null) as any);
   const valid = { filename: 'dataset.csv', sizeMb: 1, storageKey, uploadedById };
@@ -94,6 +94,15 @@ test('FileStore.create validates and normalizes uploaded file data', async (t) =
   );
   await assert.rejects(
     () => store.create({ ...valid, storageKey: 'uploads/1700000000000-dataset.csv' }),
+    /Storage key was not issued to this user/
+  );
+  // Under the owner's prefix, but built by the caller instead of issued by signedUploadUrl.
+  await assert.rejects(
+    () =>
+      store.create({
+        ...valid,
+        storageKey: `${uploadKeyPrefix(uploadedById)}1700000000000-abcdefabcdef-dataset.csv`,
+      }),
     /Storage key was not issued to this user/
   );
   await assert.rejects(

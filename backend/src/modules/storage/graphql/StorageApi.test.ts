@@ -14,7 +14,7 @@ import { createLeanResult, stub } from '../../../test/testUtils';
 import { AuthFlow } from '../../auth/services/AuthFlow';
 import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 import { StorageClient } from '../services/StorageClient';
-import { uploadKeyPrefix } from '../utils/uploadKeys';
+import { isUploadKeyIssuedTo, uploadKeyPrefix } from '../utils/uploadKeys';
 import { Storage } from './Storage';
 
 const useS3Config = (t: TestContext) => {
@@ -171,5 +171,7 @@ test('Storage GraphQL signedUploadUrl requires a signed-in user and keys uploads
   assert.equal(signed.errors, undefined);
   const key: string = (signed.data as any).signedUploadUrl.key;
   assert.ok(key.startsWith(uploadKeyPrefix(userId.toHexString())), key);
-  assert.match(key, /\/\d+-[0-9a-f]{12}-dataset\.csv$/);
+  assert.match(key, /\/\d+-[0-9a-f]{12}-[0-9a-f]{32}-dataset\.csv$/);
+  // createUploadedFile accepts exactly this key for this user.
+  assert.equal(isUploadKeyIssuedTo(key, userId.toHexString()), true);
 });

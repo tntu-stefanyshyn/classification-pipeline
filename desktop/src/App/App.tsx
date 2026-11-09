@@ -6,7 +6,8 @@ import { useEffect, type FC } from 'react';
 import { AppRouter } from '../router/AppRouter';
 import { apolloClient } from '../graphql/client';
 import { tokenService, useAuthToken } from '../services/tokenService';
-import { ToastContainer } from 'react-toastify';
+import { endSession, revokePendingLogouts } from '../graphql/session';
+import { ToastContainer, toast } from 'react-toastify';
 import { useI18n } from '../i18n';
 
 const App: FC = () => {
@@ -20,12 +21,24 @@ const App: FC = () => {
     }
   }, [messages.app.name]);
 
+  // Sign-outs the backend has not confirmed are repeated at start and when the network is back.
+  useEffect(() => {
+    const retry = () => void revokePendingLogouts();
+    retry();
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, []);
+
+  const logout = async () => {
+    if (!(await endSession())) toast.warn(messages.errors.logoutPending);
+  };
+
   return (
     <ApolloProvider client={apolloClient}>
       <AppRouter
         isAuthenticated={isAuthenticated}
-        onLoginSuccess={(nextToken) => tokenService.setToken(nextToken)}
-        onLogout={() => tokenService.clearToken()}
+        onLoginSuccess={(session) => tokenService.setSession(session)}
+        onLogout={() => void logout()}
       />
       <ToastContainer position="top-right" />
     </ApolloProvider>

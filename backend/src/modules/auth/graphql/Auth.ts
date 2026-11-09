@@ -21,6 +21,23 @@ export class Auth {
     return authFlow.login(input);
   }
 
+  /**
+   * Needs no access token: it is the way to get a new one after the old one expired. A client
+   * sends the same `attemptId` when it repeats an exchange whose answer it did not receive.
+   */
+  @Mutation(() => AuthPayload)
+  async refreshSession(
+    @Arg('refreshToken') refreshToken: string,
+    @Arg('attemptId', () => String, { nullable: true }) attemptId?: string | null
+  ): Promise<AuthPayload> {
+    return authFlow.refreshSession(refreshToken, attemptId);
+  }
+
+  @Mutation(() => Boolean)
+  async logout(@Arg('refreshToken') refreshToken: string): Promise<boolean> {
+    return authFlow.logout(refreshToken);
+  }
+
   @Query(() => User)
   async me(@Ctx('req') req: Request): Promise<User | null> {
     return authFlow.me(req);

@@ -10,8 +10,16 @@ const getErrorMessages = () => {
   } as Record<string, string>;
 };
 
+// Errors the backend marks with a stable `extensions.code`.
+const getCodeMessages = (): Record<string, string> => ({
+  INVALID_CREDENTIALS: getMessages(localeService.getLocale()).errors.invalidCredentials,
+});
+
 export function translateGraphQLError(err?: GraphQLFormattedError) {
   if (!err) return null;
+  const code = err.extensions?.code;
+  const byCode = typeof code === 'string' ? getCodeMessages()[code] : undefined;
+  if (byCode) return byCode;
   const message = err.message;
   const localizedMessages = getErrorMessages();
   if (message && localizedMessages[message]) {

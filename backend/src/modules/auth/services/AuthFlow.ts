@@ -5,14 +5,18 @@ import type { Request } from 'express';
 
 import { config } from '../../../config/config';
 import { User, UserModel } from '../../../core/user';
-import { TOKEN_TTL } from '../constants/token';
+import { accessTokenTtlSeconds } from '../constants/token';
 import { AuthPayload } from '../classes/AuthPayload';
 import type { Principal } from '../classes/Principal';
 import { LoginInput } from '../classes/LoginInput';
 import { RegisterInput } from '../classes/RegisterInput';
 import { AuthenticationError } from '../classes/AuthenticationError';
+import { InvalidCredentialsError } from '../classes/InvalidCredentialsError';
+import { SessionStore } from './SessionStore';
 
 export class AuthFlow {
+  private readonly sessions = new SessionStore();
+
   async register(input: RegisterInput): Promise<AuthPayload> {
     const email = input.email.toLowerCase().trim();
     const existing = await UserModel.findOne({ email });
@@ -27,24 +31,43 @@ export class AuthFlow {
       name: input.name?.trim(),
     });
 
-    const token = this.buildToken(user);
-    return { token, user };
+    return this.startSession(user);
   }
 
   async login(input: LoginInput): Promise<AuthPayload> {
     const email = input.email.toLowerCase().trim();
     const user = await UserModel.findOne({ email });
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
     const passwordValid = await bcrypt.compare(input.password, user.passwordHash);
     if (!passwordValid) {
-      throw new Error('Invalid credentials');
+      throw new InvalidCredentialsError();
     }
 
-    const token = this.buildToken(user);
-    return { token, user };
+    return this.startSession(user);
+  }
+
+  /**
+   * Exchanges a refresh token for a new pair; the presented token stops working. Repeating the
+   * same `attemptId` after a lost answer returns the same refresh token instead of ending the
+   * session as reuse.
+   */
+  async refreshSession(refreshToken: string, attemptId?: string | null): Promise<AuthPayload> {
+    const next = await this.sessions.rotate(refreshToken, attemptId);
+    const user = await UserModel.findById(next.userId);
+    if (!user) {
+      await this.sessions.revoke(next.refreshToken);
+      throw AuthenticationError.sessionExpired();
+    }
+    return { token: this.buildToken(user), refreshToken: next.refreshToken, user };
+  }
+
+  /** Ends the session of the refresh token; an unknown token is ignored. */
+  async logout(refreshToken: string): Promise<boolean> {
+    await this.sessions.revoke(refreshToken);
+    return true;
   }
 
   async me(req: Request): Promise<User> {
@@ -102,9 +125,14 @@ export class AuthFlow {
     }
   }
 
+  private async startSession(user: User): Promise<AuthPayload> {
+    const refreshToken = await this.sessions.start(user._id);
+    return { token: this.buildToken(user), refreshToken, user };
+  }
+
   private buildToken(user: User): string {
     return jwt.sign({ sub: user._id.toString(), email: user.email }, config.jwtSecret, {
-      expiresIn: TOKEN_TTL,
+      expiresIn: accessTokenTtlSeconds(),
     });
   }
 

@@ -1,5 +1,7 @@
+import type { AuthSession } from '../../services/tokenService';
+
 export type AppRouterProps = {
   isAuthenticated: boolean;
-  onLoginSuccess: (token: string) => void;
+  onLoginSuccess: (session: AuthSession) => void;
   onLogout: () => void;
 };

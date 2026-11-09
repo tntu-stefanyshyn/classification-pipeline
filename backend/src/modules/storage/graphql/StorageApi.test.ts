@@ -14,6 +14,7 @@ import { createLeanResult, stub } from '../../../test/testUtils';
 import { AuthFlow } from '../../auth/services/AuthFlow';
 import { UploadedFileModel } from '../../files/models/UploadedFileModel';
 import { StorageClient } from '../services/StorageClient';
+import { isUploadKeyIssuedTo, uploadKeyPrefix } from '../utils/uploadKeys';
 import { Storage } from './Storage';
 
 const useS3Config = (t: TestContext) => {
@@ -140,7 +141,37 @@ test('Storage GraphQL executes upload and download URL queries via the schema', 
   assert.equal(invalidDownloadResult.data, null);
   assert.match(invalidDownloadResult.errors?.[0]?.message ?? '', /File _id is invalid/);
   assert.deepEqual(calls, [
-    ['getSignedUploadUrl', 'dataset.csv', 'text/csv'],
+    ['getSignedUploadUrl', userId.toHexString(), 'dataset.csv', 'text/csv'],
     ['getSignedDownloadUrl', 'uploads/dataset.csv'],
   ]);
+});
+
+test('Storage GraphQL signedUploadUrl requires a signed-in user and keys uploads by user', async (t) => {
+  useS3Config(t);
+  const schema = buildGraphqlSchema([Storage]);
+  const query = `
+    query SignedUploadUrl($input: SignedUploadRequest!) {
+      signedUploadUrl(input: $input) { key }
+    }
+  `;
+  const variables = { input: { filename: 'dataset.csv', mimeType: 'text/csv' } };
+
+  // The real AuthFlow: without a token nothing is signed.
+  const anonymous = await executeGraphql(schema, query, { variables });
+  assert.equal(anonymous.data, null);
+  assert.equal(anonymous.errors?.[0]?.message, 'Not authenticated');
+
+  const userId = new Types.ObjectId();
+  stub(t, AuthFlow.prototype as unknown as Record<string, unknown>, 'me', async () => ({
+    _id: userId,
+    email: 'tester@example.com',
+  }));
+  const signed = await executeGraphql(schema, query, { variables });
+
+  assert.equal(signed.errors, undefined);
+  const key: string = (signed.data as any).signedUploadUrl.key;
+  assert.ok(key.startsWith(uploadKeyPrefix(userId.toHexString())), key);
+  assert.match(key, /\/\d+-[0-9a-f]{12}-[0-9a-f]{32}-dataset\.csv$/);
+  // createUploadedFile accepts exactly this key for this user.
+  assert.equal(isUploadKeyIssuedTo(key, userId.toHexString()), true);
 });

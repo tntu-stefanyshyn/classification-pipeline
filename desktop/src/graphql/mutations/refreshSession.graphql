@@ -1,0 +1,6 @@
+mutation RefreshSession($refreshToken: String!, $attemptId: String) {
+  refreshSession(refreshToken: $refreshToken, attemptId: $attemptId) {
+    token
+    refreshToken
+  }
+}

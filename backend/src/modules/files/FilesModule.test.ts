@@ -10,6 +10,7 @@ import { UploadedFile } from './classes/UploadedFile';
 import { Files } from './graphql/Files';
 import { UploadedFileModel, uploadedFilesCollectionName } from './models/UploadedFileModel';
 import { FileStore, fileStore } from './services/FileStore';
+import { buildUploadKey, uploadKeyPrefix } from '../storage/utils/uploadKeys';
 
 test('uploaded file classes and model metadata are available', () => {
   const uploadedFile = new UploadedFile();
@@ -75,23 +76,53 @@ test('FileStore.create validates and normalizes uploaded file data', async (t) =
     }
   );
 
+  const storageKey = buildUploadKey(uploadedById, 'dataset.csv', 1700000000000);
+  const registeredKey = buildUploadKey(uploadedById, 'dataset.csv', 1600000000000);
+  stub(t, UploadedFileModel as unknown as Record<string, unknown>, 'exists', (async (query: any) =>
+    query.storageKey === registeredKey ? { _id: new Types.ObjectId() } : null) as any);
+  const valid = { filename: 'dataset.csv', sizeMb: 1, storageKey, uploadedById };
+
   await assert.rejects(
-    () => store.create({ filename: 'bad.txt', sizeMb: 1, storageKey: 'k' } as any),
+    () => store.create({ ...valid, filename: 'bad.txt' }),
     /Only CSV files are allowed/
   );
+  // No owner, or a key outside the owner's uploads: never stored.
+  await assert.rejects(() => store.create({ ...valid, uploadedById: '' }), /Invalid user id/);
+  await assert.rejects(
+    () => store.create({ ...valid, uploadedById: new Types.ObjectId().toHexString() }),
+    /Storage key was not issued to this user/
+  );
+  await assert.rejects(
+    () => store.create({ ...valid, storageKey: 'uploads/1700000000000-dataset.csv' }),
+    /Storage key was not issued to this user/
+  );
+  // Under the owner's prefix, but built by the caller instead of issued by signedUploadUrl.
+  await assert.rejects(
+    () =>
+      store.create({
+        ...valid,
+        storageKey: `${uploadKeyPrefix(uploadedById)}1700000000000-abcdefabcdef-dataset.csv`,
+      }),
+    /Storage key was not issued to this user/
+  );
+  await assert.rejects(
+    () => store.create({ ...valid, storageKey: registeredKey }),
+    /File is already registered/
+  );
+  assert.equal(createCalls.length, 0);
 
   const result: any = await store.create({
     filename: '  dataset.csv ',
     sizeMb: 5,
     status: ' uploaded ',
-    storageKey: ' uploads/dataset.csv ',
+    storageKey: ` ${storageKey} `,
     uploadedById,
     uploadedByName: ' Ivan ',
   });
 
   assert.equal(createCalls.length, 1);
   assert.equal(createCalls[0].filename, 'dataset.csv');
-  assert.equal(createCalls[0].storageKey, 'uploads/dataset.csv');
+  assert.equal(createCalls[0].storageKey, storageKey);
   assert.equal(createCalls[0].uploadedByName, 'Ivan');
   assert.ok(createCalls[0].uploadedById instanceof Types.ObjectId);
   assert.equal(result.getters, true);

@@ -6,6 +6,7 @@ import {
   setFormikFormErrorFromApollo,
   translateGraphQLError,
 } from '../src/utils/formError';
+import { toAuthSession } from '../src/utils/authSession';
 
 test('translateGraphQLError maps known backend codes and preserves unknown text', () => {
   assert.equal(
@@ -14,6 +15,31 @@ test('translateGraphQLError maps known backend codes and preserves unknown text'
   );
   assert.equal(translateGraphQLError({ message: 'Custom message' } as any), 'Custom message');
   assert.equal(translateGraphQLError(undefined), null);
+});
+
+test('translateGraphQLError decides on extensions.code before the message', () => {
+  assert.equal(
+    translateGraphQLError({
+      message: 'Invalid credentials',
+      extensions: { code: 'INVALID_CREDENTIALS' },
+    }),
+    'Неправильна пошта або пароль.'
+  );
+  assert.equal(
+    translateGraphQLError({ message: 'jwt expired', extensions: { code: 'UNAUTHENTICATED' } }),
+    'jwt expired'
+  );
+});
+
+test('toAuthSession takes the tokens of a login or registration answer', () => {
+  assert.deepEqual(toAuthSession({ token: 'access', refreshToken: 'refresh', user: {} } as any), {
+    token: 'access',
+    refreshToken: 'refresh',
+  });
+  assert.equal(toAuthSession({ token: 'access', refreshToken: null }), null);
+  assert.equal(toAuthSession({ token: '', refreshToken: 'refresh' }), null);
+  assert.equal(toAuthSession(null), null);
+  assert.equal(toAuthSession(undefined), null);
 });
 
 test('getErrorMessage prefers graphQL errors, then network errors, then fallback', () => {

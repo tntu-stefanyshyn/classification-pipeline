@@ -1,3 +1,5 @@
+import type { AuthSession } from '../../../services/tokenService';
+
 export type RegisterPageProps = {
-  onRegisterSuccess: (token: string) => void;
+  onRegisterSuccess: (session: AuthSession) => void;
 };

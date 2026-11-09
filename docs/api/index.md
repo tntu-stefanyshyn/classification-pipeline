@@ -33,7 +33,9 @@ results and machine information, and the optimization result and history.
 Only the owner of the experiment can download it. The request carries the user JWT in
 `Authorization: Bearer <token>`, like a GraphQL request, so a plain link or a browser tab that
 is not signed in gets nothing. The desktop app downloads the report with `fetch` and saves the
-response as a file (`ReportDownloadButton`).
+response as a file (`ReportDownloadButton`). On a `401` it refreshes the session the request was
+sent in, as for an `UNAUTHENTICATED` GraphQL answer, and requests the report once more with the
+new access token; it shows the sign-in error only when the session cannot be refreshed.
 
 Responses:
 

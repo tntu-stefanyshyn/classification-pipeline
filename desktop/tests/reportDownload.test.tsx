@@ -12,11 +12,17 @@ const buttonPath = path.join(componentDir, 'ReportDownloadButton');
 type Saved = { href: string; download: string; clicked: boolean; removed: boolean };
 
 // The real download code with a mocked transport and a minimal document.
+type Session = { token: string | null; generation: number };
+type Refresh = (session: Session) => Promise<string>;
+
 const useDownloadEnvironment = (
   t: TestContext,
   respond: () => Promise<Response>,
-  token: string | null = 'access-token'
+  token: string | null = 'access-token',
+  refresh: Refresh = async () => 'expired'
 ) => {
+  const session: Session = { token, generation: 1 };
+  const refreshes: Array<{ generation?: number; failedToken?: string | null }> = [];
   const requests: Array<{ url: string; headers: Record<string, string> }> = [];
   stub(t, globalThis as any, 'fetch', (async (url: string, init: RequestInit) => {
     requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
@@ -43,13 +49,19 @@ const useDownloadEnvironment = (
     config: { renderer: { graphqlEndpoint: 'http://backend:4000/graphql' } },
   });
   stubResolvedModule(t, `${utilPath}.js`, '../../../../services/tokenService', {
-    tokenService: { getToken: () => token },
+    tokenService: { getToken: () => session.token, getGeneration: () => session.generation },
+  });
+  stubResolvedModule(t, `${utilPath}.js`, '../../../../graphql/session', {
+    refreshSession: (generation?: number, failedToken?: string | null) => {
+      refreshes.push({ generation, failedToken });
+      return refresh(session);
+    },
   });
   const util =
     loadFreshModule<
       typeof import('../src/components/experiments/ReportDownloadButton/utils/downloadExperimentReport')
     >(utilPath);
-  return { util, requests, saved, revoked };
+  return { util, requests, saved, revoked, refreshes };
 };
 
 const pdfResponse = () =>
@@ -99,6 +111,73 @@ test('a refused report is an error and nothing is saved', async (t) => {
     return true;
   });
   assert.deepEqual(saved, []);
+});
+
+test('an expired access token is refreshed and the report requested once more', async (t) => {
+  const answers = [new Response('', { status: 401 }), pdfResponse()];
+  const { util, requests, saved, refreshes } = useDownloadEnvironment(
+    t,
+    async () => answers.shift()!,
+    'expired-token',
+    async (session) => {
+      session.token = 'fresh-token';
+      return 'refreshed';
+    }
+  );
+
+  await util.downloadExperimentReport('exp-1');
+
+  assert.deepEqual(refreshes, [{ generation: 1, failedToken: 'expired-token' }]);
+  assert.deepEqual(
+    requests.map((request) => request.headers),
+    [{ authorization: 'Bearer expired-token' }, { authorization: 'Bearer fresh-token' }]
+  );
+  assert.equal(saved.length, 1);
+});
+
+test('a session that cannot be refreshed leaves the 401 and sends no retry', async (t) => {
+  const { util, requests, saved } = useDownloadEnvironment(
+    t,
+    async () => new Response('', { status: 401 })
+  );
+
+  await assert.rejects(util.downloadExperimentReport('exp-1'), (error: unknown) => {
+    assert.ok(error instanceof util.ReportDownloadError);
+    assert.equal(error.status, 401);
+    return true;
+  });
+  assert.equal(requests.length, 1);
+  assert.deepEqual(saved, []);
+});
+
+test('a report is not retried in a session that changed during the refresh', async (t) => {
+  const { util, requests } = useDownloadEnvironment(
+    t,
+    async () => new Response('', { status: 401 }),
+    'expired-token',
+    async (session) => {
+      session.generation += 1;
+      session.token = 'other-account-token';
+      return 'refreshed';
+    }
+  );
+
+  await assert.rejects(util.downloadExperimentReport('exp-1'), util.ReportDownloadError);
+  assert.equal(requests.length, 1);
+});
+
+test('a refresh that cannot reach the backend rejects with its network error', async (t) => {
+  const { util, requests } = useDownloadEnvironment(
+    t,
+    async () => new Response('', { status: 401 }),
+    'expired-token',
+    async () => {
+      throw new TypeError('fetch failed');
+    }
+  );
+
+  await assert.rejects(util.downloadExperimentReport('exp-1'), TypeError);
+  assert.equal(requests.length, 1);
 });
 
 const loadButton = (t: TestContext, respond: () => Promise<Response>) => {

@@ -148,9 +148,6 @@ test('AppRouter redirects unauthenticated users away from private routes', (t) =
   stubResolvedModule(t, routerCompiledFile, './graphql', {
     useMeQuery: () => ({ data: null, loading: false, error: null }),
   });
-  stubResolvedModule(t, routerCompiledFile, '../../services/tokenService', {
-    tokenService: { clearToken: () => undefined },
-  });
 
   const module =
     loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
@@ -176,9 +173,6 @@ test('AppRouter renders authenticated pages when me query resolves', (t) => {
   stubResolvedModule(t, routerCompiledFile, './graphql', {
     useMeQuery: () => ({ data: { me: { _id: 'user-1' } }, loading: false, error: null }),
   });
-  stubResolvedModule(t, routerCompiledFile, '../../services/tokenService', {
-    tokenService: { clearToken: () => undefined },
-  });
 
   const module =
     loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
@@ -199,9 +193,6 @@ test('AppRouter returns null while authenticated me query is loading', (t) => {
   stubResolvedModule(t, routerCompiledFile, './graphql', {
     useMeQuery: () => ({ data: null, loading: true, error: null }),
   });
-  stubResolvedModule(t, routerCompiledFile, '../../services/tokenService', {
-    tokenService: { clearToken: () => undefined },
-  });
 
   const module =
     loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
@@ -216,28 +207,25 @@ test('AppRouter returns null while authenticated me query is loading', (t) => {
   assert.equal(html, '');
 });
 
-test('AppRouter clears token when me query returns an error', (t) => {
-  const clearCalls: string[] = [];
-  stubResolvedModule(t, routerCompiledFile, 'react', {
-    ...React,
-    useEffect: (effect: () => void) => effect(),
-  });
+test('AppRouter keeps the user signed in when the me query fails', (t) => {
+  // The session link clears a session that cannot be refreshed; any other failure, for example
+  // being offline, must not sign the user out.
   stubResolvedModule(t, routerCompiledFile, 'react-router-dom', createReactRouterDomStub('/app'));
   stubRouterPages(t);
   stubResolvedModule(t, routerCompiledFile, './graphql', {
-    useMeQuery: () => ({ data: null, loading: false, error: new Error('unauthorized') }),
-  });
-  stubResolvedModule(t, routerCompiledFile, '../../services/tokenService', {
-    tokenService: { clearToken: () => clearCalls.push('clear') },
+    useMeQuery: () => ({ data: null, loading: false, error: new Error('Failed to fetch') }),
   });
 
   const module =
     loadFreshModule<typeof import('../src/router/AppRouter/AppRouter')>(routerModulePath);
-  module.default({
-    isAuthenticated: true,
-    onLoginSuccess: () => undefined,
-    onLogout: () => undefined,
-  } as any);
+  const html = renderToStaticMarkup(
+    React.createElement(module.default, {
+      isAuthenticated: true,
+      onLoginSuccess: () => undefined,
+      onLogout: () => undefined,
+    })
+  );
 
-  assert.deepEqual(clearCalls, ['clear']);
+  assert.match(html, /data-page="dashboard"/);
+  assert.doesNotMatch(html, /navigate:\/login/);
 });

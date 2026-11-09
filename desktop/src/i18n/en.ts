@@ -54,6 +54,7 @@ const en = {
       subtitle: 'Enter your details to continue.',
       noAccount: 'No account yet?',
       register: 'Create one',
+      sessionExpired: 'Your session has ended. Sign in again to continue.',
     },
     registerPage: {
       title: 'Create an account',
@@ -83,6 +84,9 @@ const en = {
   },
   errors: {
     badUserInput: 'Check the entered data.',
+    invalidCredentials: 'Wrong email or password.',
+    logoutPending:
+      'You are signed out on this device. The server will end the session as soon as it can be reached.',
     network: 'Cannot reach the server. Try again later.',
     generic: 'Something went wrong. Try again.',
     settingsPrefix: 'Settings error',

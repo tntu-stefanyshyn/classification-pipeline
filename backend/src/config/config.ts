@@ -19,6 +19,10 @@ export const config = {
   },
   mongoUri: process.env.MONGODB_URI,
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
+  auth: {
+    accessTokenTtl: process.env.ACCESS_TOKEN_TTL || '15m',
+    refreshTokenTtl: process.env.REFRESH_TOKEN_TTL || '30d',
+  },
   schemaFile: nodeEnv === 'development' ? 'schema.gql' : undefined,
   s3: {
     bucket: process.env.AWS_S3_BUCKET ?? '',

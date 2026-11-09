@@ -11,6 +11,7 @@ import { Storage } from './graphql/Storage';
 import { SignedUploadRequest } from './classes/SignedUploadRequest';
 import { SignedUploadUrl } from './classes/SignedUploadUrl';
 import { StorageClient } from './services/StorageClient';
+import { buildUploadKey, isUploadKeyIssuedTo, uploadKeyPrefix } from './utils/uploadKeys';
 
 const useS3Config = (t: TestContext, values: Partial<typeof config.s3>) => {
   const original = { ...config.s3 };
@@ -56,15 +57,19 @@ test('StorageClient validates configuration and builds signed upload/download UR
   Date.now = () => 1700000000000;
 
   const client = new StorageClient();
-  const upload = await client.getSignedUploadUrl('dataset.csv', 'text/csv');
+  const userId = new Types.ObjectId().toHexString();
+  const upload = await client.getSignedUploadUrl(userId, 'dataset.csv', 'text/csv');
   const download = await client.getSignedDownloadUrl('uploads/dataset.csv');
 
-  assert.equal(upload.key, 'uploads/1700000000000-dataset.csv');
+  assert.match(
+    upload.key,
+    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-[0-9a-f]{32}-dataset\\.csv$`)
+  );
   assert.equal(upload.expiresIn, 321);
   assert.equal(download.key, 'uploads/dataset.csv');
   assert.match(
     upload.url,
-    /uploads-bucket\.s3\.eu-west-1\.amazonaws\.com\/uploads\/1700000000000-dataset\.csv/
+    new RegExp(`uploads-bucket\\.s3\\.eu-west-1\\.amazonaws\\.com/uploads/${userId}/1700000000000-`)
   );
   assert.match(upload.url, /X-Amz-Expires=321/);
   assert.match(
@@ -73,7 +78,7 @@ test('StorageClient validates configuration and builds signed upload/download UR
   );
   assert.match(download.url, /X-Amz-Expires=321/);
   await assert.rejects(
-    () => client.getSignedUploadUrl('dataset.txt', 'text/plain'),
+    () => client.getSignedUploadUrl(userId, 'dataset.txt', 'text/plain'),
     /Only CSV files are allowed/
   );
   await assert.rejects(() => client.getSignedDownloadUrl('  '), /Storage key is required/);
@@ -133,7 +138,12 @@ test('Storage resolver delegates upload and download operations', async (t) => {
   );
 
   assert.equal(
-    await resolver.signedUploadUrl({ filename: 'dataset.csv', mimeType: 'text/csv' } as any),
+    await resolver.signedUploadUrl(
+      { filename: 'dataset.csv', mimeType: 'text/csv' } as any,
+      {
+        req: {},
+      } as any
+    ),
     uploadResult
   );
   await assert.rejects(
@@ -144,7 +154,7 @@ test('Storage resolver delegates upload and download operations', async (t) => {
   const fileId = new Types.ObjectId().toHexString();
   assert.equal(await resolver.signedDownloadUrl(fileId, { req: {} } as any), downloadResult);
   assert.deepEqual(signedCalls, [
-    ['upload', 'dataset.csv', 'text/csv'],
+    ['upload', user._id.toString(), 'dataset.csv', 'text/csv'],
     ['download', 'uploads/key.csv'],
   ]);
 });
@@ -180,4 +190,48 @@ test('Storage.signedDownloadUrl serves the compute service without a user filter
   const context = { req: { headers: { authorization: 'Bearer svc-token' } } } as any;
   await resolver.signedDownloadUrl(fileId, context);
   assert.deepEqual(findOneArgs, [{ _id: fileId }]);
+});
+
+test('upload keys are issued under the user and recognised only for that user', () => {
+  const userId = new Types.ObjectId().toHexString();
+  const otherUserId = new Types.ObjectId().toHexString();
+
+  const key = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
+  const second = buildUploadKey(userId, 'data/../set.csv', 1700000000000);
+
+  assert.match(
+    key,
+    new RegExp(`^uploads/${userId}/1700000000000-[0-9a-f]{12}-[0-9a-f]{32}-data_.._set\\.csv$`)
+  );
+  // Two uploads of one file at the same moment still get different keys.
+  assert.notEqual(second, key);
+  assert.equal(isUploadKeyIssuedTo(key, userId), true);
+  assert.equal(isUploadKeyIssuedTo(second, userId), true);
+  assert.equal(isUploadKeyIssuedTo(key, otherUserId), false);
+  // The same key moved under another user's prefix keeps a signature for the first user.
+  assert.equal(isUploadKeyIssuedTo(key.replace(userId, otherUserId), otherUserId), false);
+  assert.equal(isUploadKeyIssuedTo(`uploads/${userId}/`, userId), false);
+  assert.equal(isUploadKeyIssuedTo(`uploads/${userId}/nested/key.csv`, userId), false);
+  assert.equal(isUploadKeyIssuedTo('uploads/1700000000000-dataset.csv', userId), false);
+  assert.equal(uploadKeyPrefix(userId), `uploads/${userId}/`);
+});
+
+test('a key the caller built or changed under its own prefix was not issued', () => {
+  const userId = new Types.ObjectId().toHexString();
+  const key = buildUploadKey(userId, 'set.csv', 1700000000000);
+  const [, stamp, signature] = /\/(\d+-[0-9a-f]{12})-([0-9a-f]{32})-/.exec(key)!;
+  const flip = (hex: string) => hex.slice(0, -1) + (hex.endsWith('0') ? '1' : '0');
+
+  for (const forged of [
+    // The format of the issued keys, without a signature the backend made.
+    `${uploadKeyPrefix(userId)}1700000000000-abcdefabcdef-dataset.csv`,
+    `${uploadKeyPrefix(userId)}1700000000000-abcdefabcdef-${'0'.repeat(32)}-dataset.csv`,
+    // An issued key with any part changed.
+    key.replace(signature, flip(signature)),
+    key.replace(stamp, stamp.replace('1700000000000', '1700000000001')),
+    key.replace('set.csv', 'other.csv'),
+    key.toUpperCase(),
+  ]) {
+    assert.equal(isUploadKeyIssuedTo(forged, userId), false, forged);
+  }
 });

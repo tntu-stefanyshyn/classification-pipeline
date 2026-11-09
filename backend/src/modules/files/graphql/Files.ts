@@ -21,11 +21,12 @@ export class Files {
     @Arg('input', () => CreateUploadedFileInput) input: CreateUploadedFileInput,
     @Ctx() context: GraphQLContext
   ): Promise<UploadedFile> {
-    const user = await authFlow.me(context.req).catch(() => null);
+    // Not optional: a file is created for the signed-in user, from a key issued to them.
+    const user = await authFlow.me(context.req);
     return fileStore.create({
       ...input,
-      uploadedById: user?._id?.toString(),
-      uploadedByName: user?.name?.trim() || user?.email?.trim() || undefined,
+      uploadedById: user._id.toString(),
+      uploadedByName: user.name?.trim() || user.email?.trim() || undefined,
     });
   }
 

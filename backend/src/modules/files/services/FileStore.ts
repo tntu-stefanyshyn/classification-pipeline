@@ -4,6 +4,7 @@ import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { ExperimentStatus } from '../../experiments/classes/ExperimentStatus';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
 import { StorageClient } from '../../storage/services/StorageClient';
+import { isUploadKeyIssuedTo } from '../../storage/utils/uploadKeys';
 import { UploadedFile } from '../classes/UploadedFile';
 import { UploadedFileUsage } from '../classes/UploadedFileUsage';
 import { UploadedFileModel } from '../models/UploadedFileModel';
@@ -51,7 +52,7 @@ type CreateFileInput = {
   sizeMb: number;
   status?: string;
   storageKey: string;
-  uploadedById?: string;
+  uploadedById: string;
   uploadedByName?: string;
 };
 
@@ -75,9 +76,23 @@ export class FileStore {
     const storageKey = input.storageKey?.trim();
     if (!storageKey) throw new Error('Storage key is required');
     if (input.sizeMb <= 0) throw new Error('sizeMb must be positive');
+    // Every file has an owner: a record without one is in nobody's list and nobody can delete it.
+    const uploadedById = input.uploadedById?.trim() ?? '';
+    if (!Types.ObjectId.isValid(uploadedById)) throw new Error('Invalid user id');
+    // Only a key signedUploadUrl issued to this user: its signature is checked, so a key the
+    // caller built, even under its own prefix, is rejected. Deleting a record deletes its S3 object,
+    // and a download URL is signed for the record's key, so a record on another user's key
+    // would let its owner read or destroy that user's dataset.
+    if (!isUploadKeyIssuedTo(storageKey, uploadedById)) {
+      throw new Error('Storage key was not issued to this user');
+    }
+    // shortcut: checked, not enforced by a unique index, because records from before the
+    // per-user keys may share one. Two records on one key would delete each other's object.
+    if (await UploadedFileModel.exists({ storageKey })) {
+      throw new Error('File is already registered');
+    }
 
     const status = input.status?.trim();
-    const uploadedById = input.uploadedById?.trim() ?? '';
     const uploadedByName = input.uploadedByName?.trim() ?? '';
     const file = await UploadedFileModel.create({
       filename,
@@ -86,10 +101,7 @@ export class FileStore {
       status: status || undefined,
       uploadedAt: new Date(),
       uploadedByName: uploadedByName || undefined,
-      uploadedById:
-        uploadedById && Types.ObjectId.isValid(uploadedById)
-          ? new Types.ObjectId(uploadedById)
-          : undefined,
+      uploadedById: new Types.ObjectId(uploadedById),
     });
 
     return file.toObject({ getters: true });

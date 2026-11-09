@@ -16,6 +16,7 @@ building and running classification experiments.
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | [Getting started](getting-started/index.md) | Quick start and the full [setup guide](../SETUP.md) (WSL/Linux, Docker, S3).                           |
 | [Architecture](architecture/overview.md)    | System overview, lifecycle, data model, run execution, decisions, known limitations, code conventions. |
+| [User guide](user-guide/index.md)           | Step-by-step guide for the desktop application, the dataset (CSV) format and troubleshooting.          |
 | [Domain](domain/experiments.md)             | Experiment and pipeline statuses, validations, graph rules, PDF report.                                |
 | [API](api/index.md)                         | GraphQL and REST endpoints, GraphQL usage in the desktop app.                                          |
 | [Operations](operations/ci.md)              | CI and the Windows installer, running computations in [AWS Batch](operations/aws-batch.md).            |
@@ -26,6 +27,10 @@ building and running classification experiments.
 - Getting started
   - [Getting started](getting-started/index.md)
   - [Setup guide](../SETUP.md) (stays in the repository root)
+- User guide
+  - [User guide](user-guide/index.md)
+  - [Dataset format](user-guide/dataset-format.md)
+  - [Troubleshooting](user-guide/troubleshooting.md)
 - Architecture
   - [System overview](architecture/overview.md)
   - [Experiment and pipeline lifecycle](architecture/lifecycle.md)

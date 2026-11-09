@@ -1,0 +1,125 @@
+import { print, type DocumentNode, type GraphQLFormattedError } from 'graphql';
+import { config } from '../config/config';
+import { tokenService } from '../services/tokenService';
+import {
+  LogoutDocument,
+  type LogoutMutation,
+  type LogoutMutationVariables,
+} from './mutations/generated/logout';
+import {
+  RefreshSessionDocument,
+  type RefreshSessionMutation,
+  type RefreshSessionMutationVariables,
+} from './mutations/generated/refreshSession';
+
+/** `extensions.code` the backend sets on every authentication failure. */
+export const UNAUTHENTICATED = 'UNAUTHENTICATED';
+
+export const isUnauthenticated = (errors?: readonly GraphQLFormattedError[]) =>
+  Boolean(errors?.some((error) => error.extensions?.code === UNAUTHENTICATED));
+
+/**
+ * `expired`: the session is over and was cleared. `unavailable`: the backend answered with another
+ * error, try again later, still signed in. `superseded`: the user signed out or in meanwhile, so
+ * the result belongs to no current session. A network failure rejects with its error instead.
+ */
+export type RefreshOutcome = 'refreshed' | 'expired' | 'unavailable' | 'superseded';
+
+type OperationResult<TData> = { data?: TData | null; errors?: GraphQLFormattedError[] };
+
+// Sent with fetch, outside the Apollo links: never retried, never with the expired access token.
+const postOperation = async <TData, TVariables>(document: DocumentNode, variables: TVariables) => {
+  const response = await fetch(config.renderer.graphqlEndpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: print(document), variables }),
+  });
+  return (await response.json()) as OperationResult<TData>;
+};
+
+const exchangeRefreshToken = async (generation: number): Promise<RefreshOutcome> => {
+  const refreshToken = tokenService.getRefreshToken();
+  if (!refreshToken) {
+    // Tokens from before refresh tokens existed, or a session cleared elsewhere.
+    tokenService.expireSession();
+    return 'expired';
+  }
+
+  // A dropped connection rejects with its own error and keeps the session: the caller then sees
+  // the network error, not the expired access token that started the refresh. The attempt id
+  // stays until the exchange succeeds, so if the backend rotated the token but the answer was
+  // lost, the next try gets the same new tokens instead of ending the session as reuse.
+  const result = await postOperation<RefreshSessionMutation, RefreshSessionMutationVariables>(
+    RefreshSessionDocument,
+    { refreshToken, attemptId: tokenService.getRefreshAttemptId() }
+  );
+
+  // A late answer must not undo a sign-out or overwrite (or clear) a newer sign-in.
+  if (tokenService.getGeneration() !== generation) return 'superseded';
+
+  const session = result.data?.refreshSession;
+  if (session) {
+    tokenService.replaceTokens(session);
+    return 'refreshed';
+  }
+  if (isUnauthenticated(result.errors)) {
+    tokenService.expireSession();
+    return 'expired';
+  }
+  return 'unavailable';
+};
+
+let pendingRefresh: { generation: number; promise: Promise<RefreshOutcome> } | null = null;
+
+/**
+ * Refreshes the session a request was sent in. `generation` and `failedToken` describe that
+ * request; requests of one session that fail together share one refresh, because a refresh
+ * token can be exchanged only once.
+ */
+export const refreshSession = (
+  generation = tokenService.getGeneration(),
+  failedToken?: string | null
+): Promise<RefreshOutcome> => {
+  if (generation !== tokenService.getGeneration()) return Promise.resolve('superseded');
+  // Sent with an access token that has been refreshed since: the request only needs a retry.
+  if (failedToken && failedToken !== tokenService.getToken()) return Promise.resolve('refreshed');
+
+  if (pendingRefresh?.generation !== generation) {
+    const promise = exchangeRefreshToken(generation).finally(() => {
+      if (pendingRefresh?.promise === promise) pendingRefresh = null;
+    });
+    pendingRefresh = { generation, promise };
+  }
+  return pendingRefresh.promise;
+};
+
+/**
+ * Asks the backend to revoke every signed-out session it has not confirmed yet. A session stays
+ * pending until `logout` answers `true`: after a network failure and after an error answer, the
+ * refresh token could still be exchanged. Returns whether no session is left pending.
+ */
+export const revokePendingLogouts = async (): Promise<boolean> => {
+  for (const refreshToken of tokenService.getPendingLogouts()) {
+    try {
+      const result = await postOperation<LogoutMutation, LogoutMutationVariables>(LogoutDocument, {
+        refreshToken,
+      });
+      if (result.data?.logout === true) tokenService.removePendingLogout(refreshToken);
+    } catch {
+      // Unreachable: kept for the next try.
+    }
+  }
+  return tokenService.getPendingLogouts().length === 0;
+};
+
+/**
+ * Signs out locally at once, then revokes the session on the backend. Resolves to `false` when
+ * the backend has not confirmed it yet; the revocation is then repeated later.
+ */
+export const endSession = async (): Promise<boolean> => {
+  const refreshToken = tokenService.getRefreshToken();
+  // Kept before the tokens are cleared, so the revocation survives a restart of the app.
+  if (refreshToken) tokenService.addPendingLogout(refreshToken);
+  tokenService.clearToken();
+  return revokePendingLogouts();
+};

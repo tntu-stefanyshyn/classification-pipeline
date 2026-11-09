@@ -1,3 +1,5 @@
+import type { AuthSession } from '../../../services/tokenService';
+
 export type LoginPageProps = {
-  onLoginSuccess: (token: string) => void;
+  onLoginSuccess: (session: AuthSession) => void;
 };

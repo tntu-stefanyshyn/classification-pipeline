@@ -1,5 +1,5 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { useEffect, type FC } from 'react';
+import type { FC } from 'react';
 import { DashboardPage } from '../../pages/private/DashboardPage';
 import { ExperimentsPage } from '../../pages/private/ExperimentsPage';
 import { ExperimentDetailsPage } from '../../pages/private/ExperimentDetailsPage';
@@ -7,7 +7,6 @@ import { ExperimentConstructorPage } from '../../pages/private/ExperimentConstru
 import { FilesPage } from '../../pages/private/FilesPage';
 import { LoginPage } from '../../pages/public/LoginPage';
 import { RegisterPage } from '../../pages/public/RegisterPage';
-import { tokenService } from '../../services/tokenService';
 import { useMeQuery } from './graphql';
 import type { AppRouterProps } from './AppRouter.types';
 
@@ -17,13 +16,9 @@ const AppRouter: FC<AppRouterProps> = ({ isAuthenticated, onLoginSuccess, onLogo
     fetchPolicy: 'network-only',
   });
 
-  useEffect(() => {
-    if (error) {
-      tokenService.clearToken();
-    }
-  }, [error]);
-
-  const resolvedAuth = isAuthenticated && Boolean(data?.me);
+  // The session link clears a session that cannot be refreshed, which signs the user out. Any
+  // other error (for example offline) keeps the user signed in, and the pages show it.
+  const resolvedAuth = isAuthenticated && Boolean(data?.me || error);
 
   if (isAuthenticated && loading) {
     return null;

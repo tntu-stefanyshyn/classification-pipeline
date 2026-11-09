@@ -5,7 +5,7 @@ This page follows an experiment from its creation to its optimization result. St
 ## From experiment to queued runs
 
 1. **Create.** `createExperiment` stores the experiment and creates an empty graph (`GraphManager.createDefaultGraph`) with the workflow `creating`.
-2. **Upload the dataset.** The desktop asks `signedUploadUrl`, uploads the CSV straight to S3 with `PUT`, then calls `createUploadedFile`. The experiment refers to the file through `fileId`.
+2. **Upload the dataset.** The desktop asks `signedUploadUrl` (the S3 key is issued under the signed-in user), uploads the CSV straight to S3 with `PUT`, then calls `createUploadedFile`. The experiment refers to the file through `fileId`.
 3. **Configure.** The user builds the graph (`generateExperimentGraph` or `updateExperiment`) and the graph settings (metric weights, queues, folds). The first change moves the experiment to `configuring`. The graph rules are in [Experiments and computations](../domain/experiments.md).
 4. **Start computing.** `changeExperimentStatus` moves the experiment to `computing`. The backend checks that the CSV is available and generates one pipeline per combination of path (`buildGraphPaths`) and selected queue, each with the workflow `idle`. Pipelines that are queued automatically move to `queued` right away.
 5. **Enqueue.** `enqueueExperimentRuns` (all runs or one) checks the graph settings, the allowed queue and the classification stage on every path, then moves `idle` pipelines to `queued`. Only the owner of the experiment can call it.

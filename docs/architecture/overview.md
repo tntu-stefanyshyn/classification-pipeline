@@ -22,7 +22,7 @@ flowchart LR
     s3[("S3 bucket")]
     batch["AWS Batch job<br/>image aws-jobs"]
 
-    ui -->|"GraphQL, user JWT"| be
+    ui -->|"GraphQL, user access token"| be
     ui -->|"PUT file via presigned URL"| s3
     ui -->|"GET PDF report"| be
     be --> db
@@ -72,7 +72,7 @@ If both `cloud` workers are enabled they compete for the same queue and whicheve
 
 ## Who talks to whom
 
-- The user's client sends a **user JWT**; workers and their containers send the **service token** (`BACKEND_SERVICE_TOKEN`). See [Authentication](../api/authentication.md).
+- The user's client sends a **user access token** (a short-lived JWT, renewed with a refresh token); workers and their containers send the **service token** (`BACKEND_SERVICE_TOKEN`). See [Authentication](../api/authentication.md).
 - Containers do not touch MongoDB. They read the experiment and pipeline through GraphQL and report progress and results through GraphQL callbacks (see [ADR 0003](decisions/0003-graphql-callbacks-from-workers.md)).
 - Containers that run on the same host as the backend reach it at `http://host.docker.internal:4000/graphql`. The Docker socket is mounted into the backend container so that the backend can start sibling containers (see `docker-compose.yml`).
 - The backend is the only component that writes workflow statuses.

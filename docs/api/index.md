@@ -55,7 +55,9 @@ The desktop app shows the download button on the details page only for `complete
 Browsers may call the API (GraphQL and the report) only from the origins in `CORS_ORIGINS`, a
 comma-separated list. The default is `http://localhost:5173,null`: the Vite dev server of the
 desktop renderer and `null`, the origin of the packaged desktop app, which loads its page from a
-file. Requests from other origins get no `Access-Control-Allow-Origin`, so a page there cannot read
+file. The dev server always uses port 5173 (`strictPort` in `desktop/vite.renderer.config.ts`):
+when the port is busy, the desktop does not start instead of moving to a port the API would block.
+Requests from other origins get no `Access-Control-Allow-Origin`, so a page there cannot read
 the answer. Requests without an `Origin` header (workers, `curl`) are not affected. Apollo's own
 CORS is turned off (`applyMiddleware({ cors: false })`), because its default allows every origin
 on `/graphql`.

@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `completePipeline` in aws-jobs no longer prints the token to the logs.
 - `signedUploadUrl` and `createUploadedFile` require a signed-in user. Upload keys are issued under the user (`uploads/<user id>/...`), and a file can be registered only on a key issued to the caller, once, so no record points at another user's dataset or has no owner.
 - The PDF report (`GET /experiments/:experimentId/report`) requires the user JWT and is limited to the owner of the experiment; the desktop app downloads it with the token and refreshes an expired session first.
-- CORS allows only the origins in `CORS_ORIGINS` (by default the desktop app), on GraphQL as well.
+- CORS allows only the origins in `CORS_ORIGINS` (by default the desktop app), on GraphQL as well. The desktop dev server stays on port 5173, the allowed origin, and does not start when the port is busy.
 
 ### Fixed
 

@@ -19,7 +19,8 @@ export const toList = (value: string | undefined, defaultValue: string[]) => {
 };
 
 // The desktop renderer: the Vite dev server, and `null`, the origin of the packaged app, which
-// loads its page from a file.
+// loads its page from a file. The dev server port is pinned with `strictPort` in
+// desktop/vite.renderer.config.ts; change both together.
 const defaultCorsOrigins = ['http://localhost:5173', 'null'];
 
 export const config = {

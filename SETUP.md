@@ -293,6 +293,9 @@ string and restart the backend.
 - **Container cannot reach the backend:** check that the backend is listening on
   port 4000 and `BACKEND_GRAPHQL_URL` uses `host.docker.internal`.
 - **Port 4000 already in use:** stop the existing server before launching another.
+- **Desktop does not start, `Port 5173 is already in use`:** the desktop renderer needs port 5173,
+  the origin the backend allows by default (`CORS_ORIGINS`). Stop the other process on that port,
+  often a desktop that is still running (`lsof -i :5173`), and start the desktop again.
 - **No desktop window on WSL:** confirm WSL 2 and WSLg are available using the
   [WSL GUI guide](https://learn.microsoft.com/en-us/windows/wsl/tutorials/gui-apps).
 - **Electron reports a missing shared library:** install the corresponding Linux

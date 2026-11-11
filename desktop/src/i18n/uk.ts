@@ -30,6 +30,12 @@ const uk = {
     noDataAvailable: 'Немає даних',
     errorPrefix: 'Помилка',
   },
+  reportDownload: {
+    downloading: 'Завантаження PDF...',
+    unauthorized: 'Увійдіть знову, щоб завантажити звіт.',
+    notFound: 'Звіт недоступний: експеримент не знайдено.',
+    failed: 'Не вдалося сформувати звіт. Спробуйте ще раз.',
+  },
   table: {
     page: 'Сторінка',
     of: 'з',

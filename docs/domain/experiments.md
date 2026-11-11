@@ -118,3 +118,4 @@ A run (pipeline) can be stopped or paused, queued again and claimed by a new exe
 
 - The **Download PDF** button appears only when the experiment status is `completed`.
 - The REST endpoint is `GET {API_BASE}/experiments/:experimentId/report`, where `API_BASE` is the GraphQL URL without `/graphql`. See [REST report](../api/index.md#rest-report).
+- Only the owner of the experiment can download the report: the request needs the user JWT, and another user's experiment gets `404`. The desktop app sends the token with `fetch` and saves the PDF as a file; when the download fails it says why (sign in again, not found, server error or no connection).

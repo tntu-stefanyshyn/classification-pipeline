@@ -91,6 +91,7 @@ export class AuthFlow {
       throw new AuthenticationError('Invalid token payload');
     }
 
+    // A database failure here is not an authentication failure and is passed on as it is.
     const user = await UserModel.findById(userId);
     if (!user) {
       throw new AuthenticationError('User not found');

@@ -156,8 +156,9 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
     tree,
     (element) => getElementName(element) === 'DataTable'
   )[0];
-  const downloadLink = findElements(tree, (element) => element.type === 'a').find(
-    (element) => element.props.download === 'experiment-exp-1-report.pdf'
+  const downloadButton = findElement(
+    tree,
+    (element) => getElementName(element) === 'ReportDownloadButton'
   );
 
   assert.equal(leaderboardTable.props.className, 'path-table optimization-leaderboard-table');
@@ -214,6 +215,11 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
 
   assert.deepEqual(optimizeCalls, [{ variables: { experimentId: 'exp-1' } }]);
   assert.deepEqual(refetchCalls, ['experiment', 'pipelines']);
-  assert.equal(downloadLink?.props.href, 'http://localhost:4000/experiments/exp-1/report');
+  // The report is fetched with the access token, not opened through a plain link.
+  assert.deepEqual(downloadButton?.props, { experimentId: 'exp-1', className: 'btn ghost small' });
+  assert.equal(
+    findElements(tree, (element) => element.type === 'a' && Boolean(element.props.download)).length,
+    0
+  );
   assert.ok(state.calls.some((call) => call.index === 0 && call.value === true));
 });

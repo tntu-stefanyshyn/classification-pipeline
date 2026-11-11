@@ -5,6 +5,14 @@ import checker from 'vite-plugin-checker';
 
 // https://vitejs.dev/config
 export default defineConfig({
+  // Electron loads the renderer from this port, and the backend allows its origin
+  // (`http://localhost:5173`) by default (`CORS_ORIGINS`, backend/src/config/config.ts). With
+  // `strictPort`, a busy port stops the start instead of moving the renderer to the next free
+  // port, whose origin the backend would block. Change both together.
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   plugins: [
     react(),
     checker({

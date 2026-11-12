@@ -1,7 +1,9 @@
-import { prop } from '@typegoose/typegoose';
+import { index, prop } from '@typegoose/typegoose';
 import { Types } from 'mongoose';
 import { Field, ID, Int, ObjectType } from 'type-graphql';
 
+// `FileStore.listByUser`: a user's files, newest first.
+@index({ uploadedById: 1, uploadedAt: -1 })
 @ObjectType()
 export class UploadedFile {
   @Field(() => ID)

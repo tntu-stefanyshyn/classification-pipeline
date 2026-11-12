@@ -89,7 +89,7 @@ test('the real migrations run once on a database where they already ran', { skip
 });
 
 test(
-  'backends starting together on an empty registry record each migration once',
+  'backends starting together on an empty registry run each migration once',
   { skip },
   async (t) => {
     await useDatabase(t);
@@ -102,9 +102,40 @@ test(
 
     await Promise.all(Array.from({ length: 8 }, () => runMigrations([shared])));
 
+    // Taking turns: the later backends find the migration recorded and never call run().
+    assert.equal(shared.calls, 1);
     assert.equal(await AppliedMigrationModel.countDocuments({ name: 'shared' }), 1);
     const indexes = await AppliedMigrationModel.listIndexes();
     assert.ok(indexes.some(({ key, unique }) => JSON.stringify(key) === '{"name":1}' && unique));
+  }
+);
+
+test('the lock is released after a success and after a failure', { skip }, async (t) => {
+  await useDatabase(t);
+  const locks = mongoose.connection.collection('migration_lock');
+
+  await runMigrations([counting('fine')]);
+  assert.equal(await locks.countDocuments(), 0);
+
+  await assert.rejects(() => runMigrations([counting('broken', true)]), /boom/);
+  assert.equal(await locks.countDocuments(), 0);
+});
+
+test(
+  'a lock left by a dead backend stops blocking once its lease has expired',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const locks = mongoose.connection.collection<{ _id: string; expiresAt: Date }>(
+      'migration_lock'
+    );
+    await locks.insertOne({ _id: 'migrations', expiresAt: new Date(Date.now() - 1000) });
+    const migration = counting('after-crash');
+
+    assert.equal(await runMigrations([migration]), 1);
+
+    assert.equal(migration.calls, 1);
+    assert.equal(await locks.countDocuments(), 0);
   }
 );
 

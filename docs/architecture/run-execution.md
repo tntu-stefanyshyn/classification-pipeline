@@ -32,13 +32,13 @@ sequenceDiagram
     B-->>C: presigned URL
     C->>S: GET dataset
     C->>C: run the path stages and the classifier
-    C->>B: updatePipelineProgress(progress, message)
+    C->>B: updatePipelineProgress(pipelineId, executionId, progress, message)
 
     alt success
         C->>B: completePipeline(result, executionId)
         B->>DB: save the result, then running to completed
     else failure
-        C->>B: updatePipelineProgress(error message)
+        C->>B: updatePipelineProgress(pipelineId, executionId, error message)
         C-->>W: non-zero exit code
         W->>B: failExperimentRun(executionId)
         B->>DB: running to idle

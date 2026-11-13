@@ -1,6 +1,6 @@
 # Data model
 
-The backend stores its data in MongoDB (database from `MONGODB_URI`) through Typegoose models. Identifiers are `_id` (ObjectId) everywhere. The diagram shows the ten collections and how they refer to each other; fields are the key ones, not a complete list.
+The backend stores its data in MongoDB (database from `MONGODB_URI`) through Typegoose models. Identifiers are `_id` everywhere; they are ObjectIds, except `sessions._id`, which is a UUID string (the `familyId` of the session's refresh tokens). The diagram shows the ten collections and how they refer to each other; fields are the key ones, not a complete list.
 
 ```mermaid
 erDiagram

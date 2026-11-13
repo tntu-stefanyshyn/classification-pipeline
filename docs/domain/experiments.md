@@ -60,7 +60,7 @@ and the side effects are in [Lifecycle](../architecture/lifecycle.md#pipeline).
 - Graph settings require the four metric weights (`accuracy`, `f1`, `rocAuc`, `ntps`) to be in the range 0..1 and to sum to 1.
 - Graph settings require at least one allowed computation queue, and a run is accepted only for an allowed queue.
 - The computation mode of the graph (`local`, `cloud`, `both`) restricts which queue can be used.
-- Experiment updates and graph changes are blocked after computations start (statuses `computing`, `optimization` and `completed`).
+- Experiment updates and graph changes are blocked after computations start (statuses `computing`, `optimization` and `completed`). The exception is an update that sets only `fileId` on an experiment that has no file yet.
 - Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`.
 
 ## GraphQL behavior

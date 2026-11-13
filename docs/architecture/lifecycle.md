@@ -29,7 +29,7 @@ Source of truth: `ExperimentManager.transitions` in `backend/src/modules/experim
 
 Notes:
 
-- Graph and experiment changes are rejected in `computing`, `optimization` and `completed`; changes in `creating` or `configuring` set the status to `configuring`.
+- Graph and experiment changes are rejected in `computing`, `optimization` and `completed`. The one exception is an `updateExperiment` request that sets only `fileId` on an experiment that has no file yet (`ExperimentManager.update`), so a missing file can still be attached. Changes in `creating` or `configuring` set the status to `configuring`.
 - Generating the pipelines creates one pipeline per combination of path and selected queue (`PipelineManager.generatePipelinesFromGraphStructure`), each with a workflow in `idle`. Pipelines are queued automatically when `shouldAutoQueueGeneratedPipeline` allows it: a `cloud` pipeline when the backend runs any worker, and a `local` pipeline only when `cloud` is not selected as well.
 - Optimization has its own status in `experiment.optimization.status`: `optimizing`, `failed` or `completed`. It is stored on the experiment and is separate from the workflow status above. A second optimization is refused while this status is `optimizing`.
 

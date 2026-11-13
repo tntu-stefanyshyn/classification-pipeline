@@ -1,11 +1,13 @@
 import { Field, ID, InputType } from 'type-graphql';
 import { ClassificationStage } from './ClassificationStage';
 
-@InputType()
+@InputType({ description: 'The technologies chosen for one stage.' })
 export class GraphStageSelectionInput {
-  @Field(() => ClassificationStage)
+  @Field(() => ClassificationStage, { description: 'The stage.' })
   stage!: ClassificationStage;
 
-  @Field(() => [ID])
+  @Field(() => [ID], {
+    description: 'Ids of the technologies for the stage; each must belong to it.',
+  })
   technologyIds!: string[];
 }

@@ -6,7 +6,9 @@ import { TechnologyManager } from '../services/TechnologyManager';
 export class Technologies {
   private readonly manager = new TechnologyManager();
 
-  @Query(() => [Technology])
+  @Query(() => [Technology], {
+    description: 'The catalog of technologies that can be used as graph nodes.',
+  })
   technologies(): Promise<Technology[]> {
     return this.manager.list();
   }

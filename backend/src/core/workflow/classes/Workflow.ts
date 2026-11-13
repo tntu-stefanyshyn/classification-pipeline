@@ -20,24 +20,29 @@ import { PipelineStatus } from '../../pipeline/enums';
     },
   }
 )
-@ObjectType()
+@ObjectType({ description: 'The status of an experiment or a pipeline with its history.' })
 export class Workflow extends TimeStamps {
-  @Field(() => ID)
+  @Field(() => ID, { description: 'Id of the workflow document.' })
   _id!: Types.ObjectId;
 
-  @Field(() => WorkflowType)
+  @Field(() => WorkflowType, { description: 'Whether it tracks an experiment or a pipeline.' })
   @prop({ required: true, enum: WorkflowType, type: String })
   type!: WorkflowType;
 
-  @Field(() => ID)
+  @Field(() => ID, { description: 'Id of the experiment or the pipeline.' })
   @prop({ required: true, type: () => Types.ObjectId })
   instanceId!: ObjectIdOrString;
 
-  @Field(() => String)
+  @Field(() => String, {
+    description: 'Current status (an `ExperimentStatus` or a `PipelineStatus` value).',
+  })
   @prop({ required: true, enum: workflowStatusEnum, type: String })
   status!: WorkflowStatus;
 
-  @Field(() => [WorkflowHistoryItem], { nullable: true })
+  @Field(() => [WorkflowHistoryItem], {
+    nullable: true,
+    description: 'Status changes, oldest first.',
+  })
   @prop({ type: () => [WorkflowHistoryItem], required: true, default: [] })
   history!: WorkflowHistoryItem[];
 
@@ -48,6 +53,6 @@ export class Workflow extends TimeStamps {
   @prop({ type: () => Number })
   executionId?: number;
 
-  @Field(() => Date)
+  @Field(() => Date, { description: 'When the workflow was created.' })
   declare createdAt: Date;
 }

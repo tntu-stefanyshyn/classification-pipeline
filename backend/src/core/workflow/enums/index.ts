@@ -13,4 +13,11 @@ export enum WorkflowType {
   PIPELINE = 'PIPELINE',
 }
 
-registerEnumType(WorkflowType, { name: 'WorkflowType' });
+registerEnumType(WorkflowType, {
+  name: 'WorkflowType',
+  description: 'Kind of entity that a workflow tracks.',
+  valuesConfig: {
+    EXPERIMENT: { description: 'The status of an experiment.' },
+    PIPELINE: { description: 'The status of a pipeline.' },
+  },
+});

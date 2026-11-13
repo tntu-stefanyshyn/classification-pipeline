@@ -3,87 +3,225 @@
 # !!!   DO NOT MODIFY THIS FILE BY YOURSELF   !!!
 # -----------------------------------------------
 
+"""
+Tokens and the user returned by `login`, `register` and `refreshSession`.
+"""
 type AuthPayload {
+  """
+  Opaque token for `refreshSession` and `logout`. It can be used once; every refresh returns a new one.
+  """
   refreshToken: String!
+
+  """
+  Access token (JWT) for the `Authorization: Bearer` header. It expires after `ACCESS_TOKEN_TTL`.
+  """
   token: String!
+
+  """The signed-in user."""
   user: User!
 }
 
+"""
+Request to move an experiment to another status along the allowed transitions.
+"""
 input ChangeExperimentStatusInput {
+  """Id of the experiment."""
   experimentId: ID!
+
+  """
+  The status to move to, for example `computing` to start the computations.
+  """
   status: ExperimentStatus!
 }
 
+"""
+Request to move a pipeline to another status. It cannot move a running pipeline out of `running` or into it: use `stopExperimentRun`, `claimExperimentRun`, `completePipeline` and `failExperimentRun` for that.
+"""
 input ChangePipelineStatusInput {
+  """Optional note stored in the pipeline history with the change."""
   message: String
+
+  """Id of the pipeline."""
   pipelineId: ID!
+
+  """
+  The status to move to (`idle` to take a queued pipeline out of the queue, `queued` to queue an idle one).
+  """
   status: PipelineStatus!
 }
 
+"""
+Stage of a classification pipeline. Stages run in the order listed; a path ends with classification.
+"""
 enum ClassificationStage {
+  """
+  Classification: the classifier is trained and evaluated with cross-validation.
+  """
   CLASSIFICATION
+
+  """Data enhancement, for example artifact suppression."""
   DATA_ENHANCEMENT
+
+  """Dimensionality reduction, for example PCA."""
   DIMENSIONALITY_REDUCTION
+
+  """Feature extraction, for example ICA."""
   FEATURE_EXTRACTION
+
+  """Preprocessing of the data."""
   PREPROCESSING
 }
 
+"""Result of a finished run, sent by the worker or the compute container."""
 input CompletePipelineInput {
+  """The execution that finished, as returned by `claimExperimentRun`."""
   executionId: ID!
+
+  """The result: metrics per cross-validation fold and run statistics."""
   payload: ComputationResultPayloadInput!
+
+  """Id of the pipeline."""
   pipelineId: ID!
 }
 
+"""Which queues an experiment's graph allows."""
 enum ComputationMode {
+  """Both queues; the default."""
   both
+
+  """Only the `cloud` queue."""
   cloud
+
+  """Only the `local` queue."""
   local
 }
 
+"""Queue that decides which worker executes a pipeline."""
 enum ComputationQueue {
+  """Served by the backend's Docker worker or by AWS Batch."""
   cloud
+
+  """Served by the desktop app's worker on the user's machine."""
   local
 }
 
+"""
+Result of a completed run. Lists have one value per cross-validation fold.
+"""
 type ComputationResultPayload {
+  """Accuracy of each fold, from 0 to 1."""
   accuracyScores: [Float!]!
+
+  """
+  The class labels found in the dataset, in the order used by the confusion matrices.
+  """
   channelNames: [String!]!
+
+  """
+  A single confusion matrix. The compute handler sends `confusionMatrixes` instead.
+  """
   confusionMatrix: [[Int!]!]
+
+  """Confusion matrix of each fold. Rows and columns follow `channelNames`."""
   confusionMatrixes: [[[Int!]!]!]
+
+  """Duration of the whole run in seconds."""
   duration: Float!
+
+  """Weighted F1 score of each fold, from 0 to 1."""
   f1Scores: [Float!]!
+
+  """
+  Length of the vector of the three metrics of each fold (an intermediate value for the optimization).
+  """
   optimizationIntermediateScores: [Float!]
+
+  """Percentage of the data used for prediction, from the graph settings."""
   predictionDataPercent: Float
+
+  """Number of rows used for prediction in the first fold."""
   predictionSampleCount: Int
+
+  """Number of rows used for prediction in each fold."""
   predictionSampleCounts: [Int!]
+
+  """ROC AUC of each fold, from 0 to 1."""
   rocAucScores: [Float!]!
+
+  """Number of rows in the dataset."""
   sampleCount: Int!
 }
 
+"""
+Result of a completed run, sent by the worker. Lists have one value per cross-validation fold.
+"""
 input ComputationResultPayloadInput {
+  """Accuracy of each fold, from 0 to 1."""
   accuracyScores: [Float!]!
+
+  """
+  The class labels found in the dataset, in the order used by the confusion matrices.
+  """
   channelNames: [String!]!
+
+  """Confusion matrix of each fold. Rows and columns follow `channelNames`."""
   confusionMatrixes: [[[Int!]!]!]!
+
+  """Duration of the whole run in seconds."""
   duration: Float!
+
+  """Weighted F1 score of each fold, from 0 to 1."""
   f1Scores: [Float!]!
+
+  """
+  Length of the vector of the three metrics of each fold (an intermediate value for the optimization).
+  """
   optimizationIntermediateScores: [Float!]
+
+  """Percentage of the data used for prediction, from the graph settings."""
   predictionDataPercent: Float
+
+  """Number of rows used for prediction in the first fold."""
   predictionSampleCount: Int
+
+  """Number of rows used for prediction in each fold."""
   predictionSampleCounts: [Int!]
+
+  """ROC AUC of each fold, from 0 to 1."""
   rocAucScores: [Float!]!
+
+  """Number of rows in the dataset."""
   sampleCount: Int!
 }
 
+"""Data for a new experiment."""
 input CreateExperimentInput {
+  """Optional description."""
   description: String
+
+  """
+  Id of the uploaded CSV file with the dataset. It can be attached later.
+  """
   fileId: ID
+
+  """Name of the experiment."""
   name: String!
 }
 
+"""Registers a file that was uploaded to S3."""
 input CreateUploadedFileInput {
+  """Original file name; it must end with `.csv`."""
   filename: String!
+
+  """Size in megabytes, greater than 0."""
   sizeMb: Int!
+
+  """Optional status text; `uploaded` by default."""
   status: String
+
+  """
+  The S3 key returned by `signedUploadUrl` for this user. A key that was not issued to the caller, or is already registered, is rejected.
+  """
   storageKey: String!
 }
 
@@ -92,362 +230,1027 @@ A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `dat
 """
 scalar DateTimeISO
 
+"""Request to queue the runs of an experiment."""
 input EnqueueExperimentRunsInput {
+  """Id of the experiment."""
   experimentId: ID!
+
+  """Queue only this pipeline. Send either `pipelineId` or `runAll`."""
   pipelineId: ID
+
+  """
+  Queue to run in. It must be allowed by the graph settings and the computation mode.
+  """
   queue: ComputationQueue!
+
+  """Reserved. The backend does not read it yet."""
   rerun: Boolean
+
+  """Queue every pipeline of the experiment that is `idle`."""
   runAll: Boolean
 }
 
+"""A classification experiment: a dataset and a graph of stages."""
 type Experiment {
+  """Id of the experiment."""
   _id: ID!
+
+  """Machines that computed pipelines of the experiment, one per queue."""
   computationHosts: [PipelineMachineInfo!]
+
+  """When the experiment was created."""
   createdAt: DateTimeISO!
+
+  """Description."""
   description: String
+
+  """Id of the attached dataset file, if any."""
   fileId: ID
+
+  """The graph of the experiment."""
   graph: GraphStructure
+
+  """Name of the experiment."""
   name: String!
+
+  """State and result of the optimization."""
   optimization: ExperimentOptimization
+
+  """Current status of the experiment."""
   status: ExperimentStatus
 }
 
+"""State and result of the optimization of an experiment."""
 type ExperimentOptimization {
+  """Id of the best pipeline, once the optimization has finished."""
   bestPipelineId: ID
+
+  """Integral score of the best pipeline. A lower score is better."""
   bestScore: Float
+
+  """Messages and status changes of the optimization, oldest first."""
   history: [OptimizationHistoryItem!]
+
+  """Progress of the optimization in percent."""
   progress: Float
+
+  """Status of the optimization."""
   status: OptimizationStatus
 }
 
+"""
+Status of an experiment. See the lifecycle page of the documentation for the allowed transitions.
+"""
 enum ExperimentStatus {
+  """The optimization has finished."""
   completed
+
+  """The pipelines exist and are being computed. Editing is locked."""
   computing
+
+  """The graph or its settings are being edited."""
   configuring
+
+  """Created; nothing configured yet."""
   creating
+
+  """All pipelines are completed and the optimization is running."""
   optimization
 }
 
+"""Failure of a run, reported by the worker."""
 input FailExperimentRunInput {
+  """
+  The execution that failed, as returned by `claimExperimentRun`. A report of an execution that is no longer current is ignored.
+  """
   executionId: ID!
+
+  """Id of the pipeline."""
   runId: ID!
+
+  """Reason, stored as the status message and in the history."""
   statusMessage: String
 }
 
+"""Technologies to build a graph from."""
 input GenerateExperimentGraphInput {
+  """Id of the experiment."""
   _id: ID!
+
+  """
+  The technologies chosen for each stage. `CLASSIFICATION` must have at least one.
+  """
   stages: [GraphStageSelectionInput!]!
 }
 
+"""
+Weights of the metrics in the integral score. Each is from 0 to 1 and together they sum to 1.
+"""
 type GraphMetricWeights {
+  """Weight of accuracy."""
   accuracy: Float!
+
+  """Weight of the F1 score."""
   f1: Float!
+
+  """Weight of the processing time (NTPS)."""
   ntps: Float!
+
+  """Weight of ROC AUC."""
   rocAuc: Float!
 }
 
+"""
+Weights of the metrics in the integral score. Each is from 0 to 1 and together they sum to 1.
+"""
 input GraphMetricWeightsInput {
+  """Weight of accuracy."""
   accuracy: Float!
+
+  """Weight of the F1 score."""
   f1: Float!
+
+  """Weight of the processing time (NTPS)."""
   ntps: Float!
+
+  """Weight of ROC AUC."""
   rocAuc: Float!
 }
 
+"""A node of the graph: one technology at one stage."""
 type GraphNode {
+  """Id of the node."""
   _id: ID!
+
+  """Name shown for the node."""
   label: String!
+
+  """Id of the parent node. A node without a parent starts a path."""
   parentId: ID
+
+  """Values of the technology settings."""
   settings: [GraphNodeSetting!]
+
+  """Stage the node belongs to."""
   stage: ClassificationStage!
+
+  """Name of the technology."""
   technology: String!
+
+  """
+  Kind of the node. Nodes made from technologies have the type `technology`.
+  """
   type: String!
 }
 
+"""
+A graph node to save. The stage must come after the stage of its parent.
+"""
 input GraphNodeInput {
+  """Id of the node, unique in the graph."""
   _id: ID!
+
+  """Name shown for the node."""
   label: String!
+
+  """Id of the parent node. Leave it empty for a node that starts a path."""
   parentId: ID
+
+  """Values of the technology settings."""
   settings: [GraphNodeSettingInput!]
+
+  """Stage the node belongs to."""
   stage: ClassificationStage!
+
+  """Name of the technology; it must belong to the stage."""
   technology: String!
+
+  """Kind of the node, `technology` for technology nodes."""
   type: String!
 }
 
+"""The value of one technology setting on a node."""
 type GraphNodeSetting {
+  """Key of the setting, as in the technology."""
   key: String!
+
+  """Value, as text."""
   value: String!
 }
 
+"""The value of one technology setting on a node."""
 input GraphNodeSettingInput {
+  """Key of the setting, as in the technology."""
   key: String!
+
+  """Value, as text."""
   value: String!
 }
 
+"""The technologies chosen for one stage."""
 input GraphStageSelectionInput {
+  """The stage."""
   stage: ClassificationStage!
+
+  """Ids of the technologies for the stage; each must belong to it."""
   technologyIds: [ID!]!
 }
 
+"""The graph of an experiment with its settings."""
 type GraphStructure {
+  """Id of the graph."""
   _id: ID!
+
+  """Which queues the graph allows."""
   computationMode: ComputationMode
+
+  """When the graph was created."""
   createdAt: DateTimeISO!
+
+  """Id of the experiment."""
   experimentId: ID!
+
+  """The nodes. Edges are given by `parentId`."""
   nodes: [GraphNode!]!
+
+  """Computation settings; empty until they are saved."""
   settings: GraphStructureSettings
 }
 
+"""Computation settings of a graph."""
 type GraphStructureSettings {
+  """Number of cross-validation folds, from 1 to 20."""
   folds: Int!
+
+  """Minutes of optimization per pipeline, at least 1. Default 30."""
   hyperOptimizationMinutesPerPipeline: Int
+
+  """Weights of the metrics in the integral score."""
   metrics: GraphMetricWeights!
+
+  """Percentage of the data used for prediction, from 1 to 99. Default 20."""
   predictDataPercent: Int
+
+  """Queues the experiment may run in; at least one."""
   queues: [ComputationQueue!]!
 }
 
+"""Computation settings of a graph."""
 input GraphStructureSettingsInput {
+  """Number of cross-validation folds, from 1 to 20."""
   folds: Int!
+
+  """Minutes of optimization per pipeline, at least 1. Default 30."""
   hyperOptimizationMinutesPerPipeline: Int
+
+  """Weights of the metrics in the integral score."""
   metrics: GraphMetricWeightsInput!
+
+  """Percentage of the data used for prediction, from 1 to 99. Default 20."""
   predictDataPercent: Int
+
+  """Queues the experiment may run in; at least one."""
   queues: [ComputationQueue!]!
 }
 
+"""Credentials for `login`."""
 input LoginInput {
+  """Email address of the account."""
   email: String!
+
+  """Password of the account."""
   password: String!
 }
 
 type Mutation {
-  changeExperimentStatus(input: ChangeExperimentStatusInput!): Boolean!
-  changePipelineStatus(input: ChangePipelineStatusInput!): Boolean!
-  claimExperimentRun(machineInfo: PipelineMachineInfoInput, queue: ComputationQueue!): Pipeline
-  completePipeline(input: CompletePipelineInput!): Boolean!
-  createExperiment(input: CreateExperimentInput!): Experiment!
-  createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
-  deleteUploadedFile(_id: ID!, detachExperimentIds: [ID!]): UploadedFile!
-  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
-  failExperimentRun(input: FailExperimentRunInput!): Pipeline!
-  generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
-  login(input: LoginInput!): AuthPayload!
-  logout(refreshToken: String!): Boolean!
-  pauseExperimentRuns(experimentId: ID!): [Pipeline!]!
-  refreshSession(attemptId: String, refreshToken: String!): AuthPayload!
-  register(input: RegisterInput!): AuthPayload!
-  resumeExperimentRuns(experimentId: ID!): [Pipeline!]!
-  stopExperimentRun(input: StopExperimentRunInput!): Pipeline!
-  updateExperiment(input: UpdateExperimentInput!): Experiment!
-  updateExperimentOptimizationResult(input: UpdateExperimentOptimizationResultInput!): Boolean!
-  updateExperimentProgress(input: UpdateExperimentProgressInput!): Boolean!
-  updatePipelineOptimization(input: UpdatePipelineOptimizationInput!): Boolean!
-  updatePipelineProgress(input: UpdatePipelineProgressInput!): Pipeline!
+  """
+  Moves the experiment along the allowed status transitions. Moving to `computing` checks the dataset file and generates the pipelines.
+  """
+  changeExperimentStatus(
+    """The experiment id and the status to move to."""
+    input: ChangeExperimentStatusInput!
+  ): Boolean!
+
+  """
+  Queues an idle pipeline or takes a queued one out of the queue. It cannot start a run or end a running one. Owner or worker.
+  """
+  changePipelineStatus(
+    """The pipeline and the status to move to."""
+    input: ChangePipelineStatusInput!
+  ): Boolean!
+
+  """
+  Takes the next queued pipeline of a queue for a worker, atomically, and starts a new execution. Returns `null` when nothing is queued. Worker operation (service token).
+  """
+  claimExperimentRun(
+    """
+    The worker's machine. Required for `local` claims (its `hostname` limits the machine to one running run).
+    """
+    machineInfo: PipelineMachineInfoInput
+
+    """The queue the worker serves."""
+    queue: ComputationQueue!
+  ): Pipeline
+
+  """
+  Stores the result of a run and completes it. Returns `false` when the report belongs to an execution that is no longer current. Worker operation (service token).
+  """
+  completePipeline(
+    """The pipeline, its execution and the result."""
+    input: CompletePipelineInput!
+  ): Boolean!
+
+  """Creates an experiment with an empty graph for the signed-in user."""
+  createExperiment(
+    """Name, optional description and optional file."""
+    input: CreateExperimentInput!
+  ): Experiment!
+
+  """
+  Registers a CSV file that was uploaded with a URL from `signedUploadUrl`. The key must have been issued to the caller and not be registered yet.
+  """
+  createUploadedFile(
+    """File name, S3 key, size and optional status."""
+    input: CreateUploadedFileInput!
+  ): UploadedFile!
+
+  """
+  Deletes a file and its S3 object and detaches it from the experiments that use it. Refused while one of them is computing or optimizing, and until the owner confirms every own experiment that uses it in `detachExperimentIds`.
+  """
+  deleteUploadedFile(
+    """Id of the file."""
+    _id: ID!
+
+    """
+    Ids of the caller's experiments that may be detached. It must list every own experiment that still uses the file (see `uploadedFileUsage`).
+    """
+    detachExperimentIds: [ID!]
+  ): UploadedFile!
+
+  """
+  Moves `idle` pipelines of an experiment to `queued`, after checking the graph settings, the allowed queue and that every path has a classification stage. Owner only.
+  """
+  enqueueExperimentRuns(
+    """The experiment, the queue and which pipelines to queue."""
+    input: EnqueueExperimentRunsInput!
+  ): Boolean!
+
+  """
+  Ends a run as failed (back to `idle` with the reason) if the execution is still current. Worker operation (service token).
+  """
+  failExperimentRun(
+    """The pipeline, its execution and the reason."""
+    input: FailExperimentRunInput!
+  ): Pipeline!
+
+  """
+  Builds the graph from the technologies chosen per stage, replacing the current nodes. `CLASSIFICATION` must have at least one technology.
+  """
+  generateExperimentGraph(
+    """The experiment id and the technologies per stage."""
+    input: GenerateExperimentGraphInput!
+  ): Experiment!
+
+  """
+  Signs a user in with email and password. A wrong email or password fails with the code `INVALID_CREDENTIALS`.
+  """
+  login(
+    """Email and password."""
+    input: LoginInput!
+  ): AuthPayload!
+
+  """
+  Ends the session of a refresh token. Returns `true` also for an unknown token, so it can be repeated safely.
+  """
+  logout(
+    """The refresh token of the session to end."""
+    refreshToken: String!
+  ): Boolean!
+
+  """
+  Returns all queued and running pipelines of an experiment to `idle`. Owner only.
+  """
+  pauseExperimentRuns(
+    """Id of the experiment."""
+    experimentId: ID!
+  ): [Pipeline!]!
+
+  """
+  Exchanges a refresh token for a new access token and a new refresh token. Needs no access token; the used refresh token stops working. A refresh token that is presented twice ends the whole session.
+  """
+  refreshSession(
+    """
+    Optional id of this exchange. Send the same value when repeating an exchange whose answer was lost, and the same new refresh token is returned.
+    """
+    attemptId: String
+
+    """
+    The refresh token from the last `login`, `register` or `refreshSession`.
+    """
+    refreshToken: String!
+  ): AuthPayload!
+
+  """
+  Creates an account and signs the user in. Returns the access token, a refresh token and the user.
+  """
+  register(
+    """Email, password and optional name."""
+    input: RegisterInput!
+  ): AuthPayload!
+
+  """Queues the `idle` pipelines of an experiment again. Owner only."""
+  resumeExperimentRuns(
+    """Id of the experiment."""
+    experimentId: ID!
+  ): [Pipeline!]!
+
+  """
+  Stops a running pipeline and returns it to `idle`; any other status is returned unchanged. A cloud job is cancelled. Owner only.
+  """
+  stopExperimentRun(
+    """Id of the pipeline to stop."""
+    input: StopExperimentRunInput!
+  ): Pipeline!
+
+  """
+  Changes the name, description, file, graph nodes, graph settings or computation mode. Rejected once computations have started, except for attaching a file to an experiment that has none.
+  """
+  updateExperiment(
+    """The experiment id and the fields to change."""
+    input: UpdateExperimentInput!
+  ): Experiment!
+
+  """
+  Stores the best pipeline and its score. Worker operation (service token).
+  """
+  updateExperimentOptimizationResult(
+    """The experiment id, the best pipeline and its score."""
+    input: UpdateExperimentOptimizationResultInput!
+  ): Boolean!
+
+  """
+  Reports the progress of the optimization. Worker operation (service token).
+  """
+  updateExperimentProgress(
+    """The experiment id, progress, message and optimization status."""
+    input: UpdateExperimentProgressInput!
+  ): Boolean!
+
+  """
+  Stores the optimization score of a pipeline. Worker operation (service token).
+  """
+  updatePipelineOptimization(
+    """The pipeline and its score."""
+    input: UpdatePipelineOptimizationInput!
+  ): Boolean!
+
+  """
+  Stores the progress and a message of a running pipeline. Ignored when the execution is no longer current. Worker operation (service token).
+  """
+  updatePipelineProgress(
+    """The pipeline, its execution, progress and message."""
+    input: UpdatePipelineProgressInput!
+  ): Pipeline!
 }
 
+"""One entry of the optimization history."""
 type OptimizationHistoryItem {
+  """When the entry was written."""
   createdAt: DateTimeISO!
+
+  """Text of the entry."""
   message: String
+
+  """Status of the optimization when the entry was written."""
   status: OptimizationStatus
 }
 
+"""The best pipeline found by the optimization."""
 type OptimizationResult {
+  """Ids of the graph nodes on its path."""
   pathNodeIds: [ID!]!
+
+  """Id of the best pipeline."""
   runId: ID!
+
+  """Its integral score. A lower score is better."""
   score: Float!
 }
 
+"""Status of the optimization of an experiment."""
 enum OptimizationStatus {
+  """The optimization finished and the best pipeline is stored."""
   completed
+
+  """The optimization ended with an error."""
   failed
+
+  """The optimization is running."""
   optimizing
 }
 
+"""
+One run: the computation of one path of an experiment's graph in one queue.
+"""
 type Pipeline {
+  """Id of the pipeline (run)."""
   _id: ID!
+
+  """Result of the completed run (metrics per cross-validation fold)."""
   computingResult: ComputationResultPayload
+
+  """When the pipeline was created."""
   createdAt: DateTimeISO!
+
+  """
+  Number of the current execution of the pipeline. Every claim by a worker starts a new execution, and workers must send it with every report.
+  """
   executionId: ID
+
+  """Id of the experiment the pipeline belongs to."""
   experimentId: ID!
+
+  """Id of the graph the path was taken from."""
   graphStructureId: ID!
+
+  """Status changes and progress messages of the pipeline, oldest first."""
   history: [PipelineHistoryItem!]!
+
+  """Machine that executes or executed the current run."""
   machineInfo: PipelineMachineInfo
+
+  """Scores calculated for this pipeline by the optimization."""
   optimizationScores: [Float!]
+
+  """
+  Ids of the graph nodes on the path, from the first stage to classification.
+  """
   pathNodeIds: [ID!]!
+
+  """The graph nodes of the path, in order."""
   pathNodes: [GraphNode!]!
+
+  """
+  Progress of the current run in percent (0 to 100); empty until a worker reports it.
+  """
   progress: Float
+
+  """Queue that serves the pipeline: `local` or `cloud`."""
   queue: ComputationQueue!
+
+  """Current status of the pipeline."""
   status: PipelineStatus!
+
+  """
+  Last message of the current run, for example "В черзі" or the error that ended it.
+  """
   statusMessage: String
+
+  """When the pipeline was last changed."""
   updatedAt: DateTimeISO!
 }
 
+"""
+One entry of the pipeline history: a status change or a progress message.
+"""
 type PipelineHistoryItem {
+  """When the entry was written."""
   createdAt: DateTimeISO!
+
+  """Text of the entry."""
   message: String!
+
+  """Status of the pipeline when the entry was written."""
   status: PipelineStatus!
 }
 
+"""Description of the machine that runs a pipeline."""
 type PipelineMachineInfo {
+  """Version of the application or worker."""
   appVersion: String
+
+  """CPU architecture, for example `x64`."""
   arch: String
+
+  """Number of CPU cores."""
   cores: Int
+
+  """CPU model."""
   cpuModel: String
+
+  """GPU model, if known."""
   gpuModel: String
+
+  """
+  Host name. A `local` claim must send it: only one `local` run can be running per host name.
+  """
   hostname: String
+
+  """When the machine last claimed a run."""
   lastSeenAt: DateTimeISO
+
+  """Memory in gigabytes."""
   memoryGb: Float
+
+  """Operating system platform, for example `win32` or `linux`."""
   platform: String
+
+  """Queue the machine serves."""
   queue: ComputationQueue
+
+  """Operating system release."""
   release: String
 }
 
+"""Description of the machine that a worker sends when it claims a run."""
 input PipelineMachineInfoInput {
+  """Version of the application or worker."""
   appVersion: String
+
+  """CPU architecture, for example `x64`."""
   arch: String
+
+  """Number of CPU cores."""
   cores: Int
+
+  """CPU model."""
   cpuModel: String
+
+  """GPU model, if known."""
   gpuModel: String
+
+  """
+  Host name. A `local` claim must send it: only one `local` run can be running per host name.
+  """
   hostname: String
+
+  """Memory in gigabytes."""
   memoryGb: Float
+
+  """Operating system platform, for example `win32` or `linux`."""
   platform: String
+
+  """Operating system release."""
   release: String
 }
 
+"""Status of a pipeline (a run of one graph path in one queue)."""
 enum PipelineStatus {
+  """Finished successfully; the result is saved."""
   completed
+
+  """
+  No active run. The initial status, and the one a run returns to when it is stopped, paused or fails.
+  """
   idle
+
+  """Waiting in its queue for a worker to claim it."""
   queued
+
+  """Claimed by a worker and being computed."""
   running
 }
 
 type Query {
-  experiment(_id: ID!): Experiment
+  """
+  One experiment by id. Returns `null` when it does not exist or belongs to another user. A worker (service token) can read any experiment.
+  """
+  experiment(
+    """Id of the experiment."""
+    _id: ID!
+  ): Experiment
+
+  """The experiments of the signed-in user."""
   experiments: [Experiment!]!
+
+  """
+  Liveness check. Returns `ok` while the backend runs. Needs no authentication.
+  """
   health: String!
+
+  """The user of the access token. Needs a signed-in user."""
   me: User!
-  optimizeExperimentRuns(experimentId: ID!): OptimizationResult!
-  pipeline(pipelineId: ID!): Pipeline
-  pipelines(experimentId: ID!, queue: ComputationQueue): [Pipeline!]!
+
+  """
+  Runs the optimization of an experiment and returns the best pipeline. Allowed when the experiment is `computing` or `completed` and every pipeline is `completed`. The call returns only when the optimization has finished. Owner only.
+  """
+  optimizeExperimentRuns(
+    """Id of the experiment."""
+    experimentId: ID!
+  ): OptimizationResult!
+
+  """One pipeline by id. Owner or worker."""
+  pipeline(
+    """Id of the pipeline."""
+    pipelineId: ID!
+  ): Pipeline
+
+  """
+  The pipelines of an experiment, optionally of one queue. Owner or worker.
+  """
+  pipelines(
+    """Id of the experiment."""
+    experimentId: ID!
+
+    """Return only the pipelines of this queue."""
+    queue: ComputationQueue
+  ): [Pipeline!]!
+
+  """Version, status and uptime of the backend. Needs no authentication."""
   serverInfo: ServerInfo!
-  signedDownloadUrl(fileId: ID!): SignedUploadUrl!
-  signedUploadUrl(input: SignedUploadRequest!): SignedUploadUrl!
+
+  """
+  A presigned `GET` URL for the dataset of a file record. Allowed for its uploader or a worker (service token).
+  """
+  signedDownloadUrl(
+    """Id of the file record."""
+    fileId: ID!
+  ): SignedUploadUrl!
+
+  """
+  A presigned `PUT` URL for uploading a CSV file straight to S3. The key is issued under the signed-in user's prefix.
+  """
+  signedUploadUrl(
+    """File name and optional MIME type."""
+    input: SignedUploadRequest!
+  ): SignedUploadUrl!
+
+  """The catalog of technologies that can be used as graph nodes."""
   technologies: [Technology!]!
-  uploadedFileUsage(_id: ID!): UploadedFileUsage!
+
+  """
+  The experiments that use a file and whether deleting it is blocked. Owner of the file only.
+  """
+  uploadedFileUsage(
+    """Id of the file."""
+    _id: ID!
+  ): UploadedFileUsage!
+
+  """The files of the signed-in user, newest first."""
   uploadedFiles: [UploadedFile!]!
 }
 
+"""Data for creating an account."""
 input RegisterInput {
+  """Email address. It must not be registered yet."""
   email: String!
+
+  """Optional display name."""
   name: String
+
+  """Password of the new account."""
   password: String!
 }
 
+"""State of the running backend."""
 type ServerInfo {
+  """Always `ok` while the backend answers."""
   status: String!
+
+  """Seconds since the backend started."""
   uptimeSeconds: Int!
+
+  """Version from `package.json`, or `dev` when it is unknown."""
   version: String!
 }
 
+"""Request for a presigned upload URL."""
 input SignedUploadRequest {
+  """Name of the file to upload; it must end with `.csv`."""
   filename: String!
+
+  """
+  MIME type of the file; one of `text/csv`, `application/vnd.ms-excel`, `text/plain`.
+  """
   mimeType: String
 }
 
+"""A presigned S3 URL."""
 type SignedUploadUrl {
+  """Seconds until the URL expires (`AWS_S3_PRESIGN_EXPIRES`)."""
   expiresIn: Int!
+
+  """The S3 key of the object."""
   key: String!
+
+  """
+  The presigned URL. Upload with `PUT`; when a `mimeType` was requested, send it as the `Content-Type`.
+  """
   url: String!
 }
 
+"""Request to stop a run."""
 input StopExperimentRunInput {
+  """Id of the pipeline to stop."""
   runId: ID!
 }
 
+"""A technology of the catalog that can be a node of a graph."""
 type Technology {
+  """Id of the technology."""
   _id: ID!
+
+  """Name shown to users."""
   displayName: String
+
+  """Unique name; graph nodes refer to it."""
   name: String!
+
+  """Settings that can be configured for the technology."""
   settings: [TechnologySetting!]!
+
+  """The stage the technology belongs to."""
   stage: ClassificationStage!
 }
 
+"""A configurable setting of a technology."""
 type TechnologySetting {
+  """Value used when none is given."""
   defaultValue: String
+
+  """Key used in `GraphNodeSetting.key`."""
   key: String!
+
+  """Name shown to users."""
   label: String!
+
+  """Allowed values of a `SELECT` setting."""
   options: [String!]
+
+  """Hint shown in an empty input."""
   placeholder: String
+
+  """Whether a value is required."""
   required: Boolean
+
+  """Kind of the value."""
   type: TechnologySettingType!
 }
 
+"""Kind of value of a technology setting."""
 enum TechnologySettingType {
+  """Yes or no."""
   BOOLEAN
+
+  """A number."""
   NUMBER
+
+  """One of the listed options."""
   SELECT
+
+  """Free text."""
   TEXT
 }
 
+"""Changes to an experiment. Send only the fields to change."""
 input UpdateExperimentInput {
+  """Id of the experiment."""
   _id: ID!
+
+  """New description."""
   description: String
+
+  """Id of the dataset file to attach; send an empty value to detach it."""
   fileId: ID
+
+  """New computation mode."""
   graphComputationMode: ComputationMode
+
+  """The whole list of graph nodes; it replaces the current one."""
   graphNodes: [GraphNodeInput!]
+
+  """New computation settings."""
   graphSettings: GraphStructureSettingsInput
+
+  """New name."""
   name: String
 }
 
+"""Final result of the optimization, sent by the optimization container."""
 input UpdateExperimentOptimizationResultInput {
+  """Id of the best pipeline."""
   bestPipelineId: ID!
+
+  """Id of the experiment."""
   experimentId: ID!
+
+  """Its integral score. A lower score is better."""
   score: Float!
 }
 
+"""Progress report of the optimization container."""
 input UpdateExperimentProgressInput {
+  """Id of the experiment."""
   experimentId: ID!
+
+  """Message for the optimization history."""
   message: String
+
+  """Progress in percent."""
   progress: Float
+
+  """New optimization status."""
   status: OptimizationStatus
 }
 
+"""Score of one pipeline calculated by the optimization."""
 input UpdatePipelineOptimizationInput {
+  """Id of the pipeline."""
   pipelineId: ID!
+
+  """Integral score of the pipeline. A lower score is better."""
   score: Float!
 }
 
+"""Progress report of a worker for a running pipeline."""
 input UpdatePipelineProgressInput {
+  """
+  The execution that sends the report, as returned by `claimExperimentRun`. A report of an execution that is no longer current is ignored.
+  """
   executionId: ID!
+
+  """
+  Message for the pipeline history, for example the current step or an error.
+  """
   message: String
+
+  """Id of the pipeline."""
   pipelineId: ID!
+
+  """Progress in percent (0 to 100). Leave it empty to send only a message."""
   progress: Float
 }
 
+"""A dataset file stored in S3."""
 type UploadedFile {
+  """Id of the file."""
   _id: ID!
+
+  """Original file name."""
   filename: String!
+
+  """Size in megabytes."""
   sizeMb: Int!
+
+  """Status text of the file."""
   status: String!
+
+  """When the file was registered."""
   uploadedAt: DateTimeISO!
+
+  """Name of the user who uploaded it."""
   uploadedByName: String
 }
 
+"""Where a file is used, and whether it can be deleted now."""
 type UploadedFileUsage {
+  """
+  True if any experiment that uses the file is computing or optimizing, so deletion is refused.
+  """
   blocked: Boolean!
+
+  """
+  The caller's experiments that use the file. Deleting the file detaches it from them.
+  """
   experiments: [UploadedFileUsageExperiment!]!
+
+  """
+  How many experiments of other users use the file. They are only counted.
+  """
   otherExperimentsCount: Int!
 }
 
+"""An experiment of the caller that uses a file."""
 type UploadedFileUsageExperiment {
+  """Id of the experiment."""
   _id: ID!
+
+  """
+  True while the experiment is `computing` or `optimization`: the file cannot be deleted then.
+  """
   blocking: Boolean!
+
+  """Name of the experiment."""
   name: String!
+
+  """Status of the experiment."""
   status: ExperimentStatus!
 }
 
+"""A registered user."""
 type User {
+  """Id of the user."""
   _id: ID!
+
+  """When the account was created."""
   createdAt: DateTimeISO
+
+  """Email address, unique and stored in lower case."""
   email: String!
+
+  """Display name."""
   name: String
+
+  """When the account was last changed."""
   updatedAt: DateTimeISO
 }

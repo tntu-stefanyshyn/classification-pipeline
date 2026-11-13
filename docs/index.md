@@ -18,7 +18,7 @@ building and running classification experiments.
 | [Architecture](architecture/overview.md)    | System overview, lifecycle, data model, run execution, decisions, known limitations, code conventions.                                                  |
 | [User guide](user-guide/index.md)           | Step-by-step guide for the desktop application, the dataset (CSV) format and troubleshooting.                                                           |
 | [Domain](domain/experiments.md)             | Experiment and pipeline statuses, validations, graph rules, PDF report.                                                                                 |
-| [API](api/index.md)                         | GraphQL and REST endpoints, GraphQL usage in the desktop app.                                                                                           |
+| [API](api/index.md)                         | GraphQL and REST endpoints, the [GraphQL API reference](api/reference/index.md), GraphQL usage in the desktop app.                                      |
 | [Operations](operations/ci.md)              | CI and the Windows installer, running computations in [AWS Batch](operations/aws-batch.md), the [configuration reference](operations/configuration.md). |
 | [aws-jobs](../aws-jobs/README.md)           | Python jobs and the Docker images used for computations.                                                                                                |
 
@@ -45,6 +45,7 @@ building and running classification experiments.
   - [Experiments and computations](domain/experiments.md)
 - API
   - [API overview and REST report](api/index.md)
+  - [GraphQL API reference](api/reference/index.md): [authentication](api/reference/auth.md), [experiments](api/reference/experiments.md), [graph](api/reference/graph.md), [runs and pipelines](api/reference/runs.md), [files](api/reference/files.md), [storage](api/reference/storage.md), [technologies](api/reference/technologies.md)
   - [Authentication](api/authentication.md)
   - [GraphQL in the desktop app](api/graphql-client.md)
 - Operations

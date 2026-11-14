@@ -301,6 +301,11 @@ export class ExperimentManager {
       from: ExperimentStatus.completed,
       to: ExperimentStatus.optimization,
     },
+    {
+      // A re-run reopens an optimized experiment; its optimization has to be run again.
+      from: ExperimentStatus.completed,
+      to: ExperimentStatus.computing,
+    },
   ];
 
   async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {

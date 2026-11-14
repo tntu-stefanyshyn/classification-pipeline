@@ -26,7 +26,11 @@ how the desktop constructor and the experiment details page apply them.
 | `completed`    | Set when optimization has finished.                                                       |
 
 Allowed transitions: `creating → configuring → computing → optimization → completed`, and
-`completed → optimization` (optimization can be run again).
+`completed → optimization` (optimization can be run again) and `completed → computing` (a re-run of
+a pipeline reopens the experiment; it is rejected while the status is `optimization`). When the last
+unfinished pipeline of such an experiment completes, the optimization is started again
+automatically, so the result is recalculated. An experiment that was never optimized is not
+optimized automatically.
 An experiment cannot enter `computing` without an attached, available CSV file.
 
 ## Pipeline status lifecycle
@@ -57,7 +61,9 @@ status message "Зупинено користувачем". The pipeline history
 ## GraphQL behavior
 
 - Only the owner of an experiment can start, stop, pause, resume, optimize or read its runs; workers report with the service token. See [Authentication](../api/authentication.md).
-- `enqueueExperimentRuns` checks the graph settings and the classification stage coverage, then moves `idle` pipelines to `queued`.
+- `enqueueExperimentRuns` checks the graph settings and the classification stage coverage, then moves `idle` pipelines to `queued`. With `runAll` only the pipelines of the given `queue` are queued ("Queue all idle").
+- `enqueueExperimentRuns` with `pipelineId` and `rerun: true` on a `completed` pipeline creates a new pipeline (run) for the same path and queue and queues it; the finished one stays. If a run of that path is already `idle`, `queued` or `running`, that run is used instead, so a double click creates nothing. A re-run is rejected while the experiment is in `optimization`; for a `completed` experiment the status goes `completed -> computing`, and the optimization has to be run again after the re-run finishes.
+- `pauseExperimentRuns(experimentId, queue?)` is "Stop all": `queued` and `running` pipelines go back to `idle` (cloud jobs are cancelled); `queue` limits it to Local or Cloud.
 - `stopExperimentRun(input: { runId })` stops a `running` pipeline and returns it to `idle`; for any other status it returns the pipeline unchanged. A cloud job is cancelled first when one exists.
 - `PipelineStatus.idle` is also what the UI shows for a path that has no runs.
 

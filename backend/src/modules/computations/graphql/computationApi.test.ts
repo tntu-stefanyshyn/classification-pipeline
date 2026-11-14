@@ -235,7 +235,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         memoryGb: 16,
       },
     ],
-    ['pauseExperimentRuns', experimentId],
+    ['pauseExperimentRuns', experimentId, null],
     ['resumeExperimentRuns', experimentId],
     [
       'completePipeline',

@@ -29,7 +29,7 @@ const stubReactHooks = (t: TestContext, compiledFile: string, seededState: unkno
   return state;
 };
 
-test('ComputationCard moves local runs to waiting, renders table actions, and previews the graph', async (t) => {
+test('ComputationCard runs bulk and re-run actions, renders table actions, and previews the graph', async (t) => {
   const modulePath = path.resolve(
     __dirname,
     '../src/components/experiments/ComputationCard/ComputationCard'
@@ -39,9 +39,9 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
     '../src/components/experiments/ComputationCard/ComputationCard.js'
   );
   const refetchCalls: string[] = [];
-  const statusChanges: any[] = [];
   const stopCalls: any[] = [];
-  const apolloQueries: any[] = [];
+  const enqueueCalls: any[] = [];
+  const pauseCalls: any[] = [];
 
   const state = stubReactHooks(t, compiledFile);
   stubResolvedModule(t, compiledFile, 'react-router-dom', {
@@ -57,20 +57,6 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
     useQuery: () => ({ data: null, loading: false, error: null }),
     useLazyQuery: () => [() => undefined, { data: null, loading: false, error: null }],
     useSuspenseQuery: () => ({ data: null }),
-    useApolloClient: () => ({
-      query: async (options: any) => {
-        apolloQueries.push(options);
-        return {
-          data: {
-            pipelines: [
-              { _id: 'local-1', status: 'idle' },
-              { _id: 'local-2', status: 'running' },
-              { _id: 'local-3', status: 'completed' },
-            ],
-          },
-        };
-      },
-    }),
   });
   stubResolvedModule(t, compiledFile, 'reactflow', {
     __esModule: true,
@@ -163,6 +149,27 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
               cores: 12,
             },
           },
+          // An idle and a running run, so both bulk actions have something to count.
+          {
+            _id: 'run-2',
+            pathNodeIds: ['node-1', 'node-3'],
+            pathNodes: [],
+            status: 'idle',
+            queue: 'local',
+            createdAt: '2026-04-10T10:00:00Z',
+            updatedAt: '2026-04-10T10:00:00Z',
+            history: [],
+          },
+          {
+            _id: 'run-3',
+            pathNodeIds: ['node-1', 'node-4'],
+            pathNodes: [],
+            status: 'running',
+            queue: 'local',
+            createdAt: '2026-04-10T10:00:00Z',
+            updatedAt: '2026-04-10T10:00:00Z',
+            history: [],
+          },
         ],
       },
       loading: false,
@@ -170,8 +177,15 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
       refetch: async () => refetchCalls.push('runs'),
     }),
     useEnqueueExperimentRunsMutation: () => [
-      async () => undefined,
+      async (options: any) => {
+        enqueueCalls.push(options);
+      },
       { loading: false, error: null },
+    ],
+    usePauseExperimentRunsMutation: () => [
+      async (options: any) => {
+        pauseCalls.push(options);
+      },
     ],
     useStopExperimentRunMutation: () => [
       async (options: any) => {
@@ -186,47 +200,78 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
       return React.createElement('result-modal', props);
     },
   });
+  stubResolvedModule(t, compiledFile, './components/CompareModal/CompareModal', {
+    __esModule: true,
+    default: function CompareModal(props: any) {
+      return React.createElement('compare-modal', props);
+    },
+  });
   stubResolvedModule(t, compiledFile, './components', {
     ChangePipelineStatusButton: function ChangePipelineStatusButton(props: any) {
       return React.createElement('change-pipeline-status-button', props, props.children);
     },
   });
-  stubResolvedModule(
-    t,
-    compiledFile,
-    './components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus',
-    {
-      useChangePipelineStatusMutation: () => [
-        async (options: any) => {
-          statusChanges.push(options);
-          return { data: { changePipelineStatus: true } };
-        },
-      ],
-    }
-  );
+
+  const confirmQuestions: string[] = [];
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      confirm: (question: string) => {
+        confirmQuestions.push(question);
+        return true;
+      },
+    },
+  });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else delete (globalThis as typeof globalThis & { window?: unknown }).window;
+  });
 
   const module =
     loadFreshModule<typeof import('../src/components/experiments/ComputationCard/ComputationCard')>(
       modulePath
     );
   const tree = module.default({});
-  const actionButton = findElements(tree, (element) => element.type === 'button').find((element) =>
-    Array.isArray(element.props.children)
-      ? element.props.children.includes('Перекинути все в очікування')
-      : element.props.children === 'Перекинути все в очікування'
-  );
+  const buttonWithText = (text: string) =>
+    findElements(tree, (element) => element.type === 'button').find((element) =>
+      [element.props.children].flat().includes(text)
+    );
   const dataTable = findElement(tree, (element) => getElementName(element) === 'DataTable');
   const reactFlow = findElement(tree, (element) => getElementName(element) === 'ReactFlow');
 
-  await actionButton!.props.onClick();
+  // "Queue all idle" and "Stop all" act on the selected queue and ask first, with the count.
+  await buttonWithText('Поставити всі очікувані в чергу')!.props.onClick();
+  await buttonWithText('Зупинити все')!.props.onClick();
+  assert.deepEqual(enqueueCalls, [
+    { variables: { input: { experimentId: 'exp-1', queue: 'local', runAll: true } } },
+  ]);
+  assert.deepEqual(pauseCalls, [{ variables: { experimentId: 'exp-1', queue: 'local' } }]);
+  assert.equal(confirmQuestions.length, 2);
+  assert.ok(confirmQuestions.every((question) => question.endsWith(': 1')));
+
+  // Re-run is offered on the newest completed run of a path and sends the rerun flag.
+  const completed = dataTable!.props.data[0];
+  const completedActions = dataTable!.props.columns[4].cell({ row: { original: completed } });
+  await findElement(
+    completedActions,
+    (element) => typeof element.props?.onClick === 'function'
+  )!.props.onClick();
+  assert.deepEqual(enqueueCalls[1], {
+    variables: {
+      input: { experimentId: 'exp-1', queue: 'local', pipelineId: 'run-1', rerun: true },
+    },
+  });
 
   dataTable!.props.columns[1].cell({
     row: { original: { status: 'idle' } },
   });
   const resultsCell = dataTable!.props.columns[2].cell({
-    row: { original: { _id: 'run-1' }, index: 0 },
+    row: { original: { _id: 'run-1', status: 'completed' }, index: 0 },
   });
   findElement(resultsCell, (element) => element.type === 'button')!.props.onClick();
+  // Completed runs can be ticked for the side-by-side comparison.
+  findElement(resultsCell, (element) => element.type === 'input')!.props.onChange();
   dataTable!.props.columns[3].cell({
     row: { original: { history: [{ message: 'done' }] } },
   });
@@ -235,25 +280,27 @@ test('ComputationCard moves local runs to waiting, renders table actions, and pr
   });
   // Stop on a running run is an explicit stopExperimentRun, not a generic status change.
   const runningActions = dataTable!.props.columns[4].cell({
-    row: { original: { status: 'running', _id: 'run-2' } },
+    row: { original: { status: 'running', _id: 'run-3' } },
   });
   await findElement(
     runningActions,
     (element) => typeof element.props?.onClick === 'function'
   )!.props.onClick();
-  assert.deepEqual(stopCalls, [{ variables: { input: { runId: 'run-2' } } }]);
+  assert.deepEqual(stopCalls, [{ variables: { input: { runId: 'run-3' } } }]);
 
-  assert.equal(apolloQueries[0].variables.queue, 'local');
-  assert.equal(statusChanges.length, 2);
-  assert.deepEqual(refetchCalls, ['runs', 'experiment']);
+  assert.ok(refetchCalls.includes('runs') && refetchCalls.includes('experiment'));
   assert.equal(reactFlow!.props.edges[0].style.stroke, '#22c55e');
   assert.ok(state.calls.some((call) => call.index === 1 && call.value === 'run-1'));
   assert.ok(
     state.calls.some(
       (call) =>
-        call.index === 3 &&
-        typeof call.value === 'string' &&
-        String(call.value).includes('переведено в очікування')
+        call.index === 3 && Array.isArray(call.value) && (call.value as string[]).includes('run-1')
+    )
+  );
+  assert.ok(
+    state.calls.some(
+      (call) =>
+        call.index === 5 && typeof call.value === 'string' && String(call.value).includes('Готово')
     )
   );
 });

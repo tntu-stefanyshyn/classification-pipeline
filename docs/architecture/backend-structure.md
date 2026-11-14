@@ -18,7 +18,7 @@ Use this structure for new code in `backend/src`:
   - `utils/`: feature-specific helpers (for example `buildGraphPaths`).
 - `graphql/`: app-level resolvers not tied to a feature (`health`, server info).
 - `config/`: configuration only.
-- `migrations/`: data migrations. Each runs once; applied names are stored in the `applied_migrations` collection. See [Database conventions](database-conventions.md).
+- `migrations/`: data migrations. Each runs once; applied names are stored in the `applied_migrations` collection (class in `migrations/classes/`, model in `migrations/models/`). See [Database conventions](database-conventions.md).
 - `seeders/`: initial data (for example the technology catalog).
 - `mermaid/`: entity-relationship diagrams of the data model (Mermaid sources).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.

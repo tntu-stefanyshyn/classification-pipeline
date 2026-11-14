@@ -7,7 +7,8 @@ import { PipelineModel } from '../core/pipeline/models/PipelineModel';
 import { createWorkflowReadIndexes, WorkflowModel } from '../core/workflow/model/WorkflowModel';
 import { ExperimentModel } from '../modules/experiments/models/ExperimentModel';
 import { UploadedFileModel } from '../modules/files/models/UploadedFileModel';
-import { AppliedMigrationModel } from './AppliedMigration';
+import { sleep } from '../utils';
+import { AppliedMigrationModel } from './models/AppliedMigrationModel';
 import { runMigrations } from './index';
 
 // The registry and the index definitions only prove themselves against a real MongoDB.
@@ -107,6 +108,63 @@ test(
     assert.equal(await AppliedMigrationModel.countDocuments({ name: 'shared' }), 1);
     const indexes = await AppliedMigrationModel.listIndexes();
     assert.ok(indexes.some(({ key, unique }) => JSON.stringify(key) === '{"name":1}' && unique));
+  }
+);
+
+test(
+  'a batch that outlasts the lease keeps the lock, so no other backend runs its migration',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const slow = {
+      name: 'slow',
+      calls: 0,
+      run: async () => {
+        slow.calls += 1;
+        await sleep(1200);
+        return 1;
+      },
+    };
+
+    // A 300 ms lease: the batch crosses it four times, and the waiting backend polls past it.
+    await Promise.all([runMigrations([slow], 300), runMigrations([slow], 300)]);
+
+    assert.equal(slow.calls, 1);
+    assert.equal(await AppliedMigrationModel.countDocuments({ name: 'slow' }), 1);
+  }
+);
+
+test(
+  'a backend whose lock was taken over stops before the next migration and keeps its hands off the lock',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const locks = mongoose.connection.collection<{ _id: string; expiresAt: Date }>(
+      'migration_lock'
+    );
+    const takeoverExpiresAt = new Date(Date.now() + 60_000);
+    const stalled = {
+      name: 'stalled',
+      calls: 0,
+      run: async () => {
+        stalled.calls += 1;
+        // Another backend takes the lock over while this one runs; the heartbeat must notice.
+        await locks.updateOne({ _id: 'migrations' }, { $set: { expiresAt: takeoverExpiresAt } });
+        await sleep(400);
+        return 1;
+      },
+    };
+    const next = counting('next');
+
+    await assert.rejects(() => runMigrations([stalled, next], 300), /taken over/);
+
+    assert.equal(next.calls, 0);
+    // The migration that finished is recorded; the new owner's lock is still theirs.
+    assert.equal(await AppliedMigrationModel.countDocuments({ name: 'stalled' }), 1);
+    assert.deepEqual(await locks.findOne({ _id: 'migrations' }), {
+      _id: 'migrations',
+      expiresAt: takeoverExpiresAt,
+    });
   }
 );
 

@@ -44,13 +44,15 @@ A migration is a `{ name, run }` object in `backend/src/migrations`, added to th
 - `runMigrations` runs at startup, after the database connects. It first creates the unique index
   on `applied_migrations.name`, then takes a lock (one document in `migration_lock`, a 5-minute
   lease) so only one backend runs migrations at a time; the others wait and then skip what the
-  first recorded. It skips every migration whose `name` is already in `applied_migrations`. After a
+  first recorded. The owner renews the lease every 100 seconds while it runs, so a batch of any
+  length keeps the lock; a backend that dies holding it blocks the others for at most 5 minutes. It skips every migration whose `name` is already in `applied_migrations`. After a
   successful run the name and `appliedAt` are stored, so a migration that throws runs again on the
   next start. The lock is released when `runMigrations` ends, also on failure.
 - Never rename a migration that has shipped: the new name would run again.
 - Still write each migration to change nothing on a second run. It can run twice when the backend
-  stops between `run` and the record, or when one migration outlasts the 5-minute lock lease (there
-  is no heartbeat) and another backend takes over.
+  stops between `run` and the record, or when a backend is frozen for longer than the lease (a
+  stalled process, not a slow migration) and another one takes the lock over. The frozen one finds
+  that out on its next renewal and stops before the next migration.
 - Use a raw collection or `updateMany` with a filter that matches only unmigrated documents, and
   cover it with a `*.mongo.test.ts` test (see `PipelineHistoryStatus.mongo.test.ts`).
 - Databases created before the registry existed have an empty `applied_migrations`: every listed

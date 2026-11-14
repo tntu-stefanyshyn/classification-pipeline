@@ -168,6 +168,20 @@ test('pausing moves queued and running runs to idle and cancels cloud jobs', asy
   assert.equal(queued.status, PipelineStatus.idle);
 });
 
+test('stop all of one queue leaves the other queue untouched', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const local = createRun({ experimentId, status: PipelineStatus.running });
+  const cloud = createRun({ experimentId, queue: ComputationQueue.cloud });
+  installStore(t, [local, cloud]);
+  const { manager } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, ComputationQueue.local);
+
+  assert.equal(paused.length, 1);
+  assert.equal(local.status, PipelineStatus.idle);
+  assert.equal(cloud.status, PipelineStatus.queued);
+});
+
 test('resuming re-queues the paused runs so workers can claim them again', async (t) => {
   const experimentId = new Types.ObjectId();
   const first = createRun({ experimentId });

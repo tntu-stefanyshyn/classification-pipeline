@@ -1,7 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useMemo, useState, type FC } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useApolloClient } from '@apollo/client';
 import ReactFlow from 'reactflow';
 import { DataTable } from '../../ui/DataTable';
 import {
@@ -24,18 +23,15 @@ import { buildGraphPaths } from '../../pages/ExperimentDetailsPage/utils/buildGr
 import {
   useEnqueueExperimentRunsMutation,
   useExperimentQuery,
+  usePauseExperimentRunsMutation,
   usePipelinesQuery,
   useStopExperimentRunMutation,
 } from '../../pages/ExperimentDetailsPage/graphql';
 import ResultModal from './components/ResultModal/ResultModal';
-import {
-  PipelinesDocument,
-  type PipelinesQuery,
-  type PipelinesQueryVariables,
-} from '../../../graphql/queries/generated/pipelines';
+import CompareModal from './components/CompareModal/CompareModal';
+import { type PipelinesQuery } from '../../../graphql/queries/generated/pipelines';
 import { ChangePipelineStatusButton } from './components';
 import { Button } from '../../ui/Button';
-import { useChangePipelineStatusMutation } from './components/ChangePipelineStatusButton/graphql/mutations/generated/ChangePipelineStatus';
 import { useI18n } from '../../../i18n';
 import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
 
@@ -85,9 +81,17 @@ const ComputationCard: FC = () => {
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();
-  const [changePipelineStatus] = useChangePipelineStatusMutation();
-  const apolloClient = useApolloClient();
-  const [movingToWaiting, setMovingToWaiting] = useState(false);
+  const [pauseRuns] = usePauseExperimentRunsMutation();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
+  // Keeps the two most recent picks, so a third click replaces the oldest one.
+  const toggleCompare = (pipelineId: string) =>
+    setCompareIds((ids) =>
+      ids.includes(pipelineId)
+        ? ids.filter((x) => x !== pipelineId)
+        : [...ids, pipelineId].slice(-2)
+    );
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const runs = runsData?.pipelines ?? [];
 
@@ -195,48 +199,51 @@ const ComputationCard: FC = () => {
     return map;
   }, [graphPaths, runsByPath]);
 
-  const handleMoveAllLocalToWaiting = async () => {
+  // Bulk actions work on the selected queue; the counts come from the latest polled list and the
+  // backend skips runs that changed meanwhile.
+  const handleBulk = async (kind: 'queue' | 'stop') => {
     if (!id) return;
+    const affected = runs.filter((run) =>
+      kind === 'queue'
+        ? run.status === PipelineStatus.idle
+        : run.status === PipelineStatus.queued || run.status === PipelineStatus.running
+    ).length;
+    const m = messages.computationCard;
+    if (affected === 0) {
+      setActionStatus(m.bulkNothing);
+      return;
+    }
+    const queueName = messages.statuses.computationQueue[activeQueue];
+    const question = kind === 'queue' ? m.queueAllConfirm : m.stopAllConfirm;
+    if (!window.confirm(`${question} (${queueName}): ${affected}`)) return;
 
-    setMovingToWaiting(true);
+    setBulkBusy(true);
     try {
-      const localRunsResult = await apolloClient.query<PipelinesQuery, PipelinesQueryVariables>({
-        query: PipelinesDocument,
-        variables: { experimentId: id, queue: ComputationQueue.local },
-        fetchPolicy: 'network-only',
-      });
-      const localRunsToMove = (localRunsResult.data?.pipelines ?? []).filter(
-        (run) => run.status === PipelineStatus.idle || run.status === PipelineStatus.running
-      );
-
-      if (localRunsToMove.length === 0) {
-        setActionStatus(messages.computationCard.noLocalRuns);
-        return;
+      if (kind === 'queue') {
+        await enqueueRuns({
+          variables: { input: { experimentId: id, queue: activeQueue, runAll: true } },
+        });
+      } else {
+        await pauseRuns({ variables: { experimentId: id, queue: activeQueue } });
       }
-
-      await Promise.all(
-        localRunsToMove.map((run) =>
-          changePipelineStatus({
-            variables: {
-              input: {
-                pipelineId: run._id,
-                status: PipelineStatus.queued,
-                message: messages.computationCard.movedToWaiting,
-              },
-            },
-          })
-        )
-      );
-
-      setActionStatus(`${messages.computationCard.waitingResult}: ${localRunsToMove.length}.`);
+      setActionStatus(`${m.bulkDone}: ${affected}.`);
       await Promise.all([refetchRuns(), refetch()]);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : messages.computationCard.unknownError;
-      setActionStatus(`${messages.computationCard.waitingError}: ${message}`);
+      setActionStatus(`${m.bulkError}: ${error instanceof Error ? error.message : m.unknownError}`);
     } finally {
-      setMovingToWaiting(false);
+      setBulkBusy(false);
     }
+  };
+
+  const handleRerun = async (pipelineId: string) => {
+    const m = messages.computationCard;
+    if (experiment?.status === ExperimentStatus.completed && !window.confirm(m.rerunWarning)) {
+      return;
+    }
+    await enqueueRuns({
+      variables: { input: { experimentId: id, queue: activeQueue, pipelineId, rerun: true } },
+    });
+    await Promise.all([refetchRuns(), refetch()]);
   };
 
   const pathTableColumns = [
@@ -288,25 +295,36 @@ const ComputationCard: FC = () => {
       }: {
         row: { index: number; original: PipelinesQuery['pipelines'][number] };
       }) => (
-        <button
-          className="btn ghost small icon"
-          type="button"
-          onClick={() => setResultsPathId(row.original._id)}
-          aria-label={messages.computationCard.resultAria(row.index + 1)}
-          title={messages.computationCard.results}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
-            <path
-              d="M12 11v5"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeWidth="1.6"
+        <div className="table-actions">
+          {row.original.status === PipelineStatus.completed && (
+            <input
+              type="checkbox"
+              checked={compareIds.includes(row.original._id)}
+              onChange={() => toggleCompare(row.original._id)}
+              aria-label={messages.computationCard.compareSelect}
+              title={messages.computationCard.compareSelect}
             />
-            <circle cx="12" cy="8" r="1.1" fill="currentColor" />
-          </svg>
-        </button>
+          )}
+          <button
+            className="btn ghost small icon"
+            type="button"
+            onClick={() => setResultsPathId(row.original._id)}
+            aria-label={messages.computationCard.resultAria(row.index + 1)}
+            title={messages.computationCard.results}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              <path
+                d="M12 11v5"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeWidth="1.6"
+              />
+              <circle cx="12" cy="8" r="1.1" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
       ),
     },
     {
@@ -335,6 +353,28 @@ const ComputationCard: FC = () => {
                 </svg>
               </ChangePipelineStatusButton>
             )}
+            {/* Only the newest run of a path: an older row would re-run a path that may already be queued. */}
+            {status === PipelineStatus.completed &&
+              runsByPath.get(row.original.pathNodeIds.join('.'))?.[0]?._id === _id &&
+              canStartComputations &&
+              !actionBusy && (
+                <Button
+                  className="icon"
+                  onClick={() => handleRerun(_id)}
+                  title={messages.computationCard.rerun}
+                  aria-label={messages.computationCard.rerun}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </Button>
+              )}
             {canStop && (
               // An explicit Stop: the backend no longer ends a running run via changePipelineStatus.
               <Button
@@ -435,16 +475,33 @@ const ComputationCard: FC = () => {
     <section className="card data-card">
       <header className="card-head">
         <h3>{messages.computationCard.pipelinesTitle}</h3>
-        <button
-          className="btn ghost small"
-          type="button"
-          onClick={handleMoveAllLocalToWaiting}
-          disabled={movingToWaiting || !id}
-        >
-          {movingToWaiting
-            ? messages.computationCard.moving
-            : messages.computationCard.moveToWaiting}
-        </button>
+        <div className="table-actions">
+          <button
+            className="btn ghost small"
+            type="button"
+            onClick={() => setComparing(true)}
+            disabled={compareIds.length !== 2}
+          >
+            {messages.computationCard.compare} ({compareIds.length}/2)
+          </button>
+          <button
+            className="btn ghost small"
+            type="button"
+            onClick={() => handleBulk('queue')}
+            disabled={bulkBusy || !id || !canStartComputations}
+            title={runBlocker ?? undefined}
+          >
+            {messages.computationCard.queueAllIdle}
+          </button>
+          <button
+            className="btn ghost small"
+            type="button"
+            onClick={() => handleBulk('stop')}
+            disabled={bulkBusy || !id}
+          >
+            {messages.computationCard.stopAll}
+          </button>
+        </div>
       </header>
       {!graph && <p className="muted">{messages.computationCard.graphMissing}</p>}
       {graph && (
@@ -559,6 +616,9 @@ const ComputationCard: FC = () => {
       )}
 
       <ResultModal resultsPathId={resultsPathId} onClose={() => setResultsPathId(null)} />
+      {comparing && compareIds.length === 2 && (
+        <CompareModal ids={compareIds} onClose={() => setComparing(false)} />
+      )}
     </section>
   );
 };

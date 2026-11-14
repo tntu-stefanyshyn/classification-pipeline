@@ -35,6 +35,8 @@ import { ExperimentManager } from '../../experiments/services/ExperimentManager'
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { executionFilter } from '../../../core/pipeline/executionFilter';
 
+const UNCOMPUTED_PIPELINES = 'There are uncomuted pipelines.';
+
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
   private batchClient: BatchClient | null = null;
@@ -101,7 +103,7 @@ export class ComputationManager {
     ]);
 
     if (uncomputedPipeline) {
-      throw new Error('There are uncomuted pipelines.');
+      throw new Error(UNCOMPUTED_PIPELINES);
     }
 
     if (canEnterOptimization) {
@@ -183,7 +185,7 @@ export class ComputationManager {
 
     let pipelineIds: Types.ObjectId[] = [];
     if (runAll) {
-      const pipelines = await PipelineBaseService.listByExperiment(experimentId);
+      const pipelines = await PipelineBaseService.listByExperiment(experimentId, input.queue);
       pipelineIds = pipelines.map((e) => e._id);
     } else if (pipelineId) {
       // The caller was checked against experimentId, so the pipeline has to belong to it.
@@ -191,7 +193,7 @@ export class ComputationManager {
       if (String(pipeline.experimentId) !== String(experimentId)) {
         throw new Error('Конвеєр не знайдено');
       }
-      pipelineIds = [pipeline._id];
+      pipelineIds = [input.rerun ? await this.prepareRerun(pipeline) : pipeline._id];
     }
 
     const idlePipelineIds = (
@@ -214,6 +216,55 @@ export class ComputationManager {
         })
       )
     );
+  }
+
+  /**
+   * A re-run is a new run of the same path, so the finished one stays for comparison. Returns the
+   * run to queue: the source itself unless it is completed, or the run of this path that is already
+   * waiting or running, so a second click creates nothing.
+   * shortcut: two simultaneous first clicks can both pass the sibling check, add a unique index if it matters.
+   */
+  private async prepareRerun(source: Pipeline): Promise<Types.ObjectId> {
+    const statusOf = async (run: Pipeline) =>
+      (await this.workflowManager.getWorkflow({ instanceId: run._id, type: WorkflowType.PIPELINE }))
+        .status;
+    if ((await statusOf(source)) !== PipelineStatus.completed) return source._id;
+
+    const sameRuns = await PipelineModel.find({
+      experimentId: source.experimentId,
+      queue: source.queue,
+      pathNodeIds: source.pathNodeIds,
+    }).lean();
+    for (const run of sameRuns) {
+      if ((await statusOf(run)) !== PipelineStatus.completed) return run._id;
+    }
+
+    const experimentWorkflow = await this.workflowManager.getWorkflow({
+      instanceId: source.experimentId,
+      type: WorkflowType.EXPERIMENT,
+    });
+    if (experimentWorkflow.status === ExperimentStatus.optimization) {
+      throw new Error('Перезапуск недоступний під час оптимізації.');
+    }
+    if (experimentWorkflow.status === ExperimentStatus.completed) {
+      await this.experimentManager.changeStatus({
+        experimentId: source.experimentId,
+        status: ExperimentStatus.computing,
+      });
+    }
+
+    const created = await PipelineModel.create({
+      graphStructureId: source.graphStructureId,
+      queue: source.queue,
+      pathNodeIds: source.pathNodeIds,
+      experimentId: source.experimentId,
+    });
+    await this.workflowManager.create({
+      instanceId: created._id,
+      status: PipelineStatus.idle,
+      type: WorkflowType.PIPELINE,
+    });
+    return created._id;
   }
 
   async stopRun(pipelineId: string): Promise<Pipeline> {
@@ -370,6 +421,7 @@ export class ComputationManager {
       { $set: { computingResult: result } }
     );
     if (await this.finishExecution(pipelineId, execution, PipelineStatus.completed, message)) {
+      void this.reoptimizeAfterRerun(pipelineId);
       return true;
     }
     const alreadyCompleted = await WorkflowModel.exists({
@@ -386,6 +438,30 @@ export class ComputationManager {
       { $unset: { computingResult: '' } }
     );
     return false;
+  }
+
+  /**
+   * An optimized experiment that a re-run reopened (`computing` with a best pipeline left from the
+   * last optimization) is optimized again when its last run completes. `optimize` itself refuses
+   * while a run is unfinished, so earlier completions do nothing.
+   * shortcut: two last runs completing at the same instant could both start it; add a lock if seen.
+   */
+  private async reoptimizeAfterRerun(pipelineId: Types.ObjectId) {
+    try {
+      const pipeline = await PipelineModel.findById(pipelineId).lean();
+      if (!pipeline) return;
+      const experiment = await ExperimentModel.findById(pipeline.experimentId).lean();
+      if (!experiment?.optimization?.bestPipelineId) return;
+      const { status } = await this.workflowManager.getWorkflow({
+        instanceId: pipeline.experimentId,
+        type: WorkflowType.EXPERIMENT,
+      });
+      if (status !== ExperimentStatus.computing) return;
+      await this.optimize(pipeline.experimentId);
+    } catch (error) {
+      if (error instanceof Error && error.message === UNCOMPUTED_PIPELINES) return;
+      console.error('Automatic re-optimization failed', error);
+    }
   }
 
   /** Returns false when the report belongs to an execution that is no longer current. */
@@ -430,7 +506,10 @@ export class ComputationManager {
     return PipelineBaseService.getById(runId);
   }
 
-  async pauseExperimentRuns(experimentId: ObjectIdOrString): Promise<Pipeline[]> {
+  async pauseExperimentRuns(
+    experimentId: ObjectIdOrString,
+    queue?: ComputationQueue
+  ): Promise<Pipeline[]> {
     const runs = await WorkflowModel.aggregate<Pipeline>([
       {
         $match: {
@@ -448,7 +527,7 @@ export class ComputationManager {
       },
       { $unwind: '$pipeline' },
       { $replaceRoot: { newRoot: '$pipeline' } },
-      { $match: { experimentId: stringIdToObjectId(experimentId) } },
+      { $match: { experimentId: stringIdToObjectId(experimentId), ...(queue ? { queue } : {}) } },
     ]);
 
     if (runs.length === 0) return [];

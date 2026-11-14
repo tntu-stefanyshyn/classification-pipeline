@@ -166,7 +166,7 @@ colors each pipeline by its status:
   stopped computation can keep using your computer for a few minutes before it ends (seen with
   Docker Desktop on Windows). The result of a stopped run is not saved.
 - **Pause and resume:** the application has no pause or resume button, so you cannot pause the
-  queued pipelines of an experiment. The backend API has the operations `pauseExperimentRuns` (it
+  queued pipelines of an experiment. In the pipelines table, the "Queue all idle" and "Stop all" buttons act on the selected queue (Local or Cloud) after a confirmation that shows the number of pipelines, and the "Run again" button on a completed row starts a new run of that path while keeping the old result. If the experiment is already optimized, a warning says the optimization result will be recalculated; it starts by itself when the last re-run finishes. To compare two runs, tick the checkbox next to two completed pipelines and press "Compare runs": the window shows their settings, the mean and per-fold metrics with the difference, and both confusion matrices side by side, with differences highlighted. The backend API has the operations `pauseExperimentRuns` (it
   returns the queued and running pipelines to **Idle**) and `resumeExperimentRuns` (it queues the
   idle pipelines again), but the interface does not use them. To interrupt the work, stop the running
   pipeline and start it later with the play button.

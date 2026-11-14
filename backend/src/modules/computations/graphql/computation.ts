@@ -63,11 +63,12 @@ export class ComputationResolver {
   @Mutation(() => [Pipeline])
   async pauseExperimentRuns(
     @Arg('experimentId', () => ID) experimentId: string,
-    @Ctx() context: GraphQLContext
+    @Ctx() context: GraphQLContext,
+    @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
   ): Promise<Pipeline[]> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, experimentId);
-    return this.manager.pauseExperimentRuns(experimentId);
+    return this.manager.pauseExperimentRuns(experimentId, queue);
   }
 
   @Mutation(() => [Pipeline])

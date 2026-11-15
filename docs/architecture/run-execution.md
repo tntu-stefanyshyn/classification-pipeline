@@ -75,8 +75,8 @@ Details and the guarantees are in [Claiming runs](../domain/experiments.md#claim
 
 ## Optimization
 
-1. The user calls `optimizeExperimentRuns` on an experiment in `computing` or `completed`. The backend checks the graph metrics and that **every** pipeline of the experiment is `completed`.
-2. The experiment moves to `optimization`, and `OptimizationRunner` starts the `aws-jobs-optimization` container on the backend host. It sends the payload (experiment id, backend URL, service token, minutes per pipeline) on stdin.
+1. The user calls `optimizeExperimentRuns` on an experiment in `computing` or `completed`. The backend checks the graph metrics and that **every** pipeline of the experiment is `completed`. The call is also accepted on an experiment that is already in `optimization` when `experiment.optimization.status` is no longer `optimizing`, for example `failed` after the container reported an error. This is the retry path: the experiment does not move to `optimization` again, the backend runs the container again, and the experiment moves to `completed` when it succeeds. While the optimization status is `optimizing` the call is refused.
+2. The experiment moves to `optimization` (not on a retry), and `OptimizationRunner` starts the `aws-jobs-optimization` container on the backend host. It sends the payload (experiment id, backend URL, service token, minutes per pipeline) on stdin.
 3. The container reads the experiment and all its pipelines through GraphQL, normalizes the metric values of the pipelines, ranks them with the metric weights, and reports through `updateExperimentProgress`, `updatePipelineOptimization` (a score for each pipeline) and `updateExperimentOptimizationResult` (the best pipeline and its score).
 4. When the container exits successfully the experiment moves to `completed`. The call to `optimizeExperimentRuns` returns only then, with the result. The time limit of the container is the minutes per pipeline multiplied by the number of paths.
 

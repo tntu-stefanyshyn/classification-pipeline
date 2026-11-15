@@ -17,13 +17,13 @@ how the desktop constructor and the experiment details page apply them.
 
 ## Experiment status lifecycle
 
-| Status         | Meaning                                                                                   |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| `creating`     | Default state after creation.                                                             |
-| `configuring`  | Set when graph nodes, graph settings or the computation mode are updated.                 |
-| `computing`    | Set when computations are started. One pipeline is generated per path and selected queue. |
-| `optimization` | Set while the optimization job runs, after the pipelines are computed.                    |
-| `completed`    | Set when optimization has finished.                                                       |
+| Status         | Meaning                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| `creating`     | Default state after creation.                                                                                   |
+| `configuring`  | Set when the name, description, attached file, graph nodes, graph settings or the computation mode are updated. |
+| `computing`    | Set when computations are started. One pipeline is generated per path and selected queue.                       |
+| `optimization` | Set while the optimization job runs, after the pipelines are computed.                                          |
+| `completed`    | Set when optimization has finished.                                                                             |
 
 Allowed transitions: `creating → configuring → computing → optimization → completed`, and
 `completed → optimization` (optimization can be run again). The diagram and what each transition

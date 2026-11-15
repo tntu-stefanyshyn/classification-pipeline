@@ -26,11 +26,17 @@ sequenceDiagram
         B-->>W: run with executionId, or nothing
     end
 
-    W->>C: docker run (pipelineId, executionId, backend URL, token)
+    W->>C: start the job: docker run, or SubmitJob for AWS Batch (pipelineId, executionId, backend URL, token)
     C->>B: query pipeline and experiment (service token)
-    C->>B: query signedDownloadUrl(fileId)
-    B-->>C: presigned URL
-    C->>S: GET dataset
+
+    alt Docker workers: the payload has no dataset location
+        C->>B: query signedDownloadUrl(fileId)
+        B-->>C: presigned URL
+        C->>S: GET dataset through the presigned URL
+    else AWS Batch: the payload has the S3 bucket and key of the dataset
+        C->>S: GET dataset directly with the job role
+    end
+
     C->>C: run the path stages and the classifier
     C->>B: updatePipelineProgress(pipelineId, executionId, progress, message)
 

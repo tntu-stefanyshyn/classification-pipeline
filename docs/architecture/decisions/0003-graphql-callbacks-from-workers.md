@@ -8,7 +8,7 @@ Compute and optimization jobs run in containers on the user's machine, on the ba
 
 ## Decision
 
-Containers do not use MongoDB. They call the backend's GraphQL API with the service token: they read the pipeline, the experiment and a presigned dataset URL, and report with `updatePipelineProgress`, `completePipeline`, `updatePipelineOptimization`, `updateExperimentProgress` and `updateExperimentOptimizationResult`. A failure ends with a non-zero exit code, which the worker turns into `failExperimentRun`.
+Containers do not use MongoDB. They call the backend's GraphQL API with the service token: they read the pipeline and the experiment, and (outside AWS Batch, where the payload names the dataset in S3 and the job reads it directly) a presigned dataset URL, and report with `updatePipelineProgress`, `completePipeline`, `updatePipelineOptimization`, `updateExperimentProgress` and `updateExperimentOptimizationResult`. A failure ends with a non-zero exit code, which the worker turns into `failExperimentRun`.
 
 ## Rationale
 

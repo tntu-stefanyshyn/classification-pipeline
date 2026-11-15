@@ -53,7 +53,7 @@ sequenceDiagram
 2. changes the workflow `queued → running` with a conditional update that also stores the `executionId` (and `machineHostname` for `local` runs);
 3. on a lost race or a duplicate hostname, moves to the next candidate or returns nothing.
 
-Details and the guarantees are in [Claiming runs](../domain/experiments.md#claiming-runs). Every later report carries the `executionId`, and the backend ignores reports of an execution that is no longer current. A run that was stopped and queued again therefore cannot be changed by the container of its earlier execution.
+Details and the guarantees are in [Claiming runs](../domain/experiments.md#claiming-runs). Every later report of the computation (`updatePipelineProgress`, `completePipeline`, `failExperimentRun`) carries the `executionId`, and the backend ignores reports of an execution that is no longer current. The optimization reports have no `executionId`. A run that was stopped and queued again therefore cannot be changed by the container of its earlier execution.
 
 ### Who executes
 

@@ -12,7 +12,7 @@ Containers do not use MongoDB. They call the backend's GraphQL API with the serv
 
 ## Rationale
 
-- **Confirmed:** the AWS guide states that the compute handler completes a pipeline through GraphQL callbacks and therefore needs `COMPUTE_BACKEND_URL`, which must be reachable from AWS. Every report carries the `executionId`, so the backend can ignore reports of an old execution.
+- **Confirmed:** the AWS guide states that the compute handler completes a pipeline through GraphQL callbacks and therefore needs `COMPUTE_BACKEND_URL`, which must be reachable from AWS. Every report of a pipeline computation (`updatePipelineProgress`, `completePipeline`, `failExperimentRun`) carries the `executionId`, so the backend can ignore reports of an old execution. The optimization mutations (`updatePipelineOptimization`, `updateExperimentProgress`, `updateExperimentOptimizationResult`) carry no `executionId` and have no such guarantee.
 - **Assumed:** all status rules stay in one place (the backend) and containers need no database credentials. The original reasoning is not recorded.
 
 ## Consequences

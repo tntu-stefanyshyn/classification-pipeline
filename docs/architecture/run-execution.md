@@ -35,12 +35,12 @@ sequenceDiagram
     C->>B: updatePipelineProgress(pipelineId, executionId, progress, message)
 
     alt success
-        C->>B: completePipeline(result, executionId)
+        C->>B: completePipeline(pipelineId, payload, executionId)
         B->>DB: save the result, then running to completed
     else failure
         C->>B: updatePipelineProgress(pipelineId, executionId, error message)
         C-->>W: non-zero exit code
-        W->>B: failExperimentRun(executionId)
+        W->>B: failExperimentRun(runId, executionId)
         B->>DB: running to idle
     end
 ```

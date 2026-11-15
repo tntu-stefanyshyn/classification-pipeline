@@ -35,7 +35,9 @@ Only the owner of the experiment can download it. The request carries the user J
 is not signed in gets nothing. The desktop app downloads the report with `fetch` and saves the
 response as a file (`ReportDownloadButton`). On a `401` it refreshes the session the request was
 sent in, as for an `UNAUTHENTICATED` GraphQL answer, and requests the report once more with the
-new access token; it shows the sign-in error only when the session cannot be refreshed.
+new access token; it shows the sign-in error only when the session has expired. When the refresh
+fails for another reason and the session is kept, it asks to try again instead. A report that
+arrives after the user signed out or signed in again is not saved.
 
 Responses:
 

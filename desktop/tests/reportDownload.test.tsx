@@ -61,7 +61,7 @@ const useDownloadEnvironment = (
     loadFreshModule<
       typeof import('../src/components/experiments/ReportDownloadButton/utils/downloadExperimentReport')
     >(utilPath);
-  return { util, requests, saved, revoked, refreshes };
+  return { util, requests, saved, revoked, refreshes, session };
 };
 
 const pdfResponse = () =>
@@ -180,8 +180,56 @@ test('a refresh that cannot reach the backend rejects with its network error', a
   assert.equal(requests.length, 1);
 });
 
-const loadButton = (t: TestContext, respond: () => Promise<Response>) => {
-  const environment = useDownloadEnvironment(t, respond);
+test('a refresh that failed for now is a retryable error, not the 401', async (t) => {
+  const { util, requests, saved } = useDownloadEnvironment(
+    t,
+    async () => new Response('', { status: 401 }),
+    'expired-token',
+    async () => 'unavailable'
+  );
+
+  await assert.rejects(util.downloadExperimentReport('exp-1'), util.ReportSessionUnavailableError);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(saved, []);
+});
+
+test('a report that arrives after the session changed is not saved', async (t) => {
+  let deliver!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => (deliver = resolve));
+  const { util, saved, session } = useDownloadEnvironment(t, () => pending);
+
+  const download = util.downloadExperimentReport('exp-1');
+  // Signed out and in as another account while the report is still on its way.
+  session.generation += 1;
+  session.token = 'other-account-token';
+  deliver(pdfResponse());
+
+  await download;
+  await flush();
+  assert.deepEqual(saved, []);
+});
+
+test('a report whose body is still arriving when the session changes is not saved', async (t) => {
+  let deliverBody!: (blob: Blob) => void;
+  const body = new Promise<Blob>((resolve) => (deliverBody = resolve));
+  const { util, saved, session } = useDownloadEnvironment(
+    t,
+    async () => ({ ok: true, status: 200, blob: () => body }) as Response
+  );
+
+  const download = util.downloadExperimentReport('exp-1');
+  await flush();
+  session.generation += 1;
+  session.token = null;
+  deliverBody(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+
+  await download;
+  await flush();
+  assert.deepEqual(saved, []);
+});
+
+const loadButton = (t: TestContext, respond: () => Promise<Response>, refresh?: Refresh) => {
+  const environment = useDownloadEnvironment(t, respond, 'access-token', refresh);
   const state = createUseStateStub();
   stubResolvedModule(t, `${buttonPath}.js`, 'react', { ...React, useState: state.useState });
   const toasts: unknown[] = [];
@@ -243,5 +291,18 @@ test('the download button explains why the report was not downloaded', async (t)
     'Не вдалося сформувати звіт. Спробуйте ще раз.',
     'Немає звʼязку з сервером. Спробуйте пізніше.',
   ]);
+  assert.deepEqual(saved, []);
+});
+
+test('the download button asks to try again when the session was not refreshed for now', async (t) => {
+  const { Button, toasts, saved } = loadButton(
+    t,
+    async () => new Response('', { status: 401 }),
+    async () => 'unavailable'
+  );
+
+  await (Button({ experimentId: 'exp-1' }) as any).props.onClick();
+
+  assert.deepEqual(toasts, ['Зараз не вдалося поновити сеанс. Спробуйте ще раз.']);
   assert.deepEqual(saved, []);
 });

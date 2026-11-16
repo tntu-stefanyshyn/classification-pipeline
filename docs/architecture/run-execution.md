@@ -26,21 +26,27 @@ sequenceDiagram
         B-->>W: run with executionId, or nothing
     end
 
-    W->>C: docker run (pipelineId, executionId, backend URL, token)
+    W->>C: start the job: docker run, or SubmitJob for AWS Batch (pipelineId, executionId, backend URL, token)
     C->>B: query pipeline and experiment (service token)
-    C->>B: query signedDownloadUrl(fileId)
-    B-->>C: presigned URL
-    C->>S: GET dataset
+
+    alt Docker workers: the payload has no dataset location
+        C->>B: query signedDownloadUrl(fileId)
+        B-->>C: presigned URL
+        C->>S: GET dataset through the presigned URL
+    else AWS Batch: the payload has the S3 bucket and key of the dataset
+        C->>S: GET dataset directly with the job role
+    end
+
     C->>C: run the path stages and the classifier
     C->>B: updatePipelineProgress(pipelineId, executionId, progress, message)
 
     alt success
-        C->>B: completePipeline(result, executionId)
+        C->>B: completePipeline(pipelineId, payload, executionId)
         B->>DB: save the result, then running to completed
     else failure
         C->>B: updatePipelineProgress(pipelineId, executionId, error message)
         C-->>W: non-zero exit code
-        W->>B: failExperimentRun(executionId)
+        W->>B: failExperimentRun(runId, executionId)
         B->>DB: running to idle
     end
 ```
@@ -53,7 +59,7 @@ sequenceDiagram
 2. changes the workflow `queued → running` with a conditional update that also stores the `executionId` (and `machineHostname` for `local` runs);
 3. on a lost race or a duplicate hostname, moves to the next candidate or returns nothing.
 
-Details and the guarantees are in [Claiming runs](../domain/experiments.md#claiming-runs). Every later report carries the `executionId`, and the backend ignores reports of an execution that is no longer current. A run that was stopped and queued again therefore cannot be changed by the container of its earlier execution.
+Details and the guarantees are in [Claiming runs](../domain/experiments.md#claiming-runs). Every later report of the computation (`updatePipelineProgress`, `completePipeline`, `failExperimentRun`) carries the `executionId`, and the backend ignores reports of an execution that is no longer current. The optimization reports have no `executionId`. A run that was stopped and queued again therefore cannot be changed by the container of its earlier execution.
 
 ### Who executes
 
@@ -69,8 +75,8 @@ Details and the guarantees are in [Claiming runs](../domain/experiments.md#claim
 
 ## Optimization
 
-1. The user calls `optimizeExperimentRuns` on an experiment in `computing` or `completed`. The backend checks the graph metrics and that **every** pipeline of the experiment is `completed`.
-2. The experiment moves to `optimization`, and `OptimizationRunner` starts the `aws-jobs-optimization` container on the backend host. It sends the payload (experiment id, backend URL, service token, minutes per pipeline) on stdin.
+1. The user calls `optimizeExperimentRuns` on an experiment in `computing` or `completed`. The backend checks the graph metrics and that **every** pipeline of the experiment is `completed`. The call is also accepted on an experiment that is already in `optimization` when `experiment.optimization.status` is no longer `optimizing`, for example `failed` after the container reported an error. This is the retry path: the experiment does not move to `optimization` again, the backend runs the container again, and the experiment moves to `completed` when it succeeds. While the optimization status is `optimizing` the call is refused.
+2. The experiment moves to `optimization` (not on a retry), and `OptimizationRunner` starts the `aws-jobs-optimization` container on the backend host. It sends the payload (experiment id, backend URL, service token, minutes per pipeline) on stdin.
 3. The container reads the experiment and all its pipelines through GraphQL, normalizes the metric values of the pipelines, ranks them with the metric weights, and reports through `updateExperimentProgress`, `updatePipelineOptimization` (a score for each pipeline) and `updateExperimentOptimizationResult` (the best pipeline and its score).
 4. When the container exits successfully the experiment moves to `completed`. The call to `optimizeExperimentRuns` returns only then, with the result. The time limit of the container is the minutes per pipeline multiplied by the number of paths.
 

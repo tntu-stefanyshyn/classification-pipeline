@@ -17,7 +17,7 @@ Use this structure for new code in `backend/src`:
   - `graphql/`: GraphQL resolvers for the feature.
   - `utils/`: feature-specific helpers (for example `buildGraphPaths`).
 - `graphql/`: app-level resolvers not tied to a feature (`health`, server info).
-- `config/`: configuration only.
+- `config/`: configuration only: `config.ts`, the startup validation (`validateConfig.ts`) and its `classes/` and `constants/`.
 - `migrations/`: data migrations. All of them run on every start, so each must be idempotent.
 - `seeders/`: initial data (for example the technology catalog).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.

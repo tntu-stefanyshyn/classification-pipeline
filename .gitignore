@@ -127,3 +127,4 @@ aws-jobs/.pytest_cache/
 # Local tooling
 .ua/
 .claude/
+.vscode/

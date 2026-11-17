@@ -8,6 +8,7 @@ import { createWorkflowReadIndexes, WorkflowModel } from '../core/workflow/model
 import { ExperimentModel } from '../modules/experiments/models/ExperimentModel';
 import { UploadedFileModel } from '../modules/files/models/UploadedFileModel';
 import { sleep } from '../utils';
+import { MIGRATION_LOCK_ID, migrationLockCollectionName } from './constants/migrationLock';
 import { AppliedMigrationModel } from './models/AppliedMigrationModel';
 import { runMigrations } from './index';
 
@@ -139,17 +140,17 @@ test(
   { skip },
   async (t) => {
     await useDatabase(t);
-    const locks = mongoose.connection.collection<{ _id: string; expiresAt: Date }>(
-      'migration_lock'
+    const locks = mongoose.connection.collection<{ _id: string; owner: string; expiresAt: Date }>(
+      migrationLockCollectionName
     );
-    const takeoverExpiresAt = new Date(Date.now() + 60_000);
+    const takeover = { owner: 'another-backend', expiresAt: new Date(Date.now() + 60_000) };
     const stalled = {
       name: 'stalled',
       calls: 0,
       run: async () => {
         stalled.calls += 1;
         // Another backend takes the lock over while this one runs; the heartbeat must notice.
-        await locks.updateOne({ _id: 'migrations' }, { $set: { expiresAt: takeoverExpiresAt } });
+        await locks.updateOne({ _id: MIGRATION_LOCK_ID }, { $set: takeover });
         await sleep(400);
         return 1;
       },
@@ -161,16 +162,41 @@ test(
     assert.equal(next.calls, 0);
     // The migration that finished is recorded; the new owner's lock is still theirs.
     assert.equal(await AppliedMigrationModel.countDocuments({ name: 'stalled' }), 1);
-    assert.deepEqual(await locks.findOne({ _id: 'migrations' }), {
-      _id: 'migrations',
-      expiresAt: takeoverExpiresAt,
+    assert.deepEqual(await locks.findOne({ _id: MIGRATION_LOCK_ID }), {
+      _id: MIGRATION_LOCK_ID,
+      ...takeover,
     });
+  }
+);
+
+test(
+  'the lock is released even when the migrations finish while a renewal is in flight',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const locks = mongoose.connection.collection<{ _id: string; owner: string; expiresAt: Date }>(
+      migrationLockCollectionName
+    );
+    // A renewal reaches MongoDB at once but is acknowledged late, as on a slow network.
+    const original = locks.updateOne.bind(locks) as (...args: unknown[]) => Promise<unknown>;
+    t.mock.method(locks, 'updateOne', (async (filter: object, ...rest: unknown[]) => {
+      const result = await original(filter, ...rest);
+      if (!JSON.stringify(filter).includes('$lt')) await sleep(400);
+      return result;
+    }) as unknown as typeof locks.updateOne);
+    const quick = { name: 'quick', run: async () => (await sleep(150), 1) };
+
+    // A 300 ms lease renews at 100 ms; the migration ends at 150 ms, before the acknowledgement.
+    await runMigrations([quick], 300);
+    await sleep(600);
+
+    assert.equal(await locks.countDocuments(), 0);
   }
 );
 
 test('the lock is released after a success and after a failure', { skip }, async (t) => {
   await useDatabase(t);
-  const locks = mongoose.connection.collection('migration_lock');
+  const locks = mongoose.connection.collection(migrationLockCollectionName);
 
   await runMigrations([counting('fine')]);
   assert.equal(await locks.countDocuments(), 0);
@@ -184,10 +210,14 @@ test(
   { skip },
   async (t) => {
     await useDatabase(t);
-    const locks = mongoose.connection.collection<{ _id: string; expiresAt: Date }>(
-      'migration_lock'
+    const locks = mongoose.connection.collection<{ _id: string; owner: string; expiresAt: Date }>(
+      migrationLockCollectionName
     );
-    await locks.insertOne({ _id: 'migrations', expiresAt: new Date(Date.now() - 1000) });
+    await locks.insertOne({
+      _id: MIGRATION_LOCK_ID,
+      owner: 'dead-backend',
+      expiresAt: new Date(Date.now() - 1000),
+    });
     const migration = counting('after-crash');
 
     assert.equal(await runMigrations([migration]), 1);

@@ -45,7 +45,10 @@ A migration is a `{ name, run }` object in `backend/src/migrations`, added to th
   on `applied_migrations.name`, then takes a lock (one document in `migration_lock`, a 5-minute
   lease) so only one backend runs migrations at a time; the others wait and then skip what the
   first recorded. The owner renews the lease every 100 seconds while it runs, so a batch of any
-  length keeps the lock; a backend that dies holding it blocks the others for at most 5 minutes. It skips every migration whose `name` is already in `applied_migrations`. After a
+  length keeps the lock; a backend that dies holding it blocks the others for at most 5 minutes.
+  The lock document carries a random owner token, and renewing and releasing match that token, not
+  the expiry time, so a renewal still in flight cannot make a backend leave its own lock behind. The
+  names and timings are in `migrations/constants/migrationLock.ts`. It skips every migration whose `name` is already in `applied_migrations`. After a
   successful run the name and `appliedAt` are stored, so a migration that throws runs again on the
   next start. The lock is released when `runMigrations` ends, also on failure.
 - Never rename a migration that has shipped: the new name would run again.

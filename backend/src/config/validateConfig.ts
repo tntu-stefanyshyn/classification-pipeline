@@ -1,5 +1,14 @@
 import { durationToSeconds } from '../modules/auth/constants/token';
 import { ConfigError } from './classes/ConfigError';
+import {
+  BOOLEAN_VALUES,
+  BOOLEAN_VARIABLES,
+  DEFAULT_JWT_SECRETS,
+  DURATION_VARIABLES,
+  MAX_PRESIGN_SECONDS,
+  PLACEHOLDER_SERVICE_TOKENS,
+  POSITIVE_INTEGER_VARIABLES,
+} from './constants/validation';
 
 export type ConfigIssues = {
   /** Problems that stop the backend from starting. */
@@ -9,25 +18,6 @@ export type ConfigIssues = {
 };
 
 type Env = NodeJS.ProcessEnv;
-
-/** Secrets that ship in the code or in `.env.example`; a production backend must not use them. */
-const DEFAULT_JWT_SECRETS = ['dev-secret', 'change-me'];
-const PLACEHOLDER_SERVICE_TOKENS = ['change-me', 'change-me-service-token'];
-
-const BOOLEAN_VARIABLES = [
-  'BACKEND_CLOUD_WORKER_ENABLED',
-  'BACKEND_LOCAL_WORKER_ENABLED',
-  'BACKEND_HYPER_OPTIMIZATION_ENABLED',
-];
-const BOOLEAN_VALUES = ['1', 'true', 'yes', '0', 'false', 'no'];
-
-/** Poll intervals in milliseconds. */
-const POSITIVE_INTEGER_VARIABLES = ['LOCAL_WORKER_POLL_MS', 'CLOUD_WORKER_POLL_MS'];
-
-/** Amazon S3 does not accept presigned URLs that stay valid for more than seven days. */
-const MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60;
-
-const DURATION_VARIABLES = ['ACCESS_TOKEN_TTL', 'REFRESH_TOKEN_TTL'];
 
 const isSet = (value: string | undefined): value is string => value !== undefined;
 const isBlank = (value: string) => value.trim() === '';

@@ -105,14 +105,14 @@ mutation Stop($input: StopExperimentRunInput!) {
 
 Runs the optimization (the `aws-jobs-optimization` container) and returns when it has finished, so the call can take a long time (see [Known limitations](../../architecture/known-limitations.md)). It is a query by declaration, but it changes the experiment status. The result is `{ runId, pathNodeIds, score }` of the best pipeline (lower is better).
 
-Allowed when the experiment is `computing` or `completed` and **every** pipeline is `completed`. Errors:
+Allowed when the experiment is `computing` or `completed` and **every** pipeline is `completed`. It is also accepted as a **retry** when the experiment is already in `optimization` but `optimization.status` is no longer `optimizing`, for example `failed` after the container reported an error: the experiment does not move to `optimization` again, the container runs again, and the experiment moves to `completed` when it succeeds (see [Run execution](../../architecture/run-execution.md#optimization)). Errors:
 
-| Message                                                                      | Meaning                              |
-| ---------------------------------------------------------------------------- | ------------------------------------ |
-| `Оптимізація вже виконується.`                                               | An optimization is already running.  |
-| `Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".` | The experiment is in another status. |
-| `There are uncomuted pipelines.`                                             | Some pipeline is not `completed`.    |
-| `Graph metrics are not configured.` / `Graph has no paths for optimization.` | The graph is incomplete.             |
+| Message                                                                      | Meaning                                                                                                                                 |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Оптимізація вже виконується.`                                               | The experiment is in `optimization` and `optimization.status` is `optimizing`; wait for it, or retry once it is no longer `optimizing`. |
+| `Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".` | The experiment is in another status (`creating` or `configuring`).                                                                      |
+| `There are uncomuted pipelines.`                                             | Some pipeline is not `completed`.                                                                                                       |
+| `Graph metrics are not configured.` / `Graph has no paths for optimization.` | The graph is incomplete.                                                                                                                |
 
 ```graphql
 query Optimize($id: ID!) {

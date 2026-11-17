@@ -20,7 +20,7 @@ export class ComputationResolver {
 
   @Query(() => OptimizationResult, {
     description:
-      'Runs the optimization of an experiment and returns the best pipeline. Allowed when the experiment is `computing` or `completed` and every pipeline is `completed`. The call returns only when the optimization has finished. Owner only.',
+      'Runs the optimization of an experiment and returns the best pipeline. Allowed when the experiment is `computing` or `completed` and every pipeline is `completed`, and as a retry when the experiment is already in `optimization` but its optimization status is no longer `optimizing` (for example `failed`): the container then runs again without a status transition. The call returns only when the optimization has finished. Owner only.',
   })
   async optimizeExperimentRuns(
     @Arg('experimentId', () => ID, { description: 'Id of the experiment.' }) experimentId: string,

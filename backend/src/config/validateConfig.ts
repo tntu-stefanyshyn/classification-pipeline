@@ -1,4 +1,5 @@
 import { durationToSeconds } from '../modules/auth/constants/token';
+import { ConfigError } from './classes/ConfigError';
 
 export type ConfigIssues = {
   /** Problems that stop the backend from starting. */
@@ -27,18 +28,6 @@ const POSITIVE_INTEGER_VARIABLES = ['LOCAL_WORKER_POLL_MS', 'CLOUD_WORKER_POLL_M
 const MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60;
 
 const DURATION_VARIABLES = ['ACCESS_TOKEN_TTL', 'REFRESH_TOKEN_TTL'];
-
-/** Thrown at startup with every problem found, one per line. */
-export class ConfigError extends Error {
-  constructor(public readonly errors: string[]) {
-    super(
-      `Invalid backend configuration (${errors.length} ${errors.length === 1 ? 'problem' : 'problems'}):\n` +
-        errors.map((error) => `  - ${error}`).join('\n') +
-        '\nFix the values in backend/.env or the environment; see docs/operations/configuration.md.'
-    );
-    this.name = 'ConfigError';
-  }
-}
 
 const isSet = (value: string | undefined): value is string => value !== undefined;
 const isBlank = (value: string) => value.trim() === '';

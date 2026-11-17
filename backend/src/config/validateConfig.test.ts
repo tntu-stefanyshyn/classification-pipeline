@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ConfigError, assertValidConfig, validateConfig } from './validateConfig';
+import { ConfigError } from './classes/ConfigError';
+import { assertValidConfig, validateConfig } from './validateConfig';
 
 const validEnv = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   MONGODB_URI: 'mongodb://localhost:27017/app',

@@ -10,7 +10,7 @@ Ukrainian is used just for the translations shown in the app UI.
 - [Setup guide](SETUP.md) - local setup for WSL/Linux, Docker computations, and S3 uploads.
 - [Getting started](docs/getting-started/index.md)
 - [User guide](docs/user-guide/index.md) - using the application, the dataset (CSV) format and troubleshooting.
-- [Architecture](docs/architecture/backend-structure.md) - backend structure, database and desktop component conventions.
+- [Architecture](docs/architecture/overview.md) - system overview, lifecycle, data model, run execution, decisions and known limitations.
 - [Experiments and computations](docs/domain/experiments.md) - statuses, validations and graph rules.
 - [API](docs/api/index.md) - GraphQL and REST endpoints.
 - [Continuous integration](docs/operations/ci.md) - automated checks and Windows x64 installer artifacts.

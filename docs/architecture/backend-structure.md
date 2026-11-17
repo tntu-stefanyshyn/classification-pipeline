@@ -20,7 +20,6 @@ Use this structure for new code in `backend/src`:
 - `config/`: configuration only.
 - `migrations/`: data migrations. All of them run on every start, so each must be idempotent.
 - `seeders/`: initial data (for example the technology catalog).
-- `mermaid/`: entity-relationship diagrams of the data model (Mermaid sources).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.
 - `index.ts`: bootstrap; wires schema, server, DB and the REST report endpoint.
 

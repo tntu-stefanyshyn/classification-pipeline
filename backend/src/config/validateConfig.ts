@@ -6,8 +6,9 @@ import {
   DEFAULT_JWT_SECRETS,
   DURATION_VARIABLES,
   MAX_PRESIGN_SECONDS,
+  MAX_TIMER_MS,
   PLACEHOLDER_SERVICE_TOKENS,
-  POSITIVE_INTEGER_VARIABLES,
+  POLL_INTERVAL_VARIABLES,
 } from './constants/validation';
 
 export type ConfigIssues = {
@@ -22,7 +23,9 @@ type Env = NodeJS.ProcessEnv;
 const isSet = (value: string | undefined): value is string => value !== undefined;
 const isBlank = (value: string) => value.trim() === '';
 
-const isPositiveInteger = (value: string) => /^\d+$/.test(value.trim()) && Number(value) >= 1;
+// A very long digit string parses to Infinity, which the range check rejects.
+const isIntegerInRange = (value: string, max: number) =>
+  /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= max;
 
 const isHttpUrl = (value: string) => {
   try {
@@ -88,18 +91,18 @@ export const validateConfig = (env: Env = process.env): ConfigIssues => {
     }
   });
 
-  POSITIVE_INTEGER_VARIABLES.forEach((name) => {
+  POLL_INTERVAL_VARIABLES.forEach((name) => {
     const value = env[name];
-    if (isSet(value) && !isPositiveInteger(value)) {
+    if (isSet(value) && !isIntegerInRange(value, MAX_TIMER_MS)) {
       errors.push(
-        `${name} must be a whole number of milliseconds greater than 0 (got "${value}").`
+        `${name} must be a whole number of milliseconds from 1 to ${MAX_TIMER_MS} (got "${value}").`
       );
     }
   });
 
   const presign = env.AWS_S3_PRESIGN_EXPIRES;
   if (isSet(presign)) {
-    if (!isPositiveInteger(presign) || Number(presign) > MAX_PRESIGN_SECONDS) {
+    if (!isIntegerInRange(presign, MAX_PRESIGN_SECONDS)) {
       errors.push(
         `AWS_S3_PRESIGN_EXPIRES must be a whole number of seconds from 1 to ${MAX_PRESIGN_SECONDS} (got "${presign}").`
       );

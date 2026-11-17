@@ -60,17 +60,20 @@ test('a missing service token only warns, because worker operations then stay cl
   assert.match(issues.warnings[0], /worker operations stay closed/);
 });
 
-test('poll intervals must be whole numbers greater than zero', () => {
-  ['0', '-5', '1.5', 'abc', ''].forEach((value) => {
+test('poll intervals must be whole numbers within the Node.js timer range', () => {
+  // 2147483648 is the first delay a timer turns into 1 ms; the long digit string parses to Infinity.
+  ['0', '-5', '1.5', 'abc', '', '2147483648', '9'.repeat(400)].forEach((value) => {
     assert.match(errorsOf({ LOCAL_WORKER_POLL_MS: value })[0], /LOCAL_WORKER_POLL_MS/);
     assert.match(errorsOf({ CLOUD_WORKER_POLL_MS: value })[0], /CLOUD_WORKER_POLL_MS/);
   });
   assert.deepEqual(errorsOf({ LOCAL_WORKER_POLL_MS: '3000', CLOUD_WORKER_POLL_MS: '5000' }), []);
+  assert.deepEqual(errorsOf({ LOCAL_WORKER_POLL_MS: '1', CLOUD_WORKER_POLL_MS: '2147483647' }), []);
 });
 
 test('the presigned URL lifetime is limited to what S3 accepts', () => {
   assert.match(errorsOf({ AWS_S3_PRESIGN_EXPIRES: '0' })[0], /AWS_S3_PRESIGN_EXPIRES/);
   assert.match(errorsOf({ AWS_S3_PRESIGN_EXPIRES: '604801' })[0], /AWS_S3_PRESIGN_EXPIRES/);
+  assert.match(errorsOf({ AWS_S3_PRESIGN_EXPIRES: '9'.repeat(400) })[0], /AWS_S3_PRESIGN_EXPIRES/);
   assert.deepEqual(errorsOf({ AWS_S3_PRESIGN_EXPIRES: '604800' }), []);
 });
 

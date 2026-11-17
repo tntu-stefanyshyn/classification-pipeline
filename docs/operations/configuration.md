@@ -23,7 +23,7 @@ In the **Required** column, "Production" means the backend refuses to start with
 ```text
 Invalid backend configuration (2 problems):
   - MONGODB_URI is required, for example mongodb://localhost:27017/app. Without it the backend would start without a database.
-  - LOCAL_WORKER_POLL_MS must be a whole number of milliseconds greater than 0 (got "fast").
+  - LOCAL_WORKER_POLL_MS must be a whole number of milliseconds from 1 to 2147483647 (got "fast").
 Fix the values in backend/.env or the environment; see docs/operations/configuration.md.
 ```
 
@@ -32,7 +32,7 @@ It **fails** when:
 - `MONGODB_URI` is missing, blank or not a `mongodb://` or `mongodb+srv://` connection string;
 - `NODE_ENV=production` and `JWT_SECRET` is missing or one of the default values `dev-secret` or `change-me`;
 - `NODE_ENV=production` and `BACKEND_SERVICE_TOKEN` is a placeholder from the example files (`change-me`, `change-me-service-token`);
-- a poll interval (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`) is not a whole number greater than 0;
+- a poll interval (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`) is not a whole number from 1 to 2147483647 (the longest delay a Node.js timer accepts; a longer one would fire after 1 ms and make the worker poll the database continuously);
 - `AWS_S3_PRESIGN_EXPIRES` is not a whole number of seconds from 1 to 604800 (the seven days that S3 allows);
 - `ACCESS_TOKEN_TTL` or `REFRESH_TOKEN_TTL` is not a duration (a number of seconds, or a number with `s`, `m`, `h` or `d`);
 - a switch (`BACKEND_LOCAL_WORKER_ENABLED`, `BACKEND_CLOUD_WORKER_ENABLED`, `BACKEND_HYPER_OPTIMIZATION_ENABLED`) is not one of `1`, `true`, `yes`, `0`, `false`, `no`;

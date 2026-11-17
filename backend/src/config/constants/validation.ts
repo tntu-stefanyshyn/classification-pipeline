@@ -10,7 +10,10 @@ export const BOOLEAN_VARIABLES = [
 export const BOOLEAN_VALUES = ['1', 'true', 'yes', '0', 'false', 'no'];
 
 /** Poll intervals in milliseconds. */
-export const POSITIVE_INTEGER_VARIABLES = ['LOCAL_WORKER_POLL_MS', 'CLOUD_WORKER_POLL_MS'];
+export const POLL_INTERVAL_VARIABLES = ['LOCAL_WORKER_POLL_MS', 'CLOUD_WORKER_POLL_MS'];
+
+/** The longest delay a Node.js timer accepts (2^31 - 1 ms); a longer one fires after 1 ms. */
+export const MAX_TIMER_MS = 2147483647;
 
 /** Amazon S3 does not accept presigned URLs that stay valid for more than seven days. */
 export const MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60;

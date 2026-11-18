@@ -30,12 +30,6 @@ This page describes how the system behaves today where that behavior is not idea
 
 ## Security
 
-### The PDF report endpoint is not authenticated
-
-- **Components:** `GET /experiments/:experimentId/report` in `backend/src/index.ts`.
-- **Behavior:** the endpoint checks only that the id is valid and that the experiment exists. There is no token check and no ownership check. The server also allows every origin (`cors()`).
-- **Consequence:** anyone who can reach the backend and knows an experiment id can download its report, which contains the experiment name, description, graph, file details and results.
-
 ### One shared service token
 
 - **Components:** `AuthFlow.isService`, `BACKEND_SERVICE_TOKEN`, the workers and containers.

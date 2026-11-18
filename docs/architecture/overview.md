@@ -24,7 +24,7 @@ flowchart LR
 
     ui -->|"GraphQL, user access token"| be
     ui -->|"PUT file via presigned URL"| s3
-    ui -->|"GET PDF report"| be
+    ui -->|"GET PDF report, user access token"| be
     be --> db
     be -->|"presigned URLs"| s3
 

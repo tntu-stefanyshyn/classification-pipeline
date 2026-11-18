@@ -83,6 +83,21 @@ test('token lifetimes must be durations', () => {
   assert.deepEqual(errorsOf({ ACCESS_TOKEN_TTL: '900', REFRESH_TOKEN_TTL: '30d' }), []);
 });
 
+test('token lifetimes must give a valid expiry date', () => {
+  // The last date a JavaScript Date holds is 8.64e15 ms after the epoch; leave a minute of margin
+  // for the time the test takes.
+  const lastSeconds = Math.floor((8.64e15 - Date.now()) / 1000);
+  assert.deepEqual(errorsOf({ REFRESH_TOKEN_TTL: String(lastSeconds - 60) }), []);
+  assert.match(
+    errorsOf({ REFRESH_TOKEN_TTL: String(lastSeconds + 60) })[0],
+    /REFRESH_TOKEN_TTL is too long/
+  );
+  assert.match(errorsOf({ REFRESH_TOKEN_TTL: '100000001d' })[0], /REFRESH_TOKEN_TTL is too long/);
+  assert.match(errorsOf({ ACCESS_TOKEN_TTL: '100000001d' })[0], /ACCESS_TOKEN_TTL is too long/);
+  // Beyond Number.MAX_SAFE_INTEGER the amount is rejected as an invalid duration.
+  assert.match(errorsOf({ REFRESH_TOKEN_TTL: '9'.repeat(400) })[0], /must be a number of seconds/);
+});
+
 test('boolean switches accept only the documented values', () => {
   assert.match(
     errorsOf({ BACKEND_CLOUD_WORKER_ENABLED: 'maybe' })[0],

@@ -112,11 +112,20 @@ export const validateConfig = (env: Env = process.env): ConfigIssues => {
   DURATION_VARIABLES.forEach((name) => {
     const value = env[name];
     if (!isSet(value)) return;
+    let seconds: number;
     try {
-      durationToSeconds(value);
+      seconds = durationToSeconds(value);
     } catch {
       errors.push(
         `${name} must be a number of seconds or a number with s, m, h or d, for example 15m (got "${value}").`
+      );
+      return;
+    }
+    // The expiry is `new Date(now + seconds * 1000)`; past the last date JavaScript supports it is
+    // an Invalid Date and saving a session would fail at login instead of at startup.
+    if (Number.isNaN(new Date(Date.now() + seconds * 1000).getTime())) {
+      errors.push(
+        `${name} is too long: its expiry would be beyond the last date JavaScript supports (got "${value}").`
       );
     }
   });

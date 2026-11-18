@@ -34,7 +34,7 @@ It **fails** when:
 - `NODE_ENV=production` and `BACKEND_SERVICE_TOKEN` is a placeholder from the example files (`change-me`, `change-me-service-token`);
 - a poll interval (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`) is not a whole number from 1 to 2147483647 (the longest delay a Node.js timer accepts; a longer one would fire after 1 ms and make the worker poll the database continuously);
 - `AWS_S3_PRESIGN_EXPIRES` is not a whole number of seconds from 1 to 604800 (the seven days that S3 allows);
-- `ACCESS_TOKEN_TTL` or `REFRESH_TOKEN_TTL` is not a duration (a number of seconds, or a number with `s`, `m`, `h` or `d`);
+- `ACCESS_TOKEN_TTL` or `REFRESH_TOKEN_TTL` is not a duration (a number of seconds, or a number with `s`, `m`, `h` or `d`), or is so long that the expiry date would be beyond the last date JavaScript supports (about 100 million days; the session could not be saved);
 - a switch (`BACKEND_LOCAL_WORKER_ENABLED`, `BACKEND_CLOUD_WORKER_ENABLED`, `BACKEND_HYPER_OPTIMIZATION_ENABLED`) is not one of `1`, `true`, `yes`, `0`, `false`, `no`;
 - `BACKEND_GRAPHQL_URL` is not an `http://` or `https://` URL.
 

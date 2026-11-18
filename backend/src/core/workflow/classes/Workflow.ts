@@ -20,6 +20,8 @@ import { PipelineStatus } from '../../pipeline/enums';
     },
   }
 )
+// Declare only what must exist before the backend starts: `WorkflowModel.init()` waits for every
+// index declared here. Read indexes go to `createWorkflowReadIndexes` so they build in the background.
 @ObjectType()
 export class Workflow extends TimeStamps {
   @Field(() => ID)

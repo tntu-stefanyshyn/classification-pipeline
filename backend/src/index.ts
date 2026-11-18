@@ -7,7 +7,7 @@ import mongoose, { Types } from 'mongoose';
 
 import { ExperimentModel } from './modules/experiments/models/ExperimentModel';
 import { PipelineModel } from './core/pipeline/models/PipelineModel';
-import { WorkflowModel } from './core/workflow/model/WorkflowModel';
+import { createWorkflowReadIndexes, WorkflowModel } from './core/workflow/model/WorkflowModel';
 import { GraphManager } from './modules/experiments/services/GraphManager';
 import { buildGraphReportPdf } from './modules/experiments/utils/buildGraphReportPdf';
 import { UploadedFileModel } from './modules/files/models/UploadedFileModel';
@@ -136,8 +136,12 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
-    // The per-machine local-run limit depends on the workflows unique index.
+    // The per-machine local-run limit depends on the workflows unique index, so wait for it. Read
+    // indexes build in the background and never delay startup: queries just scan until they exist.
     await WorkflowModel.init();
+    createWorkflowReadIndexes().catch((error) =>
+      console.error('Failed to create the workflow read indexes', error)
+    );
     await runMigrations();
     await runSeeders();
     if (config.computations.cloudWorkerEnabled) {

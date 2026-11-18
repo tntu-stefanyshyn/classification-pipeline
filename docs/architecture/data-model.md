@@ -1,6 +1,6 @@
 # Data model
 
-The backend stores its data in MongoDB (database from `MONGODB_URI`) through Typegoose models. Identifiers are `_id` everywhere; they are ObjectIds, except `sessions._id`, which is a UUID string (the `familyId` of the session's refresh tokens). The diagram shows the ten collections and how they refer to each other; fields are the key ones, not a complete list.
+The backend stores its data in MongoDB (database from `MONGODB_URI`) through Typegoose models. Identifiers are `_id` everywhere; they are ObjectIds, except `sessions._id`, which is a UUID string (the `familyId` of the session's refresh tokens). The diagram shows the eleven collections of the models and how they refer to each other (a twelfth, `migration_lock`, is described under [Indexes and migrations](#indexes-and-migrations)); fields are the key ones, not a complete list.
 
 ```mermaid
 erDiagram
@@ -38,6 +38,11 @@ erDiagram
         date usedAt
         string attemptHash
         date revokedAt
+    }
+    applied_migrations {
+        ObjectId _id
+        string name
+        date appliedAt
     }
     experiments {
         ObjectId _id
@@ -119,6 +124,7 @@ erDiagram
 | `uploaded_files`      | `UploadedFile`      | Metadata of a CSV file stored in S3 (`storageKey`); deletion uses a lease (`deletingAt`) and a point of no return (`deleteCommittedAt`).                                                                                                                                |
 | `technologies`        | `Technology`        | The catalog of technologies per stage with their configurable `settings`. Filled by the seeder `technologiesSeeder` on startup.                                                                                                                                         |
 | `computation_results` | `ComputationResult` | Defined (`pipelineId`, `payload`) but not used by the current code: results are stored in `pipelines.computingResult`.                                                                                                                                                  |
+| `applied_migrations`  | `AppliedMigration`  | The names of the migrations that have run (`name`, unique; `appliedAt`), so each runs once. See [Indexes and migrations](#indexes-and-migrations).                                                                                                                      |
 
 ## Relations
 
@@ -134,8 +140,9 @@ erDiagram
 
 ## Indexes and migrations
 
-- Unique: `users.email`, `technologies.name`, `graph_structures.experimentId` and `refresh_tokens.tokenHash`.
+- Unique: `users.email`, `technologies.name`, `graph_structures.experimentId`, `refresh_tokens.tokenHash` and `applied_migrations.name`.
 - TTL indexes remove `sessions` and `refresh_tokens` documents once their `expiresAt` has passed; `refresh_tokens.familyId` is indexed.
-- Plain indexes: `experiments.createdById`, `pipelines.experimentId` and `pipelines.graphStructureId`.
-- `workflows` has a unique partial index on `machineHostname` for `PIPELINE` workflows in `running`: at most one running `local` run per machine. The backend awaits `WorkflowModel.init()` on startup and fails if the index cannot be built. There is no index on `workflows.instanceId`, although every status read filters by it.
-- `runMigrations()` runs on every start (`backend/src/migrations`), so every migration must change nothing on a second run. Current migrations: `pipeline-legacy-statuses-to-idle` (old statuses become `idle`) and `pipeline-history-missing-status-to-running` (fills in the missing `status` of pipeline history entries).
+- Plain indexes: `experiments.createdById`, `experiments.fileId` (the experiments that use a file, checked before it is deleted), `pipelines.experimentId`, `pipelines.graphStructureId` and `uploaded_files` (`uploadedById`, `uploadedAt`, for the newest-first list of a user's files).
+- `workflows` has a unique partial index on `machineHostname` for `PIPELINE` workflows in `running`: at most one running `local` run per machine. The backend awaits `WorkflowModel.init()` on startup and fails if the index cannot be built.
+- Two read indexes on `workflows`, (`instanceId`, `type`) for status reads and (`type`, `status`) for the claim aggregation, are built in the background by `createWorkflowReadIndexes` after startup, so they never delay it; until they exist the queries scan the collection. They are not unique, because `getWorkflow` sorts by `createdAt` and a unique build would fail on a database that already holds duplicates.
+- Migrations (`backend/src/migrations`) run once each: `runMigrations()` records the name of a finished migration in `applied_migrations` and skips recorded names on the next start. One backend at a time runs them: it holds a lease in the single-document `migration_lock` collection (5 minutes, renewed by its owner), and the others wait. A migration that crashed halfway is not recorded and runs again, so every migration must still change nothing on a second run. Current migrations: `pipeline-legacy-statuses-to-idle` (old statuses become `idle`) and `pipeline-history-missing-status-to-running` (fills in the missing `status` of pipeline history entries). See [Database conventions](database-conventions.md#migrations).

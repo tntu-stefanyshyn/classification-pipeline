@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import { ApolloServer } from 'apollo-server-express';
 import mongoose from 'mongoose';
 
-import { WorkflowModel } from './core/workflow/model/WorkflowModel';
+import { createWorkflowReadIndexes, WorkflowModel } from './core/workflow/model/WorkflowModel';
 import { createHttpApp } from './app';
 import { config } from './config/config';
 import { buildAppSchema } from './schema';
@@ -30,8 +30,12 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
-    // The per-machine local-run limit depends on the workflows unique index.
+    // The per-machine local-run limit depends on the workflows unique index, so wait for it. Read
+    // indexes build in the background and never delay startup: queries just scan until they exist.
     await WorkflowModel.init();
+    createWorkflowReadIndexes().catch((error) =>
+      console.error('Failed to create the workflow read indexes', error)
+    );
     await runMigrations();
     await runSeeders();
     if (config.computations.cloudWorkerEnabled) {

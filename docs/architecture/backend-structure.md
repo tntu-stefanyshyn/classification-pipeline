@@ -18,7 +18,7 @@ Use this structure for new code in `backend/src`:
   - `utils/`: feature-specific helpers (for example `buildGraphPaths`).
 - `graphql/`: app-level resolvers not tied to a feature (`health`, server info).
 - `config/`: configuration only: `config.ts`, the startup validation (`validateConfig.ts`) and its `classes/` and `constants/`.
-- `migrations/`: data migrations. All of them run on every start, so each must be idempotent.
+- `migrations/`: data migrations. Each runs once; applied names are stored in the `applied_migrations` collection (class in `migrations/classes/`, model in `migrations/models/`). See [Database conventions](database-conventions.md).
 - `seeders/`: initial data (for example the technology catalog).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.
 - `index.ts`: bootstrap; wires schema, server, DB and the REST report endpoint.

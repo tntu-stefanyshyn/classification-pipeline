@@ -21,8 +21,9 @@ export class Experiment extends TimeStamps {
   @prop({ trim: true })
   description?: string;
 
+  // `FileStore.collectUsages`: the experiments that use a file, checked before it is deleted.
   @Field(() => ID, { nullable: true, description: 'Id of the attached dataset file, if any.' })
-  @prop({ type: () => Types.ObjectId })
+  @prop({ type: () => Types.ObjectId, index: true })
   fileId?: Types.ObjectId;
 
   @Field(() => [PipelineMachineInfo], {

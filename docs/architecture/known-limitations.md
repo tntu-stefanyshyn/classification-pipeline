@@ -45,7 +45,6 @@ This page describes how the system behaves today where that behavior is not idea
 ## Data and performance
 
 - **Unused collection.** `computation_results` has a model but no code uses it; results live in `pipelines.computingResult`.
-- **No index on `workflows.instanceId`.** Every status read filters by it. Aggregations such as claiming and pausing join `workflows` and `pipelines` with `$lookup`.
 - **Status and side effect are not atomic.** The side effect of a transition runs after the status is written, so a failing side effect leaves the new status (see [ADR 0002](decisions/0002-mongo-backed-workflows.md)).
 - **Polling.** The desktop polls the backend every 5 seconds for statuses, and workers poll for runs (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`); there are no subscriptions. A status change can take several seconds to show.
 

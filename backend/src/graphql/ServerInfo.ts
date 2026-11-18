@@ -5,7 +5,9 @@ import { ServerInfo } from './classes/ServerInfo';
 export class ServerInfoApi {
   private readonly startedAt = Date.now();
 
-  @Query(() => ServerInfo)
+  @Query(() => ServerInfo, {
+    description: 'Version, status and uptime of the backend. Needs no authentication.',
+  })
   serverInfo(): ServerInfo {
     return {
       version: process.env.npm_package_version || 'dev',

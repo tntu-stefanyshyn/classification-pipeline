@@ -1,89 +1,135 @@
 import { prop } from '@typegoose/typegoose';
 import { Field, Float, InputType, Int, ObjectType } from 'type-graphql';
 
-@ObjectType()
+@ObjectType({
+  description: 'Result of a completed run. Lists have one value per cross-validation fold.',
+})
 export class ComputationResultPayload {
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'Accuracy of each fold, from 0 to 1.' })
   @prop({ type: () => [Number], required: true })
   accuracyScores!: number[];
 
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'Weighted F1 score of each fold, from 0 to 1.' })
   @prop({ type: () => [Number], required: true })
   f1Scores!: number[];
 
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'ROC AUC of each fold, from 0 to 1.' })
   @prop({ type: () => [Number], required: true })
   rocAucScores!: number[];
 
-  @Field(() => [Float], { nullable: true })
+  @Field(() => [Float], {
+    nullable: true,
+    description:
+      'Length of the vector of the three metrics of each fold (an intermediate value for the optimization).',
+  })
   @prop({ type: () => [Number], default: [] })
   optimizationIntermediateScores?: number[];
 
-  @Field(() => Int)
+  @Field(() => Int, { description: 'Number of rows in the dataset.' })
   @prop({ required: true })
   sampleCount!: number;
 
-  @Field(() => Float)
+  @Field(() => Float, { description: 'Duration of the whole run in seconds.' })
   @prop({ required: true })
   duration!: number;
 
-  @Field(() => [[Int]], { nullable: true })
+  @Field(() => [[Int]], {
+    nullable: true,
+    description:
+      'A single confusion matrix. The compute handler sends `confusionMatrixes` instead.',
+  })
   @prop({ type: () => [[Number]] })
   confusionMatrix?: number[][];
 
-  @Field(() => [[[Int]]], { nullable: true })
+  @Field(() => [[[Int]]], {
+    nullable: true,
+    description: 'Confusion matrix of each fold. Rows and columns follow `channelNames`.',
+  })
   @prop({ type: () => [[[Number]]], default: [] })
   confusionMatrixes?: number[][][];
 
-  @Field(() => [String])
+  @Field(() => [String], {
+    description:
+      'The class labels found in the dataset, in the order used by the confusion matrices.',
+  })
   @prop({ type: () => [String], required: true })
   channelNames!: string[];
 
-  @Field(() => [Int], { nullable: true })
+  @Field(() => [Int], {
+    nullable: true,
+    description: 'Number of rows used for prediction in each fold.',
+  })
   @prop({ type: () => [Number], default: [] })
   predictionSampleCounts?: number[];
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Number of rows used for prediction in the first fold.',
+  })
   @prop()
   predictionSampleCount?: number;
 
-  @Field(() => Float, { nullable: true })
+  @Field(() => Float, {
+    nullable: true,
+    description: 'Percentage of the data used for prediction, from the graph settings.',
+  })
   @prop()
   predictionDataPercent?: number;
 }
 
-@InputType()
+@InputType({
+  description:
+    'Result of a completed run, sent by the worker. Lists have one value per cross-validation fold.',
+})
 export class ComputationResultPayloadInput {
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'Accuracy of each fold, from 0 to 1.' })
   accuracyScores!: number[];
 
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'Weighted F1 score of each fold, from 0 to 1.' })
   f1Scores!: number[];
 
-  @Field(() => [Float])
+  @Field(() => [Float], { description: 'ROC AUC of each fold, from 0 to 1.' })
   rocAucScores!: number[];
 
-  @Field(() => [Float], { nullable: true })
+  @Field(() => [Float], {
+    nullable: true,
+    description:
+      'Length of the vector of the three metrics of each fold (an intermediate value for the optimization).',
+  })
   optimizationIntermediateScores?: number[];
 
-  @Field(() => Int)
+  @Field(() => Int, { description: 'Number of rows in the dataset.' })
   sampleCount!: number;
 
-  @Field(() => Float)
+  @Field(() => Float, { description: 'Duration of the whole run in seconds.' })
   duration!: number;
 
-  @Field(() => [[[Int]]])
+  @Field(() => [[[Int]]], {
+    description: 'Confusion matrix of each fold. Rows and columns follow `channelNames`.',
+  })
   confusionMatrixes!: number[][][];
 
-  @Field(() => [String])
+  @Field(() => [String], {
+    description:
+      'The class labels found in the dataset, in the order used by the confusion matrices.',
+  })
   channelNames!: string[];
 
-  @Field(() => [Int], { nullable: true })
+  @Field(() => [Int], {
+    nullable: true,
+    description: 'Number of rows used for prediction in each fold.',
+  })
   predictionSampleCounts?: number[];
 
-  @Field(() => Int, { nullable: true })
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Number of rows used for prediction in the first fold.',
+  })
   predictionSampleCount?: number;
 
-  @Field(() => Float, { nullable: true })
+  @Field(() => Float, {
+    nullable: true,
+    description: 'Percentage of the data used for prediction, from the graph settings.',
+  })
   predictionDataPercent?: number;
 }

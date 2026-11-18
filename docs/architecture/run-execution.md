@@ -80,4 +80,4 @@ Details and the guarantees are in [Claiming runs](../domain/experiments.md#claim
 3. The container reads the experiment and all its pipelines through GraphQL, normalizes the metric values of the pipelines, ranks them with the metric weights, and reports through `updateExperimentProgress`, `updatePipelineOptimization` (a score for each pipeline) and `updateExperimentOptimizationResult` (the best pipeline and its score).
 4. When the container exits successfully the experiment moves to `completed`. The call to `optimizeExperimentRuns` returns only then, with the result. The time limit of the container is the minutes per pipeline multiplied by the number of paths.
 
-The PDF report (`GET /experiments/:experimentId/report`) is built from the experiment, its graph, pipelines and optimization data at the time of the request.
+The PDF report (`GET /experiments/:experimentId/report`) is built from the experiment, its graph, pipelines and optimization data at the time of the request, and only for the owner of the experiment (see [Authentication](../api/authentication.md)).

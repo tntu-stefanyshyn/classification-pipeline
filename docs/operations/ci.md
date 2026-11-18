@@ -16,7 +16,7 @@
 
 To require CI before merging, select **CI passed** as a required status check in the `main` branch protection rule or ruleset. The workflow does not change repository protection settings.
 
-Dependabot proposes weekly updates for GitHub Actions, npm, Python (`aws-jobs`), Dockerfiles and `docker-compose.yml` ([configuration](../.github/dependabot.yml)). Review code owners are set in [CODEOWNERS](../.github/CODEOWNERS).
+Dependabot proposes weekly updates for GitHub Actions, npm, Python (`aws-jobs`), Dockerfiles and `docker-compose.yml` ([configuration](../../.github/dependabot.yml)). Review code owners are set in [CODEOWNERS](../../.github/CODEOWNERS).
 
 ## Download the Windows installer
 

@@ -100,6 +100,11 @@ input EnqueueExperimentRunsInput {
   runAll: Boolean
 }
 
+type EnqueueExperimentRunsResult {
+  queued: Int!
+  skipped: Int!
+}
+
 type Experiment {
   _id: ID!
   computationHosts: [PipelineMachineInfo!]
@@ -226,7 +231,7 @@ type Mutation {
   createExperiment(input: CreateExperimentInput!): Experiment!
   createUploadedFile(input: CreateUploadedFileInput!): UploadedFile!
   deleteUploadedFile(_id: ID!, detachExperimentIds: [ID!]): UploadedFile!
-  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): Boolean!
+  enqueueExperimentRuns(input: EnqueueExperimentRunsInput!): EnqueueExperimentRunsResult!
   failExperimentRun(input: FailExperimentRunInput!): Pipeline!
   generateExperimentGraph(input: GenerateExperimentGraphInput!): Experiment!
   login(input: LoginInput!): AuthPayload!

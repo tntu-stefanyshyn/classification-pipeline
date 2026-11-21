@@ -52,7 +52,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
     'enqueueRuns',
     async (...args: any[]) => {
       calls.push(['enqueueRuns', ...args]);
-      return true;
+      return { queued: 2, skipped: 1 };
     }
   );
   stub(
@@ -131,7 +131,10 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         $experimentId: ID!
         $complete: CompletePipelineInput!
       ) {
-        enqueueExperimentRuns(input: $enqueue)
+        enqueueExperimentRuns(input: $enqueue) {
+          queued
+          skipped
+        }
         stopExperimentRun(input: $stop) {
           _id
           queue
@@ -205,7 +208,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
   });
   assert.equal(mutationResult.errors, undefined);
   assert.deepEqual(toPlainValue(mutationResult.data), {
-    enqueueExperimentRuns: true,
+    enqueueExperimentRuns: { queued: 2, skipped: 1 },
     stopExperimentRun: {
       _id: runId,
       queue: 'local',

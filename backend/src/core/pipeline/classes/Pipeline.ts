@@ -1,4 +1,4 @@
-import { prop } from '@typegoose/typegoose';
+import { index, prop } from '@typegoose/typegoose';
 import { TimeStamps } from '@typegoose/typegoose/lib/defaultClasses';
 import { Types } from 'mongoose';
 import { Field, Float, ID, Int, ObjectType } from 'type-graphql';
@@ -7,6 +7,9 @@ import { PipelineMachineInfo } from './PipelineMachineInfo';
 import { ComputationResultPayload } from '../../../modules/computations/classes/ComputationResultPayload';
 import { PipelineHistoryItem } from './PipelineHistoryItem';
 
+// A run can be re-run once: the second of two simultaneous re-runs hits this index instead of
+// creating a duplicate run of the same path.
+@index({ rerunOf: 1 }, { unique: true, partialFilterExpression: { rerunOf: { $exists: true } } })
 @ObjectType()
 export class Pipeline extends TimeStamps {
   @Field(() => ID)
@@ -69,6 +72,10 @@ export class Pipeline extends TimeStamps {
 
   @prop({ trim: true })
   cloudJobId?: string;
+
+  /** The run this one re-runs. Unique, so one run cannot be re-run twice. */
+  @prop({ type: () => Types.ObjectId })
+  rerunOf?: Types.ObjectId;
 
   @Field(() => Date)
   declare createdAt: Date;

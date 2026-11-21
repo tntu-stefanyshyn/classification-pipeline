@@ -179,12 +179,15 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
     useEnqueueExperimentRunsMutation: () => [
       async (options: any) => {
         enqueueCalls.push(options);
+        // The server reports what it did; one idle run changed status before it could be queued.
+        return { data: { enqueueExperimentRuns: { queued: 1, skipped: 1 } } };
       },
       { loading: false, error: null },
     ],
     usePauseExperimentRunsMutation: () => [
       async (options: any) => {
         pauseCalls.push(options);
+        return { data: { pauseExperimentRuns: [{ _id: 'run-3' }] } };
       },
     ],
     useStopExperimentRunMutation: () => [
@@ -271,7 +274,10 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
   });
   findElement(resultsCell, (element) => element.type === 'button')!.props.onClick();
   // Completed runs can be ticked for the side-by-side comparison.
-  findElement(resultsCell, (element) => element.type === 'input')!.props.onChange();
+  findElement(
+    resultsCell,
+    (element) => getElementName(element) === 'CheckboxField'
+  )!.props.onChange();
   dataTable!.props.columns[3].cell({
     row: { original: { history: [{ message: 'done' }] } },
   });
@@ -297,10 +303,12 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
         call.index === 3 && Array.isArray(call.value) && (call.value as string[]).includes('run-1')
     )
   );
+  // The message comes from the server result: what was queued and what was skipped.
+  const statuses = state.calls.filter((call) => call.index === 5).map((call) => String(call.value));
   assert.ok(
-    state.calls.some(
-      (call) =>
-        call.index === 5 && typeof call.value === 'string' && String(call.value).includes('Готово')
+    statuses.some(
+      (text) => text.includes('Готово, конвеєрів оброблено: 1.') && text.includes('Пропущено')
     )
   );
+  assert.ok(statuses.some((text) => text === 'Готово, конвеєрів оброблено: 1.'));
 });

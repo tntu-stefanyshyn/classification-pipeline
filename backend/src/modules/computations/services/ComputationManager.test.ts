@@ -111,7 +111,7 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
     },
   } as any);
 
-  await manager.enqueueRuns({
+  const result = await manager.enqueueRuns({
     experimentId: new Types.ObjectId(),
     queue: ComputationQueue.local,
     runAll: true,
@@ -123,6 +123,53 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
       status: PipelineStatus.queued,
     },
   ]);
+  assert.deepEqual(result, { queued: 1, skipped: 0 });
+});
+
+test('ComputationManager.enqueueRuns skips a run that changed status meanwhile and counts it', async (t) => {
+  const manager = new ComputationManager();
+  const [first, second] = [new Types.ObjectId(), new Types.ObjectId()];
+
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
+    createLeanResult({ _id: new Types.ObjectId() })
+  );
+  stub(t, manager as unknown as Record<string, unknown>, 'graphManager', {
+    getByExperimentId: async () => ({
+      settings: { metrics: validMetrics, queues: [ComputationQueue.local] },
+      computationMode: ComputationMode.both,
+      nodes: [
+        {
+          _id: new Types.ObjectId().toHexString(),
+          stage: ClassificationStage.CLASSIFICATION,
+          parentId: undefined,
+        },
+      ],
+    }),
+  } as any);
+  stub(
+    t,
+    PipelineBaseService as unknown as Record<string, unknown>,
+    'listByExperiment',
+    async () => [{ _id: first }, { _id: second }]
+  );
+  stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
+    getWorkflow: async () => ({ status: PipelineStatus.idle }),
+  } as any);
+  stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
+    // A worker claimed the second run between the read and the update.
+    changeStatus: async ({ pipelineId }: { pipelineId: Types.ObjectId }) => {
+      if (String(pipelineId) === String(second)) throw new Error('TRANSITION_NOT_FOUND');
+      return true;
+    },
+  } as any);
+
+  const result = await manager.enqueueRuns({
+    experimentId: new Types.ObjectId(),
+    queue: ComputationQueue.local,
+    runAll: true,
+  } as any);
+
+  assert.deepEqual(result, { queued: 1, skipped: 1 });
 });
 
 test('ComputationManager.enqueueRuns rejects graphs without classification in every path', async (t) => {

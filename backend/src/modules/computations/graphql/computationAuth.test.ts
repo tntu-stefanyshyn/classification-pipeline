@@ -92,7 +92,7 @@ const stubBackend = (t: TestContext) => {
     'optimize',
     record('optimize', { runId: pipelineId, pathNodeIds: [], score: 0.5 })
   );
-  stub(t, manager, 'enqueueRuns', record('enqueueRuns', undefined));
+  stub(t, manager, 'enqueueRuns', record('enqueueRuns', { queued: 0, skipped: 0 }));
   stub(t, manager, 'stopRun', record('stopRun', pipeline));
   stub(t, manager, 'claimNextRun', record('claimNextRun', pipeline));
   stub(t, manager, 'pauseExperimentRuns', record('pauseExperimentRuns', [pipeline]));
@@ -165,7 +165,7 @@ const operations: Array<{
     name: 'enqueueExperimentRuns',
     executes: 'enqueueRuns',
     source:
-      'mutation($input: EnqueueExperimentRunsInput!) { enqueueExperimentRuns(input: $input) }',
+      'mutation($input: EnqueueExperimentRunsInput!) { enqueueExperimentRuns(input: $input) { queued } }',
     variables: { input: { experimentId, queue: 'local', runAll: true } },
     expected: USER_ONLY(EXPERIMENT_NOT_FOUND),
   },

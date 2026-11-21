@@ -2,6 +2,7 @@ import { Arg, Ctx, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
+import { EnqueueExperimentRunsResult } from '../classes/EnqueueExperimentRunsResult';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
@@ -28,15 +29,14 @@ export class ComputationResolver {
     return this.manager.optimize(experimentId);
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => EnqueueExperimentRunsResult)
   async enqueueExperimentRuns(
     @Arg('input', () => EnqueueExperimentRunsInput) input: EnqueueExperimentRunsInput,
     @Ctx() context: GraphQLContext
-  ): Promise<boolean> {
+  ): Promise<EnqueueExperimentRunsResult> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, input.experimentId);
-    await this.manager.enqueueRuns(input);
-    return true;
+    return this.manager.enqueueRuns(input);
   }
 
   @Mutation(() => Pipeline)

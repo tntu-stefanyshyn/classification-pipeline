@@ -32,6 +32,7 @@ import CompareModal from './components/CompareModal/CompareModal';
 import { type PipelinesQuery } from '../../../graphql/queries/generated/pipelines';
 import { ChangePipelineStatusButton } from './components';
 import { Button } from '../../ui/Button';
+import { CheckboxField } from '../../inputs/CheckboxField';
 import { useI18n } from '../../../i18n';
 import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
 
@@ -219,14 +220,26 @@ const ComputationCard: FC = () => {
 
     setBulkBusy(true);
     try {
+      // The message reports what the server did; the count before the confirmation is only an
+      // estimate, so runs that changed meanwhile show up as skipped.
+      let done = 0;
+      let skippedByServer = 0;
       if (kind === 'queue') {
-        await enqueueRuns({
+        const { data } = await enqueueRuns({
           variables: { input: { experimentId: id, queue: activeQueue, runAll: true } },
         });
+        done = data?.enqueueExperimentRuns.queued ?? 0;
+        skippedByServer = data?.enqueueExperimentRuns.skipped ?? 0;
       } else {
-        await pauseRuns({ variables: { experimentId: id, queue: activeQueue } });
+        const { data } = await pauseRuns({
+          variables: { experimentId: id, queue: activeQueue },
+        });
+        done = data?.pauseExperimentRuns.length ?? 0;
       }
-      setActionStatus(`${m.bulkDone}: ${affected}.`);
+      const skipped = Math.max(skippedByServer, affected - done);
+      setActionStatus(
+        `${m.bulkDone}: ${done}.${skipped > 0 ? ` ${m.bulkSkipped}: ${skipped}.` : ''}`
+      );
       await Promise.all([refetchRuns(), refetch()]);
     } catch (error) {
       setActionStatus(`${m.bulkError}: ${error instanceof Error ? error.message : m.unknownError}`);
@@ -297,12 +310,11 @@ const ComputationCard: FC = () => {
       }) => (
         <div className="table-actions">
           {row.original.status === PipelineStatus.completed && (
-            <input
-              type="checkbox"
+            <CheckboxField
+              id={`compare-${row.original._id}`}
+              label={messages.computationCard.compareShort}
               checked={compareIds.includes(row.original._id)}
               onChange={() => toggleCompare(row.original._id)}
-              aria-label={messages.computationCard.compareSelect}
-              title={messages.computationCard.compareSelect}
             />
           )}
           <button

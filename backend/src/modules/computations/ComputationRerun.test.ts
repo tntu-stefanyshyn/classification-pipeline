@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 
 import { PipelineModel } from '../../core/pipeline/models/PipelineModel';
 import { PipelineStatus } from '../../core/pipeline/enums';
+import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { stub } from '../../test/testUtils';
 import { ExperimentStatus } from '../experiments/classes/ExperimentStatus';
 import { ExperimentModel } from '../experiments/models/ExperimentModel';
@@ -13,7 +14,7 @@ import { ComputationManager } from './services/ComputationManager';
 const setup = (
   t: TestContext,
   experimentStatus: ExperimentStatus,
-  runs: { _id: Types.ObjectId; status: PipelineStatus }[]
+  runs: { _id: Types.ObjectId; status: PipelineStatus; createdAt?: Date }[]
 ) => {
   const experimentId = new Types.ObjectId();
   const pathNodeIds = [new Types.ObjectId()];
@@ -59,6 +60,60 @@ test('re-run of a completed run creates a new run and reopens an optimized exper
   assert.deepEqual(experimentChanges, [
     { experimentId: source.experimentId, status: ExperimentStatus.computing },
   ]);
+});
+
+test('the re-run hangs on the newest run of the path', async (t) => {
+  const old = {
+    _id: new Types.ObjectId(),
+    status: PipelineStatus.completed,
+    createdAt: new Date('2026-01-01'),
+  };
+  const newest = {
+    _id: new Types.ObjectId(),
+    status: PipelineStatus.completed,
+    createdAt: new Date('2026-02-01'),
+  };
+  const { manager, source } = setup(t, ExperimentStatus.computing, [old, newest]);
+  let rerunOf: unknown;
+  stub(t, PipelineModel as any, 'create', async (doc: any) => {
+    rerunOf = doc.rerunOf;
+    return { ...doc, _id: new Types.ObjectId() };
+  });
+
+  await manager.prepareRerun(source);
+
+  assert.equal(String(rerunOf), String(newest._id));
+});
+
+test('a simultaneous re-run that loses the race gets the run the other one created', async (t) => {
+  const done = { _id: new Types.ObjectId(), status: PipelineStatus.completed };
+  const { manager, source, created } = setup(t, ExperimentStatus.computing, [done]);
+  const winner = { _id: new Types.ObjectId() };
+  stub(t, PipelineModel as any, 'create', async () => {
+    throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+  });
+  stub(t, PipelineModel as any, 'findOne', () => ({ lean: async () => winner }));
+  stub(t, WorkflowModel as any, 'exists', async () => ({ _id: winner._id }));
+
+  const id = await manager.prepareRerun(source);
+
+  assert.equal(String(id), String(winner._id));
+  assert.equal(created.length, 0);
+});
+
+test('a re-run that cannot reopen the experiment leaves no new run behind', async (t) => {
+  const done = { _id: new Types.ObjectId(), status: PipelineStatus.completed };
+  const { manager, source } = setup(t, ExperimentStatus.completed, [done]);
+  const removed: unknown[] = [];
+  stub(t, manager.experimentManager, 'changeStatus', async () => {
+    throw new Error('TRANSITION_NOT_FOUND');
+  });
+  stub(t, PipelineModel as any, 'deleteOne', async (filter: unknown) => removed.push(filter));
+  stub(t, WorkflowModel as any, 'deleteOne', async (filter: unknown) => removed.push(filter));
+
+  await assert.rejects(() => manager.prepareRerun(source), /TRANSITION_NOT_FOUND/);
+
+  assert.equal(removed.length, 2);
 });
 
 test('a second re-run click reuses the run that is already waiting', async (t) => {

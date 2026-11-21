@@ -1,3 +1,6 @@
 mutation EnqueueExperimentRuns($input: EnqueueExperimentRunsInput!) {
-  enqueueExperimentRuns(input: $input)
+  enqueueExperimentRuns(input: $input) {
+    queued
+    skipped
+  }
 }

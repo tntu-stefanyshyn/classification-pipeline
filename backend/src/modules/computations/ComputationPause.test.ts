@@ -182,6 +182,27 @@ test('stop all of one queue leaves the other queue untouched', async (t) => {
   assert.equal(cloud.status, PipelineStatus.queued);
 });
 
+test('stop all returns only the runs it really stopped', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const stopped = createRun({ experimentId });
+  const finishedMeanwhile = createRun({ experimentId });
+  installStore(t, [stopped, finishedMeanwhile]);
+  const { manager } = managerWithCancelLog(t);
+  stub(
+    t,
+    manager as unknown as Record<string, unknown>,
+    'pauseRun',
+    async (runId: Types.ObjectId) => String(runId) === String(stopped._id)
+  );
+
+  const paused = await manager.pauseExperimentRuns(experimentId);
+
+  assert.deepEqual(
+    paused.map((run) => String(run._id)),
+    [String(stopped._id)]
+  );
+});
+
 test('resuming re-queues the paused runs so workers can claim them again', async (t) => {
   const experimentId = new Types.ObjectId();
   const first = createRun({ experimentId });

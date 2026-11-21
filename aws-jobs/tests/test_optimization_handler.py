@@ -156,6 +156,69 @@ class OptimizationHandlerTests(unittest.TestCase):
             ],
         )
 
+    def test_optimize_ignores_older_runs_of_a_path_after_a_rerun(self):
+        module = load_optimization_handler()
+        payload = {
+            "backend_url": "http://backend/graphql",
+            "experimentId": "exp-1",
+            "backend_token": "svc-token",
+            "hyper_optimization_minutes_per_pipeline": 7,
+        }
+        pipeline_updates = []
+        experiment_updates = []
+
+        def run(run_id, path, created_at, duration):
+            return {
+                "_id": run_id,
+                "status": "completed",
+                "queue": "cloud",
+                "createdAt": created_at,
+                "pathNodeIds": path,
+                "computingResult": {
+                    "accuracyScores": [0.8],
+                    "f1Scores": [0.8],
+                    "rocAucScores": [0.8],
+                    "sampleCount": 10,
+                    "duration": duration,
+                },
+            }
+
+        graphql_responses = [
+            {
+                "experiment": {
+                    "graph": {
+                        "settings": {
+                            "metrics": {"accuracy": 0, "f1": 0, "rocAuc": 0, "ntps": 1}
+                        }
+                    }
+                }
+            },
+            {
+                "pipelines": [
+                    # The old run of path A is the fastest of all and would win if it still counted.
+                    run("a-old", ["a"], "2026-01-01T10:00:00Z", 10),
+                    run("a-new", ["a"], "2026-01-02T10:00:00Z", 40),
+                    run("b", ["b"], "2026-01-01T10:00:00Z", 50),
+                ]
+            },
+        ]
+
+        with patch.object(module, "graphqlRequest", side_effect=graphql_responses), patch.object(
+            module, "_emit"
+        ), patch.object(
+            module,
+            "_update_pipeline_optimization",
+            side_effect=lambda *args, **kwargs: pipeline_updates.append((args, kwargs)),
+        ), patch.object(
+            module,
+            "_update_experiment_optimization",
+            side_effect=lambda *args, **kwargs: experiment_updates.append((args, kwargs)),
+        ):
+            module.optimize(payload)
+
+        self.assertEqual([update[0][1] for update in pipeline_updates], ["a-new", "b"])
+        self.assertEqual(experiment_updates[0][0][2], "a-new")
+
     def test_optimize_updates_pipeline_scores_and_best_pipeline(self):
         module = load_optimization_handler()
         payload = {

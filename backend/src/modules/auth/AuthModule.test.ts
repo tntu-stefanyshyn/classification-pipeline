@@ -120,6 +120,33 @@ test('AuthFlow.me rejects missing authentication headers outside development', a
   await assert.rejects(() => authFlow.me({ headers: {} } as any), /Not authenticated/);
 });
 
+test('AuthFlow.me fails with AuthenticationError only for credential problems', async (t) => {
+  const authFlow = new AuthFlow();
+  const signed = (payload: object) => ({
+    headers: { authorization: `Bearer ${jwt.sign(payload, config.jwtSecret)}` },
+  });
+  let findById = async (): Promise<unknown> => null;
+  stub(t, UserModel as unknown as Record<string, unknown>, 'findById', (() => findById()) as any);
+
+  for (const req of [
+    { headers: {} },
+    { headers: { authorization: 'Bearer not-a-jwt' } },
+    signed({}),
+    signed({ sub: new Types.ObjectId().toString() }),
+  ]) {
+    await assert.rejects(() => authFlow.me(req as any), AuthenticationError);
+  }
+
+  const outage = new Error('connection refused');
+  findById = async () => {
+    throw outage;
+  };
+  await assert.rejects(
+    () => authFlow.me(signed({ sub: new Types.ObjectId().toString() }) as any),
+    (error) => error === outage
+  );
+});
+
 test('AuthFlow.isService accepts only the configured service token', (t) => {
   const original = config.backend.serviceToken;
   t.after(() => {

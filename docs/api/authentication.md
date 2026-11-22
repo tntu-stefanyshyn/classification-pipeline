@@ -18,6 +18,7 @@ An empty `BACKEND_SERVICE_TOKEN` matches nothing, so worker operations stay clos
 | `pipeline`, `pipelines`, `changePipelineStatus`, `experiment`                                                                                                      | Owner of the experiment    | Allowed       |
 | `signedDownloadUrl`                                                                                                                                                | Uploader of the file       | Allowed       |
 | `signedUploadUrl`, `createUploadedFile`, `uploadedFiles`, `uploadedFileUsage`, `deleteUploadedFile`                                                                | Signed-in user (own files) | Rejected      |
+| `GET /experiments/:experimentId/report` (REST)                                                                                                                     | Owner of the experiment    | Rejected      |
 
 The owner is the user whose id is stored in the `createdById` field of the experiment. A pipeline belongs to the owner of its experiment.
 

@@ -42,17 +42,31 @@ const averageMetric = (values?: number[] | null) => {
 const formatMetric = (value: number | null) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : '—';
 
-const normalizeProcessingTime = (duration?: number | null, sampleCount?: number | null) => {
+const normalizeProcessingTime = (
+  duration: number | null | undefined,
+  sampleCount: number | null | undefined,
+  cvDuration: number | null | undefined,
+  completedFoldCount: number | null | undefined
+) => {
+  if (typeof sampleCount !== 'number' || !Number.isFinite(sampleCount) || sampleCount <= 0) {
+    return null;
+  }
+  if (cvDuration == null && completedFoldCount == null) {
+    return typeof duration === 'number' && Number.isFinite(duration)
+      ? duration / sampleCount
+      : null;
+  }
   if (
-    typeof duration !== 'number' ||
-    !Number.isFinite(duration) ||
-    typeof sampleCount !== 'number' ||
-    !Number.isFinite(sampleCount) ||
-    sampleCount <= 0
+    typeof cvDuration !== 'number' ||
+    !Number.isFinite(cvDuration) ||
+    cvDuration < 0 ||
+    typeof completedFoldCount !== 'number' ||
+    !Number.isInteger(completedFoldCount) ||
+    completedFoldCount <= 0
   ) {
     return null;
   }
-  return duration / sampleCount;
+  return cvDuration / (sampleCount * completedFoldCount);
 };
 
 const OptimizationCard: FC = () => {
@@ -140,7 +154,9 @@ const OptimizationCard: FC = () => {
           averageRocAuc: averageMetric(computingResult?.rocAucScores),
           normalizedProcessingTime: normalizeProcessingTime(
             computingResult?.duration,
-            computingResult?.sampleCount
+            computingResult?.sampleCount,
+            computingResult?.cvDuration,
+            computingResult?.completedFoldCount
           ),
           pathNodes:
             pipeline.pathNodes?.map(

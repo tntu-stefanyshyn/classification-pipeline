@@ -579,6 +579,9 @@ def _run_classifier(
     predictionSampleCounts: List[int] = []
     predictionSampleCount: Optional[int] = None
 
+    cv_duration = 0.0
+    completed_fold_count = 0
+
     for fold_index, (train_idx, val_idx) in enumerate(splits, start=1):
         prediction_rows = len(val_idx)
         predictionSampleCounts.append(prediction_rows)
@@ -593,6 +596,7 @@ def _run_classifier(
             progress=progress,
             token=token,
         )
+        fold_started_at = time.perf_counter()
         y_train = y.iloc[train_idx]
         y_val = y.iloc[val_idx]
         if fold_features is None:
@@ -630,6 +634,8 @@ def _run_classifier(
         all_pred.extend(list(y_pred))
         matrix = confusion_matrix(y_val, y_pred, labels=labels)
         confusionMatrixes.append(matrix.tolist())
+        cv_duration += time.perf_counter() - fold_started_at
+        completed_fold_count += 1
         progress = progress_for_one_step * fold_fraction
         _emit(
             backend_url,
@@ -650,6 +656,8 @@ def _run_classifier(
         predictionSampleCount or 0,
         predictionSampleCounts,
         predict_percent,
+        cv_duration,
+        completed_fold_count,
     )
 
 
@@ -829,6 +837,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 predictionSampleCount,
                 predictionSampleCounts,
                 predictPercent,
+                cv_duration,
+                completed_fold_count,
             ) = _run_classifier(
                 X,
                 y,
@@ -850,6 +860,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             report["predictionSampleCount"] = predictionSampleCount
             report["predictionSampleCounts"] = predictionSampleCounts
             report["predictionDataPercent"] = predictPercent
+            report["cvDuration"] = cv_duration
+            report["completedFoldCount"] = completed_fold_count
             break
         progress = (progress_for_one_step) * (index)
         _emit(
@@ -864,8 +876,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     duration = max(time.time() - started_at, 0.0)
     if eeg_run:
         report["eegProcessing"] = json.dumps(eeg_metadata, ensure_ascii=False, allow_nan=False)
-    sampleCount = len(y) if eeg_run else max(int(len(df)), 1)
-    report["sampleCount"] = sampleCount
+    report["sampleCount"] = len(y)
     report["duration"] = duration
 
     _emit(backend_url, pipelineId, message="Обчислення завершено", progress=100, token=token)

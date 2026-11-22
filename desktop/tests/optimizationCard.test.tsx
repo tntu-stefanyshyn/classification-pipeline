@@ -106,8 +106,10 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
               accuracyScores: [0.9, 0.8],
               f1Scores: [0.7, 0.6],
               rocAucScores: [0.95, 0.85],
-              duration: 12.345,
-              sampleCount: 5,
+              duration: 150,
+              sampleCount: 1000,
+              cvDuration: 120,
+              completedFoldCount: 5,
             },
           },
           {
@@ -202,9 +204,16 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
   );
   assert.equal(
     leaderboardTable.props.columns[5].cell({
-      row: { original: { normalizedProcessingTime: 2.469 } },
+      row: {
+        original: leaderboardTable.props.data.find((row: { id: string }) => row.id === 'pipe-1'),
+      },
     }),
-    '2.469000 с/зразок'
+    '0.024000 с/зразок'
+  );
+  assert.equal(
+    leaderboardTable.props.data.find((row: { id: string }) => row.id === 'pipe-2')
+      .normalizedProcessingTime,
+    0.95
   );
   leaderboardTable.props.columns[6].cell({
     row: { original: { queue: 'local' } },

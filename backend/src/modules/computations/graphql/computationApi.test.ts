@@ -179,6 +179,8 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
             optimizationIntermediateScores: [0.1],
             sampleCount: 12,
             duration: 5.5,
+            cvDuration: 4.5,
+            completedFoldCount: 2,
             confusionMatrixes: [
               [
                 [1, 0],
@@ -250,6 +252,8 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
           optimizationIntermediateScores: [0.1],
           sampleCount: 12,
           duration: 5.5,
+          cvDuration: 4.5,
+          completedFoldCount: 2,
           confusionMatrixes: [
             [
               [1, 0],

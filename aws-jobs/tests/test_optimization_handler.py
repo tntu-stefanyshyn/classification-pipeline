@@ -110,7 +110,9 @@ class OptimizationHandlerTests(unittest.TestCase):
                             "f1Scores": [0.8],
                             "rocAucScores": [0.8],
                             "sampleCount": 10,
-                            "duration": 40,
+                            "duration": 0.25,
+                            "cvDuration": None,
+                            "completedFoldCount": None,
                         },
                     },
                     {
@@ -120,8 +122,10 @@ class OptimizationHandlerTests(unittest.TestCase):
                             "accuracyScores": [0.8],
                             "f1Scores": [0.8],
                             "rocAucScores": [0.8],
-                            "sampleCount": 10,
-                            "duration": 10,
+                            "sampleCount": 1000,
+                            "duration": 150,
+                            "cvDuration": 120,
+                            "completedFoldCount": 5,
                         },
                     },
                 ]
@@ -131,6 +135,8 @@ class OptimizationHandlerTests(unittest.TestCase):
         with patch.object(module, "graphqlRequest", side_effect=graphql_responses), patch.object(
             module, "_emit"
         ), patch.object(
+            module, "_min_max_normalize", wraps=module._min_max_normalize
+        ) as normalize, patch.object(
             module,
             "_update_pipeline_optimization",
             side_effect=lambda *args, **kwargs: pipeline_updates.append((args, kwargs)),
@@ -141,6 +147,7 @@ class OptimizationHandlerTests(unittest.TestCase):
         ):
             module.optimize(payload)
 
+        self.assertEqual(normalize.call_args_list[-1].args[0], [0.025, 0.024])
         self.assertEqual(len(pipeline_updates), 2)
         self.assertEqual(pipeline_updates[0][0][1], "pipe-slow")
         self.assertEqual(pipeline_updates[0][0][2], 1.0)

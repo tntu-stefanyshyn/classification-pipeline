@@ -185,6 +185,7 @@ class ComputeHandlerTests(unittest.TestCase):
             },
         ]
         emits = []
+        labels = ["A", "B"] * 6
 
         with patch.dict(
             module.os.environ,
@@ -205,7 +206,7 @@ class ComputeHandlerTests(unittest.TestCase):
         ) as load_dataframe, patch.object(
             module,
             "_prepare_features",
-            return_value=("raw-x", "labels"),
+            return_value=("raw-x", labels),
         ), patch.object(
             module,
             "_apply_preprocessing",
@@ -223,6 +224,8 @@ class ComputeHandlerTests(unittest.TestCase):
                 3,
                 [3],
                 25.0,
+                8.0,
+                1,
             ),
         ) as run_classifier, patch.object(
             module.time,
@@ -239,7 +242,7 @@ class ComputeHandlerTests(unittest.TestCase):
         apply_preprocessing.assert_called_once_with("raw-x", {"log": "true"})
         run_classifier.assert_called_once_with(
             "normalized-x",
-            "labels",
+            labels,
             "SVM",
             {},
             {"folds": 4},
@@ -262,6 +265,8 @@ class ComputeHandlerTests(unittest.TestCase):
                 "predictionDataPercent": 25.0,
                 "sampleCount": 12,
                 "duration": 12.5,
+                "cvDuration": 8.0,
+                "completedFoldCount": 1,
             },
         )
         messages = [kwargs["message"] for _, kwargs in emits]
@@ -271,18 +276,18 @@ class ComputeHandlerTests(unittest.TestCase):
         self.assertEqual(messages[-1], "Обчислення завершено")
         self.assertEqual({kwargs["token"] for _, kwargs in emits}, {"svc-token"})
 
-    def test_run_classifier_forwards_token_to_progress_updates(self):
+    def test_run_classifier_times_completed_folds_and_forwards_progress_token(self):
         module = load_compute_handler()
         emits = []
 
         class FakeSplitter:
-            n_splits = 1
+            n_splits = 5
 
             def __init__(self, **_kwargs):
                 pass
 
             def split(self, *_args):
-                return iter([([0], [1])])
+                return iter([([0], [1]), ([1], [0])])
 
         class FakeIloc:
             def __getitem__(self, _index):
@@ -305,8 +310,8 @@ class ComputeHandlerTests(unittest.TestCase):
             module,
             "confusion_matrix",
             return_value=SimpleNamespace(tolist=lambda: [[1]]),
-        ):
-            module._run_classifier(
+        ), patch.object(module.time, "perf_counter", side_effect=[10, 50, 100, 180]):
+            result = module._run_classifier(
                 frame,
                 frame,
                 "svm",
@@ -318,7 +323,8 @@ class ComputeHandlerTests(unittest.TestCase):
                 "svc-token",
             )
 
-        self.assertEqual(len(emits), 3)
+        self.assertEqual(result[-2:], (120, 2))
+        self.assertEqual(len(emits), 5)
         self.assertEqual({kwargs["token"] for kwargs in emits}, {"svc-token"})
 
     def test_main_uses_environment_token_for_the_final_status(self):

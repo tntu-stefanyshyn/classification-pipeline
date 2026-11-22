@@ -50,6 +50,10 @@ export class ComputationResultPayload {
   @Field(() => Float, { nullable: true })
   @prop()
   predictionDataPercent?: number;
+
+  @Field(() => String, { nullable: true })
+  @prop()
+  eegProcessing?: string;
 }
 
 @InputType()
@@ -86,4 +90,7 @@ export class ComputationResultPayloadInput {
 
   @Field(() => Float, { nullable: true })
   predictionDataPercent?: number;
+
+  @Field(() => String, { nullable: true })
+  eegProcessing?: string;
 }

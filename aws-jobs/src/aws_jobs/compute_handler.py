@@ -1,10 +1,13 @@
+import hashlib
 import json
 import math
 import os
 import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from importlib.metadata import version
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import boto3 # type: ignore
 import numpy as np # type: ignore
@@ -193,7 +196,7 @@ def _load_dataframe(
         raise ValueError("FILE_URL_NOT_FOUND")
 
     try:
-        df = pd.read_csv(file_url or file_path, sep=";")
+        df = pd.read_csv(file_url or file_path, sep=";", dtype={"epoch_id": str, "class": str})
     finally:
         if temp_path:
             try:
@@ -309,33 +312,7 @@ def _apply_preprocessing(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFr
     return pd.DataFrame(values, columns=X.columns)
 
 
-def _apply_artifact_suppression(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
-    threshold = _to_float(settings.get("threshold"), 3.0) or 3.0
-    method = (settings.get("method") or "median").lower()
-    values = X.values.astype(float)
-
-    if method == "mean":
-        center = np.nanmean(values, axis=0)
-    else:
-        center = np.nanmedian(values, axis=0)
-    spread = np.nanstd(values, axis=0)
-
-    lower = center - threshold * spread
-    upper = center + threshold * spread
-
-    for idx in range(values.shape[1]):
-        if not np.isfinite(spread[idx]) or spread[idx] == 0:
-            continue
-        if method == "winsor":
-            values[:, idx] = np.clip(values[:, idx], lower[idx], upper[idx])
-        else:
-            mask = np.abs(values[:, idx] - center[idx]) > threshold * spread[idx]
-            values[mask, idx] = center[idx]
-
-    return pd.DataFrame(values, columns=X.columns)
-
-
-def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
+def _build_ica(settings: Dict[str, str]):
     transformer_kwargs: Dict[str, Any] = {}
     n_components = _to_int(_get_setting(settings, "n_components"))
     if n_components is not None:
@@ -368,10 +345,7 @@ def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
     if random_state is not None:
         transformer_kwargs["random_state"] = random_state
 
-    transformer = FastICA(**transformer_kwargs)
-    values = transformer.fit_transform(X.values.astype(float))
-    columns = [f"ica_{idx}" for idx in range(values.shape[1])]
-    return pd.DataFrame(values, columns=columns)
+    return FastICA(**transformer_kwargs)
 
 
 def _parse_pca_components(value: Any) -> Any:
@@ -395,7 +369,7 @@ def _parse_pca_components(value: Any) -> Any:
     return None
 
 
-def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
+def _build_pca(settings: Dict[str, str]):
     transformer_kwargs: Dict[str, Any] = {}
     n_components = _parse_pca_components(_get_setting(settings, "n_components"))
     if n_components is not None:
@@ -411,7 +385,7 @@ def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
 
     iterated_power = _get_setting(settings, "iterated_power")
     if iterated_power is not None:
-        transformer_kwargs["iterated_power"] = iterated_power
+        transformer_kwargs["iterated_power"] = int(iterated_power) if iterated_power != "auto" else iterated_power
 
     random_state = _to_int(_get_setting(settings, "random_state"))
     if random_state is not None:
@@ -421,10 +395,17 @@ def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
     if tol is not None:
         transformer_kwargs["tol"] = tol
 
-    transformer = PCA(**transformer_kwargs)
-    values = transformer.fit_transform(X.values.astype(float))
-    columns = [f"pca_{idx}" for idx in range(values.shape[1])]
-    return pd.DataFrame(values, columns=columns)
+    return PCA(**transformer_kwargs)
+
+
+def _apply_ica(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
+    values = _build_ica(settings).fit_transform(X.values.astype(float))
+    return pd.DataFrame(values, columns=[f"ica_{idx}" for idx in range(values.shape[1])])
+
+
+def _apply_pca(X: pd.DataFrame, settings: Dict[str, str]) -> pd.DataFrame:
+    values = _build_pca(settings).fit_transform(X.values.astype(float))
+    return pd.DataFrame(values, columns=[f"pca_{idx}" for idx in range(values.shape[1])])
 
 
 def _build_classifier(technology: str, settings: Dict[str, str]):
@@ -542,8 +523,12 @@ def _run_classifier(
     backend_url: str,
     pipelineId: str,
     token: Optional[str] = None,
+    fold_features: Optional[Callable] = None,
+    eeg_metadata: Optional[Dict[str, Any]] = None,
 ):
     random_state = _to_int(_get_setting(settings, "random_state"))
+    if fold_features is not None and random_state is None:
+        random_state = 0
     raw_folds = _to_int(graphStructureSettings.get("folds"))
     splitter_kwargs: Dict[str, Any] = {}
 
@@ -576,6 +561,14 @@ def _run_classifier(
         splits = splitter.split(X)
     folds = int(getattr(splitter, "n_splits", 1) or 1)
 
+    if eeg_metadata is not None:
+        eeg_metadata["splitter"] = {
+            "algorithm": type(splitter).__name__,
+            "n_splits": folds,
+            "test_size": splitter.test_size,
+            "random_state": random_state,
+        }
+
     all_true: List[Any] = []
     all_pred: List[Any] = []
     accuracyScores: List[float] = []
@@ -600,13 +593,22 @@ def _run_classifier(
             progress=progress,
             token=token,
         )
-        X_train = X.iloc[train_idx]
         y_train = y.iloc[train_idx]
-        X_val = X.iloc[val_idx]
         y_val = y.iloc[val_idx]
+        if fold_features is None:
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        else:
+            X_train, X_val = fold_features(train_idx, val_idx, y_train)
 
         model = _build_classifier(technology, settings)
+        if eeg_metadata is not None and "random_state" in model.get_params():
+            model.set_params(random_state=random_state)
         model.fit(X_train, y_train)
+        if eeg_metadata is not None:
+            eeg_metadata["folds"][-1]["steps"].append({
+                "algorithm": type(model).__name__,
+                "parameters": model.get_params(),
+            })
         y_pred = model.predict(X_val)
 
         accuracyScores.append(float(accuracy_score(y_val, y_pred)))
@@ -651,6 +653,104 @@ def _run_classifier(
     )
 
 
+def _eeg_algorithm(node):
+    stage = str(node.get("stage") or "").upper()
+    technology = str(node.get("technology") or "").strip().casefold()
+    if stage == "PREPROCESSING" and technology == "csp":
+        return "csp"
+    if stage == "DATA_ENHANCEMENT" and technology in {
+        "asr",
+        "artifact_suppression",
+        "приглушення короткочасних артефактів",
+        "transient artifact suppression / приглушення короткочасних артефактів",
+        "artifact subspace reconstruction / реконструкція підпростору артефактів",
+    }:
+        return "asr"
+    return None
+
+
+def _prepare_eeg_run(df, path):
+    # The worker also runs as a script in the AWS container.
+    if __package__:
+        from .eeg import Epochs, apply_asr, apply_csp
+    else:
+        from eeg import Epochs, apply_asr, apply_csp
+
+    epochs = Epochs.from_dataframe(df)
+    steps = []
+    for node in path:
+        stage = str(node.get("stage") or "").upper()
+        if stage == "CLASSIFICATION":
+            break
+        algorithm = _eeg_algorithm(node)
+        technology = str(node.get("technology") or "").strip().lower()
+        if algorithm is None:
+            algorithm = {
+                ("FEATURE_EXTRACTION", "ica"): "ica",
+                ("DIMENSIONALITY_REDUCTION", "pca"): "pca",
+            }.get((stage, technology))
+        if algorithm is None or any(step[0] == algorithm for step in steps):
+            raise ValueError(f"Incompatible or repeated EEG pipeline step: {stage}/{technology}")
+        steps.append((algorithm, _settings_to_dict(node.get("settings") or [])))
+    else:
+        raise ValueError("An EEG pipeline requires a classification node")
+
+    # The graph displays CSP before data enhancement. ASR calibrates in the
+    # original channel space and must run before projection and power extraction.
+    order = {"asr": 0, "csp": 1, "ica": 2, "pca": 3}
+    steps.sort(key=lambda step: order[step[0]])
+    if any(algorithm == "asr" for algorithm, _ in steps) and not epochs.calibration.any():
+        raise ValueError("ASR requires training epochs marked asr_clean=1")
+
+    code_hash = hashlib.sha256()
+    for name in ("compute_handler.py", "eeg.py"):
+        code_hash.update(Path(__file__).with_name(name).read_bytes())
+    metadata = {
+        "code_sha256": code_hash.hexdigest(),
+        "channels": epochs.channels,
+        "sampling_rate_hz": epochs.sampling_rate,
+        "samples_per_epoch": epochs.signal.shape[-1],
+        "dependencies": {
+            name: version(name) for name in ("numpy", "scipy", "scikit-learn")
+        },
+        "folds": [],
+    }
+
+    def fold_features(train_idx, val_idx, labels):
+        train, validation = epochs.signal[train_idx], epochs.signal[val_idx]
+        fold = {"train_epochs": len(train), "validation_epochs": len(validation), "steps": []}
+        for algorithm, settings in steps:
+            if algorithm == "asr":
+                candidates = train_idx[epochs.calibration[train_idx]]
+                if not len(candidates):
+                    raise ValueError("ASR split has no training epoch marked asr_clean=1")
+                reference = int(candidates.min())
+                cleaned, info = apply_asr(
+                    np.concatenate((train, validation)), epochs.signal[reference],
+                    epochs.channels, epochs.sampling_rate, settings,
+                )
+                train, validation = cleaned[:len(train)], cleaned[len(train):]
+                info["calibration"] = {
+                    "source": "marked_training_epoch", "epoch_id": epochs.ids[reference],
+                }
+            elif algorithm == "csp":
+                train, validation, info = apply_csp(train, labels, validation, settings)
+            else:
+                transformer = _build_ica(settings) if algorithm == "ica" else _build_pca(settings)
+                train = transformer.fit_transform(train.reshape(len(train), -1))
+                validation = transformer.transform(validation.reshape(len(validation), -1))
+                info = {
+                    "algorithm": type(transformer).__name__,
+                    "parameters": transformer.get_params(),
+                }
+            fold["steps"].append(info)
+
+        metadata["folds"].append(fold)
+        return train.reshape(len(train), -1), validation.reshape(len(validation), -1)
+
+    return epochs.labels, fold_features, metadata
+
+
 def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     global _execution_id
     _execution_id = payload.get("executionId")
@@ -679,9 +779,16 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     df = _load_dataframe(payload, backend_url or None, token)
     _emit(backend_url, pipelineId, message="Файл ЕЕГ зчитано", progress=5, token=token)
 
-    X, y = _prepare_features(df)
+    eeg_run = any(_eeg_algorithm(node) for node in path)
+    classifier_options = {}
+    if eeg_run:
+        y, fold_features, eeg_metadata = _prepare_eeg_run(df, path)
+        X = y  # The splitter needs only one row per epoch.
+        classifier_options.update(fold_features=fold_features, eeg_metadata=eeg_metadata)
+    else:
+        X, y = _prepare_features(df)
 
-    report: Optional[Dict[str, Any]] = {}
+    report: Dict[str, Any] = {}
    
     total = len(path)
     progress_for_one_step = 90/ total
@@ -691,6 +798,8 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         technology = str(node.get("technology") or "").strip()
         settings = _settings_to_dict(node.get("settings") or [])
 
+        if eeg_run and stage != "CLASSIFICATION":
+            continue
         progress = (progress_for_one_step * 0.5) * (index)
 
         _emit(
@@ -704,7 +813,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         if stage == "PREPROCESSING":
             X = _apply_preprocessing(X, settings)
         elif stage == "DATA_ENHANCEMENT":
-            X = _apply_artifact_suppression(X, settings)
+            raise ValueError(f"Unsupported artifact suppression technology: {technology}")
         elif stage == "FEATURE_EXTRACTION":
             X = _apply_ica(X, settings)
         elif stage == "DIMENSIONALITY_REDUCTION":
@@ -730,6 +839,7 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 backend_url,
                 pipelineId,
                 token,
+                **classifier_options,
             )
             report["accuracyScores"] = accuracyScores
             report["f1Scores"] = f1Scores
@@ -752,7 +862,9 @@ def run_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
     duration = max(time.time() - started_at, 0.0)
-    sampleCount = max(int(len(df)), 1)
+    if eeg_run:
+        report["eegProcessing"] = json.dumps(eeg_metadata, ensure_ascii=False, allow_nan=False)
+    sampleCount = len(y) if eeg_run else max(int(len(df)), 1)
     report["sampleCount"] = sampleCount
     report["duration"] = duration
 

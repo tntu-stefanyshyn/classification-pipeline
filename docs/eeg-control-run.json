@@ -1,0 +1,232 @@
+{
+  "scope": "Synthetic CSV, real compute worker, local GraphQL backend and isolated MongoDB. The worker was started directly against a seeded running execution.",
+  "fixture": {
+    "generator": "numpy.random.default_rng",
+    "seed": 2026,
+    "epochs": 24,
+    "marked_clean_epochs": 12,
+    "csv_sha256": "bf914c965353705c8791512fcf02e9883f345c6c6cc185694fb23d1b37a126b9"
+  },
+  "pipeline": {
+    "_id": "6b0336731812dcd0762d61c1",
+    "executionId": "1",
+    "status": "completed",
+    "progress": 100,
+    "computingResult": {
+      "accuracyScores": [1, 1, 1],
+      "f1Scores": [1, 1, 1],
+      "rocAucScores": [1, 1, 1],
+      "sampleCount": 24,
+      "predictionSampleCounts": [6, 6, 6],
+      "predictionDataPercent": 25,
+      "duration": 1.193199872970581
+    }
+  },
+  "eeg_processing": {
+    "code_sha256": "736dc2ffb100c909ddcce8fb3107cef729a6c1123b71f02df91d4cee0b141893",
+    "channels": ["C3", "C4", "P3", "P4"],
+    "sampling_rate_hz": 128.0,
+    "samples_per_epoch": 1024,
+    "dependencies": {
+      "numpy": "2.3.5",
+      "scipy": "1.18.1",
+      "scikit-learn": "1.9.1"
+    },
+    "folds": [
+      {
+        "train_epochs": 18,
+        "validation_epochs": 6,
+        "steps": [
+          {
+            "algorithm": "asrpy.ASR",
+            "library_version": "0.0.8",
+            "parameters": {
+              "sfreq": 128.0,
+              "cutoff": 5.0,
+              "win_len": 0.5,
+              "blocksize": 100,
+              "win_overlap": 0.66,
+              "max_dropout_fraction": 0.1,
+              "min_clean_fraction": 0.25,
+              "max_bad_chans": 0.1,
+              "method": "euclid",
+              "lookahead": 0.25,
+              "stepsize": 32,
+              "maxdims": 0.66,
+              "mem_splits": 3
+            },
+            "calibration": {
+              "source": "marked_training_epoch",
+              "epoch_id": "epoch-00"
+            }
+          },
+          {
+            "algorithm": "mne.decoding.CSP",
+            "library_version": "1.10.2",
+            "parameters": {
+              "n_components": 2,
+              "reg": "ledoit_wolf",
+              "log": true,
+              "cov_est": "concat",
+              "norm_trace": false,
+              "transform_into": "average_power"
+            }
+          },
+          {
+            "algorithm": "SVC",
+            "parameters": {
+              "C": 1.0,
+              "break_ties": false,
+              "cache_size": 200,
+              "class_weight": null,
+              "coef0": 0.0,
+              "decision_function_shape": "ovr",
+              "degree": 3,
+              "gamma": "scale",
+              "kernel": "rbf",
+              "max_iter": -1,
+              "probability": true,
+              "random_state": 17,
+              "shrinking": true,
+              "tol": 0.001,
+              "verbose": false
+            }
+          }
+        ]
+      },
+      {
+        "train_epochs": 18,
+        "validation_epochs": 6,
+        "steps": [
+          {
+            "algorithm": "asrpy.ASR",
+            "library_version": "0.0.8",
+            "parameters": {
+              "sfreq": 128.0,
+              "cutoff": 5.0,
+              "win_len": 0.5,
+              "blocksize": 100,
+              "win_overlap": 0.66,
+              "max_dropout_fraction": 0.1,
+              "min_clean_fraction": 0.25,
+              "max_bad_chans": 0.1,
+              "method": "euclid",
+              "lookahead": 0.25,
+              "stepsize": 32,
+              "maxdims": 0.66,
+              "mem_splits": 3
+            },
+            "calibration": {
+              "source": "marked_training_epoch",
+              "epoch_id": "epoch-00"
+            }
+          },
+          {
+            "algorithm": "mne.decoding.CSP",
+            "library_version": "1.10.2",
+            "parameters": {
+              "n_components": 2,
+              "reg": "ledoit_wolf",
+              "log": true,
+              "cov_est": "concat",
+              "norm_trace": false,
+              "transform_into": "average_power"
+            }
+          },
+          {
+            "algorithm": "SVC",
+            "parameters": {
+              "C": 1.0,
+              "break_ties": false,
+              "cache_size": 200,
+              "class_weight": null,
+              "coef0": 0.0,
+              "decision_function_shape": "ovr",
+              "degree": 3,
+              "gamma": "scale",
+              "kernel": "rbf",
+              "max_iter": -1,
+              "probability": true,
+              "random_state": 17,
+              "shrinking": true,
+              "tol": 0.001,
+              "verbose": false
+            }
+          }
+        ]
+      },
+      {
+        "train_epochs": 18,
+        "validation_epochs": 6,
+        "steps": [
+          {
+            "algorithm": "asrpy.ASR",
+            "library_version": "0.0.8",
+            "parameters": {
+              "sfreq": 128.0,
+              "cutoff": 5.0,
+              "win_len": 0.5,
+              "blocksize": 100,
+              "win_overlap": 0.66,
+              "max_dropout_fraction": 0.1,
+              "min_clean_fraction": 0.25,
+              "max_bad_chans": 0.1,
+              "method": "euclid",
+              "lookahead": 0.25,
+              "stepsize": 32,
+              "maxdims": 0.66,
+              "mem_splits": 3
+            },
+            "calibration": {
+              "source": "marked_training_epoch",
+              "epoch_id": "epoch-01"
+            }
+          },
+          {
+            "algorithm": "mne.decoding.CSP",
+            "library_version": "1.10.2",
+            "parameters": {
+              "n_components": 2,
+              "reg": "ledoit_wolf",
+              "log": true,
+              "cov_est": "concat",
+              "norm_trace": false,
+              "transform_into": "average_power"
+            }
+          },
+          {
+            "algorithm": "SVC",
+            "parameters": {
+              "C": 1.0,
+              "break_ties": false,
+              "cache_size": 200,
+              "class_weight": null,
+              "coef0": 0.0,
+              "decision_function_shape": "ovr",
+              "degree": 3,
+              "gamma": "scale",
+              "kernel": "rbf",
+              "max_iter": -1,
+              "probability": true,
+              "random_state": 17,
+              "shrinking": true,
+              "tol": 0.001,
+              "verbose": false
+            }
+          }
+        ]
+      }
+    ],
+    "splitter": {
+      "algorithm": "StratifiedShuffleSplit",
+      "n_splits": 3,
+      "test_size": 0.25,
+      "random_state": 17
+    }
+  },
+  "checks": [
+    "Persisted result read back from GraphQL",
+    "Worker source SHA-256 verified",
+    "Calibration selected exclusively from training epochs in all three splits"
+  ]
+}

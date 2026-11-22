@@ -51,6 +51,7 @@ type ComputationResultPayload {
   confusionMatrix: [[Int!]!]
   confusionMatrixes: [[[Int!]!]!]
   duration: Float!
+  eegProcessing: String
   f1Scores: [Float!]!
   optimizationIntermediateScores: [Float!]
   predictionDataPercent: Float
@@ -65,6 +66,7 @@ input ComputationResultPayloadInput {
   channelNames: [String!]!
   confusionMatrixes: [[[Int!]!]!]!
   duration: Float!
+  eegProcessing: String
   f1Scores: [Float!]!
   optimizationIntermediateScores: [Float!]
   predictionDataPercent: Float

@@ -478,7 +478,9 @@ class ComputeHandlerTests(unittest.TestCase):
 
         self.assertIs(result, frame)
         fetch_url.assert_called_once_with("http://backend/graphql", "file-1", "svc-token")
-        read_csv.assert_called_once_with("https://signed/file.csv", sep=";")
+        read_csv.assert_called_once_with(
+            "https://signed/file.csv", sep=";", dtype={"epoch_id": str, "class": str}
+        )
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ A **pipeline** (also called a run) is the computation of one graph path in one q
 | `executionId`            | ID                       | Number of the current execution; see [Executions](#executions).            |
 | `createdAt`, `updatedAt` | Date!                    | Times.                                                                     |
 
-The result has one value per cross-validation fold: `accuracyScores`, `f1Scores`, `rocAucScores`, `optimizationIntermediateScores`, `confusionMatrixes`, `predictionSampleCounts`, plus `sampleCount`, `duration` (seconds), `channelNames` (the class labels) and `predictionDataPercent`.
+The result has one value per cross-validation fold: `accuracyScores`, `f1Scores`, `rocAucScores`, `optimizationIntermediateScores`, `confusionMatrixes`, `predictionSampleCounts`, plus `sampleCount`, `duration` (seconds), `channelNames` (the class labels), `predictionDataPercent`, `cvDuration` (seconds spent in the folds), `completedFoldCount` and `eegProcessing` (JSON text that describes the EEG processing).
 
 ## Executions
 

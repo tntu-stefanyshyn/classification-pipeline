@@ -19,6 +19,7 @@ const skip = uri ? false : 'MONGODB_TEST_URI is not set';
 const useDatabase = async (t: TestContext) => {
   await mongoose.connect(uri!, { dbName: `rerun-test-${process.pid}-${Date.now()}` });
   await PipelineModel.init();
+  await WorkflowModel.init();
   t.after(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
@@ -81,12 +82,65 @@ test(
 
     const manager = new ComputationManager() as any;
     manager.orphanPollMs = 1;
-    const id = await manager.prepareRerun(source);
+    // Several retries find the same orphan at once; all of them must settle on one workflow.
+    const ids = await Promise.all(Array.from({ length: 5 }, () => manager.prepareRerun(source)));
 
-    assert.equal(String(id), String(orphan._id));
+    assert.equal(new Set(ids.map(String)).size, 1);
+    assert.equal(String(ids[0]), String(orphan._id));
     const workflows = await WorkflowModel.find({ instanceId: orphan._id }).lean();
     assert.equal(workflows.length, 1);
     assert.equal(workflows[0].status, PipelineStatus.idle);
     assert.equal(await PipelineModel.countDocuments({ experimentId }), 2);
+  }
+);
+
+test(
+  'the workflow of a re-run is unique, whatever number of creators race',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const runId = new Types.ObjectId();
+    const manager = new ComputationManager() as any;
+
+    await Promise.all(Array.from({ length: 10 }, () => manager.ensureRunWorkflow(runId)));
+
+    const workflows = await WorkflowModel.find({ instanceId: runId }).lean();
+    assert.equal(workflows.length, 1);
+    assert.equal(workflows[0].status, PipelineStatus.idle);
+    assert.equal(workflows[0].rerun, true);
+  }
+);
+
+test('a slow creator does not hide a workflow that has moved on', { skip }, async (t) => {
+  await useDatabase(t);
+  const runId = new Types.ObjectId();
+  const manager = new ComputationManager() as any;
+  await manager.ensureRunWorkflow(runId);
+  // A recovery created the workflow and a worker has queued the run since.
+  await WorkflowModel.updateOne({ instanceId: runId }, { $set: { status: PipelineStatus.queued } });
+
+  await manager.ensureRunWorkflow(runId);
+
+  const workflows = await WorkflowModel.find({ instanceId: runId }).lean();
+  assert.equal(workflows.length, 1);
+  assert.equal(workflows[0].status, PipelineStatus.queued);
+});
+
+test(
+  'the rerun unique index on workflows exists once the model is initialised',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+
+    const indexes = await WorkflowModel.collection.indexes();
+
+    assert.ok(
+      indexes.some(
+        (index) =>
+          index.key.instanceId === 1 &&
+          index.unique === true &&
+          JSON.stringify(index.partialFilterExpression) === JSON.stringify({ rerun: true })
+      )
+    );
   }
 );

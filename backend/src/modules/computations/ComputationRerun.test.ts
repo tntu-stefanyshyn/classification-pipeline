@@ -38,8 +38,9 @@ const setup = (t: TestContext, experimentStatus: ExperimentStatus, runs: RunSeed
     return run?.status ? { status: run.status } : null;
   });
   stub(t, manager.workflowManager, 'getWorkflow', async () => ({ status: experimentStatus }));
-  stub(t, manager.workflowManager, 'create', async (input: unknown) => {
-    created.push(input);
+  // Both creation paths (the request and a recovery) go through this atomic get-or-create.
+  stub(t, manager, 'ensureRunWorkflow', async (runId: Types.ObjectId) => {
+    created.push(runId);
   });
   stub(t, manager.experimentManager, 'changeStatus', async (input: unknown) => {
     experimentChanges.push(input);
@@ -137,9 +138,7 @@ test('a run left without a workflow by a request that died gets one and is reuse
   const id = await manager.prepareRerun(source);
 
   assert.equal(String(id), String(orphan._id));
-  assert.deepEqual(created, [
-    { instanceId: orphan._id, status: PipelineStatus.idle, type: 'PIPELINE' },
-  ]);
+  assert.deepEqual(created, [orphan._id]);
   // The experiment the dead request left closed is reopened.
   assert.equal(experimentChanges.length, 1);
 });

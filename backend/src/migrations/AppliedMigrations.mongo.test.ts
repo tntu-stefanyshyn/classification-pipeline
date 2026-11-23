@@ -245,10 +245,11 @@ test(
     assert.ok(workflows.includes('{"type":1,"status":1}'));
     assert.ok((await keysOf(UploadedFileModel)).includes('{"uploadedById":1,"uploadedAt":-1}'));
     assert.ok((await keysOf(ExperimentModel)).includes('{"fileId":1}'));
-    // WorkflowModel.init() waits for every index declared on the class: only the unique one may be.
+    // WorkflowModel.init() waits for every index declared on the class: only the unique ones may be
+    // (one running run per machine, one workflow per re-run).
     assert.deepEqual(
       WorkflowModel.schema.indexes().map(([fields]) => Object.keys(fields)),
-      [['machineHostname']]
+      [['instanceId'], ['machineHostname']]
     );
   }
 );

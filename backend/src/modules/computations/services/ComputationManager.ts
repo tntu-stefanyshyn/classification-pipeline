@@ -304,11 +304,7 @@ export class ComputationManager {
       await this.reopenExperiment(source.experimentId);
       return winner._id;
     }
-    await this.workflowManager.create({
-      instanceId: created._id,
-      status: PipelineStatus.idle,
-      type: WorkflowType.PIPELINE,
-    });
+    await this.ensureRunWorkflow(created._id);
     try {
       await this.reopenExperiment(source.experimentId);
     } catch (error) {
@@ -350,9 +346,8 @@ export class ComputationManager {
   /**
    * The status of a run. A re-run is created before its workflow, so a run without one is either
    * being created by another request, which we wait for, or was left behind by a request that
-   * died: then the idle workflow is created here.
-   * shortcut: a creator slower than the wait could still add a second workflow, add a unique
-   * (instanceId, type) index on workflows if that is ever seen.
+   * died: then the idle workflow is created here. Both creators use `ensureRunWorkflow`, so a slow
+   * original creator and a recovery cannot add two.
    */
   private async runStatus(run: Pipeline): Promise<PipelineStatus> {
     for (let attempt = 0; attempt < ORPHAN_WAIT_ATTEMPTS; attempt += 1) {
@@ -360,17 +355,38 @@ export class ComputationManager {
       if (workflow) return workflow.status as PipelineStatus;
       await new Promise((resolve) => setTimeout(resolve, this.orphanPollMs));
     }
-    await this.workflowManager.create({
-      instanceId: run._id,
-      status: PipelineStatus.idle,
-      type: WorkflowType.PIPELINE,
-    });
+    await this.ensureRunWorkflow(run._id);
     return PipelineStatus.idle;
+  }
+
+  /**
+   * Atomic get-or-create of the idle workflow of a re-run, shared by the request that created the
+   * run and by a recovery. An existing workflow is left as it is, whatever its status, and the
+   * unique `rerun` index on workflows settles two creators that both find none.
+   */
+  private async ensureRunWorkflow(runId: Types.ObjectId) {
+    try {
+      await WorkflowModel.updateOne(
+        { instanceId: runId, type: WorkflowType.PIPELINE },
+        {
+          $setOnInsert: {
+            status: PipelineStatus.idle,
+            rerun: true,
+            history: [{ previousStatus: PipelineStatus.idle, createdAt: new Date() }],
+          },
+        },
+        { upsert: true }
+      );
+    } catch (error) {
+      // The other creator inserted it first, which is the workflow we wanted.
+      if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR) throw error;
+    }
   }
 
   private findRunWorkflow(runId: Types.ObjectId) {
     return WorkflowModel.findOne({ instanceId: runId, type: WorkflowType.PIPELINE }).lean();
   }
+
   async stopRun(pipelineId: string): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(pipelineId);
     const workflow = await this.workflowManager.getWorkflow({

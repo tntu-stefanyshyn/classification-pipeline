@@ -25,8 +25,14 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
   const { messages } = useI18n();
   const m = messages.computationCard;
   const options = { fetchPolicy: 'network-only' } as const;
-  const a = usePipelineInfoQuery({ variables: { pipelineId: ids[0] }, ...options }).data?.pipeline;
-  const b = usePipelineInfoQuery({ variables: { pipelineId: ids[1] }, ...options }).data?.pipeline;
+  const first = usePipelineInfoQuery({ variables: { pipelineId: ids[0] }, ...options });
+  const second = usePipelineInfoQuery({ variables: { pipelineId: ids[1] }, ...options });
+  const a = first.data?.pipeline;
+  const b = second.data?.pipeline;
+  // A failed query or a run that no longer exists ends the loading state with a message.
+  const unavailable = [first, second].some(
+    (query) => Boolean(query.error) || (!query.loading && !query.data?.pipeline)
+  );
 
   const settingsRows = useMemo(
     () =>
@@ -188,6 +194,8 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
             </div>
           </div>
         </div>
+      ) : unavailable ? (
+        <p className="error">{m.compareUnavailable}</p>
       ) : (
         messages.resultView.loading
       )}

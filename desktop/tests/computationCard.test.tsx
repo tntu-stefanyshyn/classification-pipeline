@@ -42,6 +42,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
   const stopCalls: any[] = [];
   const enqueueCalls: any[] = [];
   const pauseCalls: any[] = [];
+  const queueCalls: any[] = [];
 
   const state = stubReactHooks(t, compiledFile);
   stubResolvedModule(t, compiledFile, 'react-router-dom', {
@@ -179,10 +180,15 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
     useEnqueueExperimentRunsMutation: () => [
       async (options: any) => {
         enqueueCalls.push(options);
-        // The server reports what it did; one idle run changed status before it could be queued.
-        return { data: { enqueueExperimentRuns: { queued: 1, skipped: 1 } } };
       },
       { loading: false, error: null },
+    ],
+    useQueueExperimentRunsMutation: () => [
+      async (options: any) => {
+        queueCalls.push(options);
+        // The only idle run was claimed before the mutation ran, so the server queued none.
+        return { data: { queueExperimentRuns: [] } };
+      },
     ],
     usePauseExperimentRunsMutation: () => [
       async (options: any) => {
@@ -246,10 +252,14 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
   // "Queue all idle" and "Stop all" act on the selected queue and ask first, with the count.
   await buttonWithText('Поставити всі очікувані в чергу')!.props.onClick();
   await buttonWithText('Зупинити все')!.props.onClick();
-  assert.deepEqual(enqueueCalls, [
-    { variables: { input: { experimentId: 'exp-1', queue: 'local', runAll: true } } },
+  // The confirmed ids are sent, so a run that became eligible later is not touched.
+  assert.deepEqual(queueCalls, [
+    { variables: { experimentId: 'exp-1', queue: 'local', pipelineIds: ['run-2'] } },
   ]);
-  assert.deepEqual(pauseCalls, [{ variables: { experimentId: 'exp-1', queue: 'local' } }]);
+  assert.deepEqual(pauseCalls, [
+    { variables: { experimentId: 'exp-1', queue: 'local', pipelineIds: ['run-3'] } },
+  ]);
+  assert.equal(enqueueCalls.length, 0);
   assert.equal(confirmQuestions.length, 2);
   assert.ok(confirmQuestions.every((question) => question.endsWith(': 1')));
 
@@ -260,7 +270,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
     completedActions,
     (element) => typeof element.props?.onClick === 'function'
   )!.props.onClick();
-  assert.deepEqual(enqueueCalls[1], {
+  assert.deepEqual(enqueueCalls[0], {
     variables: {
       input: { experimentId: 'exp-1', queue: 'local', pipelineId: 'run-1', rerun: true },
     },
@@ -307,7 +317,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
   const statuses = state.calls.filter((call) => call.index === 5).map((call) => String(call.value));
   assert.ok(
     statuses.some(
-      (text) => text.includes('Готово, конвеєрів оброблено: 1.') && text.includes('Пропущено')
+      (text) => text.includes('Готово, конвеєрів оброблено: 0.') && text.includes('Пропущено')
     )
   );
   assert.ok(statuses.some((text) => text === 'Готово, конвеєрів оброблено: 1.'));

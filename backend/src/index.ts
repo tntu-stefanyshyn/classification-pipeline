@@ -136,9 +136,11 @@ async function bootstrap() {
   if (config.mongoUri) {
     await mongoose.connect(config.mongoUri);
     console.log('Connected to MongoDB');
-    // The per-machine local-run limit depends on the workflows unique index, so wait for it. Read
-    // indexes build in the background and never delay startup: queries just scan until they exist.
+    // The per-machine local-run limit depends on the workflows unique index, and the one-re-run-
+    // per-run guarantee on the pipelines unique index, so wait for both. Read indexes build in the
+    // background and never delay startup: queries just scan until they exist.
     await WorkflowModel.init();
+    await PipelineModel.init();
     createWorkflowReadIndexes().catch((error) =>
       console.error('Failed to create the workflow read indexes', error)
     );

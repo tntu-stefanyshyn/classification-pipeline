@@ -114,7 +114,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
     },
     enqueueRuns: async (...args: any[]) => {
       calls.push(['enqueue', ...args]);
-      return { queued: 1, skipped: 0 };
+      return undefined;
     },
     stopRun: async (...args: any[]) => {
       calls.push(['stop', ...args]);
@@ -143,7 +143,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
     pathNodeIds: ['node-1'],
     score: 0.1,
   });
-  assert.deepEqual(
+  assert.equal(
     await resolver.enqueueExperimentRuns(
       {
         experimentId: 'exp-1',
@@ -151,7 +151,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
       } as any,
       context
     ),
-    { queued: 1, skipped: 0 }
+    true
   );
   assert.equal(await resolver.stopExperimentRun({ runId: 'pipeline-1' } as any, context), pipeline);
   assert.equal(await resolver.claimExperimentRun(ComputationQueue.local, context), pipeline);

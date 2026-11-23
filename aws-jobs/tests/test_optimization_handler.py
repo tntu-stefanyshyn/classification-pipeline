@@ -157,6 +157,12 @@ class OptimizationHandlerTests(unittest.TestCase):
         )
 
     def test_optimize_ignores_older_runs_of_a_path_after_a_rerun(self):
+        # The old run may be in the same queue as the re-run or in the other one.
+        for old_queue in ("cloud", "local"):
+            with self.subTest(old_queue=old_queue):
+                self._check_latest_run_wins(old_queue)
+
+    def _check_latest_run_wins(self, old_queue):
         module = load_optimization_handler()
         payload = {
             "backend_url": "http://backend/graphql",
@@ -167,11 +173,11 @@ class OptimizationHandlerTests(unittest.TestCase):
         pipeline_updates = []
         experiment_updates = []
 
-        def run(run_id, path, created_at, duration):
+        def run(run_id, path, created_at, duration, queue="cloud"):
             return {
                 "_id": run_id,
                 "status": "completed",
-                "queue": "cloud",
+                "queue": queue,
                 "createdAt": created_at,
                 "pathNodeIds": path,
                 "computingResult": {
@@ -196,7 +202,7 @@ class OptimizationHandlerTests(unittest.TestCase):
             {
                 "pipelines": [
                     # The old run of path A is the fastest of all and would win if it still counted.
-                    run("a-old", ["a"], "2026-01-01T10:00:00Z", 10),
+                    run("a-old", ["a"], "2026-01-01T10:00:00Z", 10, old_queue),
                     run("a-new", ["a"], "2026-01-02T10:00:00Z", 40),
                     run("b", ["b"], "2026-01-01T10:00:00Z", 50),
                 ]
@@ -218,7 +224,6 @@ class OptimizationHandlerTests(unittest.TestCase):
 
         self.assertEqual([update[0][1] for update in pipeline_updates], ["a-new", "b"])
         self.assertEqual(experiment_updates[0][0][2], "a-new")
-
     def test_optimize_updates_pipeline_scores_and_best_pipeline(self):
         module = load_optimization_handler()
         payload = {

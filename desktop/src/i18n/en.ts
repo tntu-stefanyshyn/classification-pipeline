@@ -410,6 +410,7 @@ const en = {
     compare: 'Compare runs',
     compareShort: 'Compare',
     compareTitle: 'Run comparison',
+    compareUnavailable: 'One of the selected runs could not be loaded.',
     compareSettings: 'Run settings',
     compareMetrics: 'Metrics (mean over folds)',
     compareDelta: 'B − A',

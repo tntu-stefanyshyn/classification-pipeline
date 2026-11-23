@@ -1,5 +1,5 @@
-mutation PauseExperimentRuns($experimentId: ID!, $queue: ComputationQueue) {
-  pauseExperimentRuns(experimentId: $experimentId, queue: $queue) {
+mutation PauseExperimentRuns($experimentId: ID!, $queue: ComputationQueue, $pipelineIds: [ID!]) {
+  pauseExperimentRuns(experimentId: $experimentId, queue: $queue, pipelineIds: $pipelineIds) {
     _id
     status
     queue

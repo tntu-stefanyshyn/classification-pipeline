@@ -111,7 +111,7 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
     },
   } as any);
 
-  const result = await manager.enqueueRuns({
+  await manager.enqueueRuns({
     experimentId: new Types.ObjectId(),
     queue: ComputationQueue.local,
     runAll: true,
@@ -123,12 +123,16 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
       status: PipelineStatus.queued,
     },
   ]);
-  assert.deepEqual(result, { queued: 1, skipped: 0 });
 });
 
-test('ComputationManager.enqueueRuns skips a run that changed status meanwhile and counts it', async (t) => {
+test('ComputationManager.queueRunsByIds returns only the confirmed runs it really queued', async (t) => {
   const manager = new ComputationManager();
-  const [first, second] = [new Types.ObjectId(), new Types.ObjectId()];
+  const [first, claimed, queuedByAnother] = [
+    new Types.ObjectId(),
+    new Types.ObjectId(),
+    new Types.ObjectId(),
+  ];
+  const asked: string[][] = [];
 
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult({ _id: new Types.ObjectId() })
@@ -146,32 +150,45 @@ test('ComputationManager.enqueueRuns skips a run that changed status meanwhile a
       ],
     }),
   } as any);
-  stub(
-    t,
-    PipelineBaseService as unknown as Record<string, unknown>,
-    'listByExperiment',
-    async () => [{ _id: first }, { _id: second }]
-  );
+  // Only runs of this experiment and queue come back, so a foreign id in the list is dropped.
+  stub(t, PipelineModel as unknown as Record<string, unknown>, 'find', (filter: any) => ({
+    lean: async () => {
+      asked.push(filter._id.$in.map(String));
+      return [first, claimed, queuedByAnother]
+        .filter((id) => filter._id.$in.map(String).includes(String(id)))
+        .map((_id) => ({ _id }));
+    },
+  }));
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({ status: PipelineStatus.idle }),
+    // Another client queued `queuedByAnother` after the list was read.
+    getWorkflow: async ({ instanceId }: { instanceId: Types.ObjectId }) => ({
+      status:
+        String(instanceId) === String(queuedByAnother)
+          ? PipelineStatus.queued
+          : PipelineStatus.idle,
+    }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
-    // A worker claimed the second run between the read and the update.
+    // A worker claimed `claimed` between the read and the update.
     changeStatus: async ({ pipelineId }: { pipelineId: Types.ObjectId }) => {
-      if (String(pipelineId) === String(second)) throw new Error('TRANSITION_NOT_FOUND');
+      if (String(pipelineId) === String(claimed)) throw new Error('TRANSITION_NOT_FOUND');
       return true;
     },
   } as any);
 
-  const result = await manager.enqueueRuns({
-    experimentId: new Types.ObjectId(),
-    queue: ComputationQueue.local,
-    runAll: true,
-  } as any);
+  const result = await manager.queueRunsByIds(
+    new Types.ObjectId(),
+    ComputationQueue.local,
+    [first, claimed, queuedByAnother, new Types.ObjectId()].map(String)
+  );
 
-  assert.deepEqual(result, { queued: 1, skipped: 1 });
+  // Only `first` was queued by this call; the other three confirmed ids are the skipped ones.
+  assert.equal(asked.length, 2);
+  assert.deepEqual(
+    result.map((run) => String(run._id)),
+    [String(first)]
+  );
 });
-
 test('ComputationManager.enqueueRuns rejects graphs without classification in every path', async (t) => {
   const manager = new ComputationManager();
 

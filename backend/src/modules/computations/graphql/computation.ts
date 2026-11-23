@@ -2,7 +2,6 @@ import { Arg, Ctx, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
-import { EnqueueExperimentRunsResult } from '../classes/EnqueueExperimentRunsResult';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
@@ -29,14 +28,31 @@ export class ComputationResolver {
     return this.manager.optimize(experimentId);
   }
 
-  @Mutation(() => EnqueueExperimentRunsResult)
+  @Mutation(() => Boolean)
   async enqueueExperimentRuns(
     @Arg('input', () => EnqueueExperimentRunsInput) input: EnqueueExperimentRunsInput,
     @Ctx() context: GraphQLContext
-  ): Promise<EnqueueExperimentRunsResult> {
+  ): Promise<boolean> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, input.experimentId);
-    return this.manager.enqueueRuns(input);
+    await this.manager.enqueueRuns(input);
+    return true;
+  }
+
+  /**
+   * "Queue all idle" on a list the user confirmed: returns the runs that were really queued, so a
+   * run that changed status meanwhile is the difference between the list and the result.
+   */
+  @Mutation(() => [Pipeline])
+  async queueExperimentRuns(
+    @Arg('experimentId', () => ID) experimentId: string,
+    @Arg('queue', () => ComputationQueue) queue: ComputationQueue,
+    @Arg('pipelineIds', () => [ID]) pipelineIds: string[],
+    @Ctx() context: GraphQLContext
+  ): Promise<Pipeline[]> {
+    const user = await this.auth.me(context.req);
+    await this.access.assertExperimentOwner(user._id, experimentId);
+    return this.manager.queueRunsByIds(experimentId, queue, pipelineIds);
   }
 
   @Mutation(() => Pipeline)
@@ -64,11 +80,12 @@ export class ComputationResolver {
   async pauseExperimentRuns(
     @Arg('experimentId', () => ID) experimentId: string,
     @Ctx() context: GraphQLContext,
-    @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
+    @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue,
+    @Arg('pipelineIds', () => [ID], { nullable: true }) pipelineIds?: string[]
   ): Promise<Pipeline[]> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, experimentId);
-    return this.manager.pauseExperimentRuns(experimentId, queue);
+    return this.manager.pauseExperimentRuns(experimentId, queue, pipelineIds);
   }
 
   @Mutation(() => [Pipeline])

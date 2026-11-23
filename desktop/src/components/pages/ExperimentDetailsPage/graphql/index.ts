@@ -7,6 +7,7 @@ export { useOptimizeExperimentRunsLazyQuery } from '../../../../graphql/queries/
 export { useUpdateExperimentMutation } from '../../../../graphql/mutations/generated/updateExperiment';
 export { useEnqueueExperimentRunsMutation } from '../../../../graphql/mutations/generated/enqueueExperimentRuns';
 export { useStopExperimentRunMutation } from '../../../../graphql/mutations/generated/stopExperimentRun';
+export { useQueueExperimentRunsMutation } from '../../../../graphql/mutations/generated/queueExperimentRuns';
 export { usePauseExperimentRunsMutation } from '../../../../graphql/mutations/generated/pauseExperimentRuns';
 export { useResumeExperimentRunsMutation } from '../../../../graphql/mutations/generated/resumeExperimentRuns';
 export { useUploadedFilesQuery } from '../../../../graphql/queries/generated/uploadedFiles';

@@ -409,6 +409,7 @@ const uk = {
     compare: 'Порівняти запуски',
     compareShort: 'Порівняти',
     compareTitle: 'Порівняння запусків',
+    compareUnavailable: 'Не вдалося завантажити один із вибраних запусків.',
     compareSettings: 'Налаштування запусків',
     compareMetrics: 'Метрики (середнє по фолдах)',
     compareDelta: 'B − A',

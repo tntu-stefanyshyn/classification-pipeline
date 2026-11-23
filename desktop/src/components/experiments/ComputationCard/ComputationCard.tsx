@@ -24,6 +24,7 @@ import {
   useEnqueueExperimentRunsMutation,
   useExperimentQuery,
   usePauseExperimentRunsMutation,
+  useQueueExperimentRunsMutation,
   usePipelinesQuery,
   useStopExperimentRunMutation,
 } from '../../pages/ExperimentDetailsPage/graphql';
@@ -82,6 +83,7 @@ const ComputationCard: FC = () => {
   const [enqueueRuns, { loading: enqueueing, error: enqueueError }] =
     useEnqueueExperimentRunsMutation();
   const [stopRun, { loading: stopping, error: stopError }] = useStopExperimentRunMutation();
+  const [queueRuns] = useQueueExperimentRunsMutation();
   const [pauseRuns] = usePauseExperimentRunsMutation();
   const [bulkBusy, setBulkBusy] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -200,43 +202,42 @@ const ComputationCard: FC = () => {
     return map;
   }, [graphPaths, runsByPath]);
 
-  // Bulk actions work on the selected queue; the counts come from the latest polled list and the
-  // backend skips runs that changed meanwhile.
+  // Bulk actions work on the runs the user confirmed: their ids are sent, so a run that became
+  // eligible after the confirmation is left alone, and the result is counted against that list.
   const handleBulk = async (kind: 'queue' | 'stop') => {
     if (!id) return;
-    const affected = runs.filter((run) =>
-      kind === 'queue'
-        ? run.status === PipelineStatus.idle
-        : run.status === PipelineStatus.queued || run.status === PipelineStatus.running
-    ).length;
+    const confirmedIds = runs
+      .filter((run) =>
+        kind === 'queue'
+          ? run.status === PipelineStatus.idle
+          : run.status === PipelineStatus.queued || run.status === PipelineStatus.running
+      )
+      .map((run) => run._id);
     const m = messages.computationCard;
-    if (affected === 0) {
+    if (confirmedIds.length === 0) {
       setActionStatus(m.bulkNothing);
       return;
     }
     const queueName = messages.statuses.computationQueue[activeQueue];
     const question = kind === 'queue' ? m.queueAllConfirm : m.stopAllConfirm;
-    if (!window.confirm(`${question} (${queueName}): ${affected}`)) return;
+    if (!window.confirm(`${question} (${queueName}): ${confirmedIds.length}`)) return;
 
     setBulkBusy(true);
     try {
-      // The message reports what the server did; the count before the confirmation is only an
-      // estimate, so runs that changed meanwhile show up as skipped.
+      // The server returns the runs it really changed; the rest of the list was skipped.
       let done = 0;
-      let skippedByServer = 0;
       if (kind === 'queue') {
-        const { data } = await enqueueRuns({
-          variables: { input: { experimentId: id, queue: activeQueue, runAll: true } },
+        const { data } = await queueRuns({
+          variables: { experimentId: id, queue: activeQueue, pipelineIds: confirmedIds },
         });
-        done = data?.enqueueExperimentRuns.queued ?? 0;
-        skippedByServer = data?.enqueueExperimentRuns.skipped ?? 0;
+        done = data?.queueExperimentRuns.length ?? 0;
       } else {
         const { data } = await pauseRuns({
-          variables: { experimentId: id, queue: activeQueue },
+          variables: { experimentId: id, queue: activeQueue, pipelineIds: confirmedIds },
         });
         done = data?.pauseExperimentRuns.length ?? 0;
       }
-      const skipped = Math.max(skippedByServer, affected - done);
+      const skipped = confirmedIds.length - done;
       setActionStatus(
         `${m.bulkDone}: ${done}.${skipped > 0 ? ` ${m.bulkSkipped}: ${skipped}.` : ''}`
       );
@@ -247,7 +248,6 @@ const ComputationCard: FC = () => {
       setBulkBusy(false);
     }
   };
-
   const handleRerun = async (pipelineId: string) => {
     const m = messages.computationCard;
     if (experiment?.status === ExperimentStatus.completed && !window.confirm(m.rerunWarning)) {

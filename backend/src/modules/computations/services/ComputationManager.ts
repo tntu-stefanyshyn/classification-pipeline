@@ -16,7 +16,6 @@ import { buildGraphPaths } from '../../experiments/utils/buildGraphPaths';
 import { ComputationMode } from '../../experiments/classes/ComputationMode';
 import { OptimizationRunner } from './OptimizationRunner';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
-import { EnqueueExperimentRunsResult } from '../classes/EnqueueExperimentRunsResult';
 import {
   Pipeline,
   PipelineBaseService,
@@ -35,7 +34,7 @@ import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { executionFilter } from '../../../core/pipeline/executionFilter';
-import { DUPLICATE_KEY_ERROR, UNCOMPUTED_PIPELINES } from '../constants';
+import { DUPLICATE_KEY_ERROR, ORPHAN_WAIT_ATTEMPTS, UNCOMPUTED_PIPELINES } from '../constants';
 import { isLostTransitionRace } from '../utils/isLostTransitionRace';
 
 export class ComputationManager {
@@ -45,6 +44,8 @@ export class ComputationManager {
   private readonly workflowManager = new WorkflowManager();
   private readonly pipelineManager = new PipelineManager();
   private readonly experimentManager = new ExperimentManager();
+  // Overridden by tests; the wait for a run whose workflow is still being created.
+  private orphanPollMs = 100;
 
   async optimize(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
     const experiment = await ExperimentModel.findById(experimentId).lean();
@@ -130,7 +131,7 @@ export class ComputationManager {
     return this.getOptimizationResult(experimentId);
   }
 
-  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<EnqueueExperimentRunsResult> {
+  async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<void> {
     const { experimentId, pipelineId, runAll } = input;
     if (runAll && pipelineId) {
       throw new Error('Provide either runAll or pathNodeIds, not both.');
@@ -139,6 +140,47 @@ export class ComputationManager {
       throw new Error('Path node ids are required for a single run.');
     }
 
+    await this.assertRunnable(experimentId, input.queue);
+
+    let pipelineIds: Types.ObjectId[] = [];
+    if (runAll) {
+      const pipelines = await PipelineBaseService.listByExperiment(experimentId, input.queue);
+      pipelineIds = pipelines.map((e) => e._id);
+    } else if (pipelineId) {
+      // The caller was checked against experimentId, so the pipeline has to belong to it.
+      const pipeline = await PipelineBaseService.getById(pipelineId);
+      if (String(pipeline.experimentId) !== String(experimentId)) {
+        throw new Error('Конвеєр не знайдено');
+      }
+      pipelineIds = [input.rerun ? await this.prepareRerun(pipeline) : pipeline._id];
+    }
+
+    await this.queueIdle(pipelineIds);
+  }
+
+  /**
+   * Queues the given runs of one queue, for a bulk action the user confirmed on a list of runs.
+   * Returns the runs that were really queued; a run that changed status since the list was read,
+   * or does not belong to the experiment and queue, is left out, so the caller can count it as
+   * skipped.
+   */
+  async queueRunsByIds(
+    experimentId: ObjectIdOrString,
+    queue: ComputationQueue,
+    pipelineIds: string[]
+  ): Promise<Pipeline[]> {
+    await this.assertRunnable(experimentId, queue);
+    const candidates = await PipelineModel.find({
+      _id: { $in: pipelineIds },
+      experimentId: stringIdToObjectId(experimentId),
+      queue,
+    }).lean();
+    const queued = await this.queueIdle(candidates.map((run) => run._id));
+    return PipelineModel.find({ _id: { $in: queued } }).lean();
+  }
+
+  /** The checks every start of computations needs: the experiment, its graph and its settings. */
+  private async assertRunnable(experimentId: ObjectIdOrString, queue: ComputationQueue) {
     const experiment = await ExperimentModel.findById(experimentId).lean();
     if (!experiment) {
       throw new Error('Experiment not found');
@@ -152,7 +194,7 @@ export class ComputationManager {
     if (!Array.isArray(graphSettings.queues) || graphSettings.queues.length === 0) {
       throw new Error('Оберіть хоча б один тип обчислень у налаштуваннях графа.');
     }
-    if (!graphSettings.queues.includes(input.queue)) {
+    if (!graphSettings.queues.includes(queue)) {
       throw new Error('Обраний тип обчислень не дозволений у налаштуваннях графа.');
     }
     const metrics = graphSettings.metrics;
@@ -164,10 +206,10 @@ export class ComputationManager {
     }
 
     const computationMode = graph.computationMode ?? ComputationMode.both;
-    if (computationMode === ComputationMode.local && input.queue !== ComputationQueue.local) {
+    if (computationMode === ComputationMode.local && queue !== ComputationQueue.local) {
       throw new Error('Цей граф дозволяє лише локальні обчислення.');
     }
-    if (computationMode === ComputationMode.cloud && input.queue !== ComputationQueue.cloud) {
+    if (computationMode === ComputationMode.cloud && queue !== ComputationQueue.cloud) {
       throw new Error('Цей граф дозволяє лише хмарні обчислення.');
     }
 
@@ -183,63 +225,44 @@ export class ComputationManager {
     if (!allPathsHaveClassification) {
       throw new Error('Усі конвеєри мають містити етап класифікації.');
     }
+  }
 
-    let pipelineIds: Types.ObjectId[] = [];
-    if (runAll) {
-      const pipelines = await PipelineBaseService.listByExperiment(experimentId, input.queue);
-      pipelineIds = pipelines.map((e) => e._id);
-    } else if (pipelineId) {
-      // The caller was checked against experimentId, so the pipeline has to belong to it.
-      const pipeline = await PipelineBaseService.getById(pipelineId);
-      if (String(pipeline.experimentId) !== String(experimentId)) {
-        throw new Error('Конвеєр не знайдено');
-      }
-      pipelineIds = [input.rerun ? await this.prepareRerun(pipeline) : pipeline._id];
-    }
-
-    const idlePipelineIds = (
-      await Promise.all(
-        pipelineIds.map(async (nextPipelineId) => {
-          const workflow = await this.workflowManager.getWorkflow({
-            instanceId: nextPipelineId,
-            type: WorkflowType.PIPELINE,
-          });
-          return workflow.status === PipelineStatus.idle ? nextPipelineId : null;
-        })
-      )
-    ).filter(Boolean) as Types.ObjectId[];
-
-    // A run that changed status since it was read (a worker or another client) is skipped, so one
-    // lost race does not fail the whole bulk action; the counts tell what actually happened.
-    const results = await Promise.all(
-      idlePipelineIds.map(async (nextPipelineId) => {
+  /**
+   * Moves the idle runs among `pipelineIds` to `queued`. A run that changed status since it was
+   * read (a worker or another client) is skipped instead of failing the whole action.
+   * Returns the ids that were queued.
+   */
+  private async queueIdle(pipelineIds: Types.ObjectId[]): Promise<Types.ObjectId[]> {
+    const queued = await Promise.all(
+      pipelineIds.map(async (nextPipelineId) => {
+        const workflow = await this.workflowManager.getWorkflow({
+          instanceId: nextPipelineId,
+          type: WorkflowType.PIPELINE,
+        });
+        if (workflow.status !== PipelineStatus.idle) return null;
         try {
           await this.pipelineManager.changeStatus({
             pipelineId: nextPipelineId,
             status: PipelineStatus.queued,
           });
-          return true;
+          return nextPipelineId;
         } catch (error) {
           if (!isLostTransitionRace(error)) throw error;
-          return false;
+          return null;
         }
       })
     );
-    const queued = results.filter(Boolean).length;
-    return { queued, skipped: results.length - queued };
+    return queued.filter((id): id is Types.ObjectId => id !== null);
   }
 
   /**
    * A re-run is a new run of the same path, so the finished one stays for comparison. Returns the
    * run to queue: the source itself unless it is completed, or the run of this path that is already
    * waiting or running, so a second click creates nothing. Two simultaneous first clicks are
-   * settled by the unique `rerunOf` index: the loser waits for the run the winner created.
+   * settled by the unique `rerunOf` index: the loser takes the run the winner created.
    */
   private async prepareRerun(source: Pipeline): Promise<Types.ObjectId> {
-    const statusOf = async (run: Pipeline) =>
-      (await this.workflowManager.getWorkflow({ instanceId: run._id, type: WorkflowType.PIPELINE }))
-        .status;
-    if ((await statusOf(source)) !== PipelineStatus.completed) return source._id;
+    if ((await this.runStatus(source)) !== PipelineStatus.completed) return source._id;
 
     const sameRuns = await PipelineModel.find({
       experimentId: source.experimentId,
@@ -247,14 +270,15 @@ export class ComputationManager {
       pathNodeIds: source.pathNodeIds,
     }).lean();
     for (const run of sameRuns) {
-      if ((await statusOf(run)) !== PipelineStatus.completed) return run._id;
+      if ((await this.runStatus(run)) !== PipelineStatus.completed) {
+        // A request that died after creating the run may have left the experiment closed.
+        await this.reopenExperiment(source.experimentId);
+        return run._id;
+      }
     }
 
-    const experimentWorkflow = await this.workflowManager.getWorkflow({
-      instanceId: source.experimentId,
-      type: WorkflowType.EXPERIMENT,
-    });
-    if (experimentWorkflow.status === ExperimentStatus.optimization) {
+    const experimentStatus = await this.experimentStatus(source.experimentId);
+    if (experimentStatus === ExperimentStatus.optimization) {
       throw new Error('Перезапуск недоступний під час оптимізації.');
     }
 
@@ -274,42 +298,78 @@ export class ComputationManager {
       });
     } catch (error) {
       if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR) throw error;
-      return this.waitForRerun(latest._id);
+      const winner = await PipelineModel.findOne({ rerunOf: latest._id }).lean();
+      if (!winner) throw error;
+      await this.runStatus(winner);
+      await this.reopenExperiment(source.experimentId);
+      return winner._id;
     }
     await this.workflowManager.create({
       instanceId: created._id,
       status: PipelineStatus.idle,
       type: WorkflowType.PIPELINE,
     });
-    if (experimentWorkflow.status === ExperimentStatus.completed) {
-      try {
-        await this.experimentManager.changeStatus({
-          experimentId: source.experimentId,
-          status: ExperimentStatus.computing,
-        });
-      } catch (error) {
-        // The experiment could not be reopened (e.g. an optimization started meanwhile): no new run.
-        await PipelineModel.deleteOne({ _id: created._id });
-        await WorkflowModel.deleteOne({ instanceId: created._id, type: WorkflowType.PIPELINE });
-        throw error;
-      }
+    try {
+      await this.reopenExperiment(source.experimentId);
+    } catch (error) {
+      // The experiment could not be reopened (an optimization started meanwhile, or its file is
+      // gone): no new run.
+      await PipelineModel.deleteOne({ _id: created._id });
+      await WorkflowModel.deleteOne({ instanceId: created._id, type: WorkflowType.PIPELINE });
+      throw error;
     }
     return created._id;
   }
 
-  /** The other request created this run a moment ago; wait until its workflow exists too. */
-  private async waitForRerun(rerunOf: Types.ObjectId): Promise<Types.ObjectId> {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const run = await PipelineModel.findOne({ rerunOf }).lean();
-      if (
-        run &&
-        (await WorkflowModel.exists({ instanceId: run._id, type: WorkflowType.PIPELINE }))
-      ) {
-        return run._id;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+  private async experimentStatus(experimentId: Types.ObjectId): Promise<ExperimentStatus> {
+    const workflow = await this.workflowManager.getWorkflow({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    });
+    return workflow.status as ExperimentStatus;
+  }
+
+  /** A completed experiment goes back to `computing` for a re-run; any other status stays. */
+  private async reopenExperiment(experimentId: Types.ObjectId) {
+    const status = await this.experimentStatus(experimentId);
+    if (status === ExperimentStatus.optimization) {
+      throw new Error('Перезапуск недоступний під час оптимізації.');
     }
-    throw new Error('Перезапуск уже виконується, спробуйте ще раз.');
+    if (status !== ExperimentStatus.completed) return;
+    try {
+      await this.experimentManager.changeStatus({
+        experimentId,
+        status: ExperimentStatus.computing,
+      });
+    } catch (error) {
+      // Another re-run reopened it first.
+      if (!isLostTransitionRace(error)) throw error;
+    }
+  }
+
+  /**
+   * The status of a run. A re-run is created before its workflow, so a run without one is either
+   * being created by another request, which we wait for, or was left behind by a request that
+   * died: then the idle workflow is created here.
+   * shortcut: a creator slower than the wait could still add a second workflow, add a unique
+   * (instanceId, type) index on workflows if that is ever seen.
+   */
+  private async runStatus(run: Pipeline): Promise<PipelineStatus> {
+    for (let attempt = 0; attempt < ORPHAN_WAIT_ATTEMPTS; attempt += 1) {
+      const workflow = await this.findRunWorkflow(run._id);
+      if (workflow) return workflow.status as PipelineStatus;
+      await new Promise((resolve) => setTimeout(resolve, this.orphanPollMs));
+    }
+    await this.workflowManager.create({
+      instanceId: run._id,
+      status: PipelineStatus.idle,
+      type: WorkflowType.PIPELINE,
+    });
+    return PipelineStatus.idle;
+  }
+
+  private findRunWorkflow(runId: Types.ObjectId) {
+    return WorkflowModel.findOne({ instanceId: runId, type: WorkflowType.PIPELINE }).lean();
   }
   async stopRun(pipelineId: string): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(pipelineId);
@@ -552,7 +612,8 @@ export class ComputationManager {
 
   async pauseExperimentRuns(
     experimentId: ObjectIdOrString,
-    queue?: ComputationQueue
+    queue?: ComputationQueue,
+    pipelineIds?: string[]
   ): Promise<Pipeline[]> {
     const runs = await WorkflowModel.aggregate<Pipeline>([
       {
@@ -571,7 +632,15 @@ export class ComputationManager {
       },
       { $unwind: '$pipeline' },
       { $replaceRoot: { newRoot: '$pipeline' } },
-      { $match: { experimentId: stringIdToObjectId(experimentId), ...(queue ? { queue } : {}) } },
+      {
+        $match: {
+          experimentId: stringIdToObjectId(experimentId),
+          ...(queue ? { queue } : {}),
+          // A confirmed list limits the action to those runs, so one that became eligible after
+          // the confirmation is left alone.
+          ...(pipelineIds ? { _id: { $in: pipelineIds.map(stringIdToObjectId) } } : {}),
+        },
+      },
     ]);
 
     if (runs.length === 0) return [];

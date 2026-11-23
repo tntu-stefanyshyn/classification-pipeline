@@ -265,27 +265,7 @@ export class ExperimentManager {
       from: ExperimentStatus.configuring,
       to: ExperimentStatus.computing,
       sideEffect: async ({ instanceId }) => {
-        // Re-check after the status write, before any run exists: pairs with FileStore.remove,
-        // which marks the file and then reads experiment statuses.
-        try {
-          await this.ensureExperimentFileReady(instanceId);
-        } catch (error) {
-          await WorkflowModel.updateOne(
-            { instanceId, type: WorkflowType.EXPERIMENT, status: ExperimentStatus.computing },
-            {
-              $set: { status: ExperimentStatus.configuring },
-              $push: {
-                history: {
-                  previousStatus: ExperimentStatus.computing,
-                  nextStatus: ExperimentStatus.configuring,
-                  message: error instanceof Error ? error.message : 'Файл експерименту недоступний',
-                  createdAt: new Date(),
-                },
-              },
-            }
-          );
-          throw error;
-        }
+        await this.recheckFileOrRevert(instanceId, ExperimentStatus.configuring);
         await this.pipelineManager.generatePipelinesFromGraphStructure(instanceId);
       },
     },
@@ -302,11 +282,40 @@ export class ExperimentManager {
       to: ExperimentStatus.optimization,
     },
     {
-      // A re-run reopens an optimized experiment; its optimization has to be run again.
+      // A re-run reopens an optimized experiment; its optimization is started again when the
+      // last run completes. The file is checked again after the status write, as for a first start.
       from: ExperimentStatus.completed,
       to: ExperimentStatus.computing,
+      sideEffect: async ({ instanceId }) => {
+        await this.recheckFileOrRevert(instanceId, ExperimentStatus.completed);
+      },
     },
   ];
+
+  // Re-check after the status write, before any run starts: pairs with FileStore.remove, which
+  // marks the file and then reads experiment statuses. If the file is gone, the status goes back
+  // to `revertTo` and the error is returned.
+  private async recheckFileOrRevert(instanceId: ObjectIdOrString, revertTo: ExperimentStatus) {
+    try {
+      await this.ensureExperimentFileReady(instanceId);
+    } catch (error) {
+      await WorkflowModel.updateOne(
+        { instanceId, type: WorkflowType.EXPERIMENT, status: ExperimentStatus.computing },
+        {
+          $set: { status: revertTo },
+          $push: {
+            history: {
+              previousStatus: ExperimentStatus.computing,
+              nextStatus: revertTo,
+              message: error instanceof Error ? error.message : 'Файл експерименту недоступний',
+              createdAt: new Date(),
+            },
+          },
+        }
+      );
+      throw error;
+    }
+  }
 
   async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {
     if (status === ExperimentStatus.computing) {

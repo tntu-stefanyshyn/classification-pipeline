@@ -203,6 +203,24 @@ test('stop all returns only the runs it really stopped', async (t) => {
   );
 });
 
+test('stop all of a confirmed list leaves a run that became eligible later alone', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const confirmed = createRun({ experimentId });
+  const queuedLater = createRun({ experimentId });
+  installStore(t, [confirmed, queuedLater]);
+  const { manager } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, undefined, [
+    String(confirmed._id),
+  ]);
+
+  assert.deepEqual(
+    paused.map((run) => String(run._id)),
+    [String(confirmed._id)]
+  );
+  assert.equal(confirmed.status, PipelineStatus.idle);
+  assert.equal(queuedLater.status, PipelineStatus.queued);
+});
 test('resuming re-queues the paused runs so workers can claim them again', async (t) => {
   const experimentId = new Types.ObjectId();
   const first = createRun({ experimentId });

@@ -13,6 +13,8 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
       rocAucScores
       duration
       sampleCount
+      cvDuration
+      completedFoldCount
     }
     machineInfo {
       hostname

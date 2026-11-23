@@ -9,6 +9,20 @@ const toBool = (value: string | undefined, defaultValue: boolean) => {
   return defaultValue;
 };
 
+/** A comma-separated list; empty items are dropped, and an empty list means the default. */
+export const toList = (value: string | undefined, defaultValue: string[]) => {
+  const items = (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length ? items : defaultValue;
+};
+
+// The desktop renderer: the Vite dev server, and `null`, the origin of the packaged app, which
+// loads its page from a file. The dev server port is pinned with `strictPort` in
+// desktop/vite.renderer.config.ts; change both together.
+const defaultCorsOrigins = ['http://localhost:5173', 'null'];
+
 export const config = {
   nodeEnv,
   isDev: nodeEnv === 'development',
@@ -16,6 +30,10 @@ export const config = {
   backend: {
     graphqlUrl: defaultGraphqlUrl,
     serviceToken: process.env.BACKEND_SERVICE_TOKEN ?? '',
+  },
+  /** Origins a browser may call the API from (`CORS_ORIGINS`). Workers send no Origin. */
+  cors: {
+    origins: toList(process.env.CORS_ORIGINS, defaultCorsOrigins),
   },
   mongoUri: process.env.MONGODB_URI,
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',

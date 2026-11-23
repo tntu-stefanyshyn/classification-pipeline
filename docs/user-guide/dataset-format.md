@@ -1,8 +1,8 @@
 # Dataset format
 
-An experiment classifies the rows of one CSV file. The file is checked when a computation starts, so
-a wrong file is accepted by the upload and fails only later. Check your file against this page
-before you upload it.
+An experiment reads one semicolon-delimited CSV. A path with CSP or Artifact Subspace Reconstruction
+(ASR) classifies whole EEG epochs. Other paths classify the feature rows described below. The file
+contents are checked when computation starts.
 
 ## Requirements
 
@@ -25,6 +25,39 @@ texts as an empty cell, so a file whose first column contains one of them is rej
 `-NaN`, `-nan`, `-1.#IND`, `-1.#QNAN`, `1.#IND` and `1.#QNAN`. The check is case-sensitive: `none`,
 `NAN`, `Na` and `Null` are accepted. Rename such labels (for example `NA` to `class_na`) before you
 upload the file.
+
+## EEG epochs for CSP and ASR
+
+Use one row per time sample. The required columns are `class`, `epoch_id`, `sample`, and
+`sampling_rate_hz`. Each remaining column is an EEG channel in volts, apart from the optional
+`asr_clean` flag. Include at least two channels. Every epoch must have the same number of samples,
+with integer indices from 0 through the last sample. The class and calibration flag must be constant
+within each epoch, and the sampling rate must be positive and constant across the file.
+
+```csv
+class;epoch_id;sample;sampling_rate_hz;asr_clean;C3;C4
+left;trial-01;0;128;1;0.0000012;-0.0000021
+left;trial-01;1;128;1;0.0000014;-0.0000019
+```
+
+The excerpt shows the first two samples of one epoch. Supply multiple complete epochs per class.
+The splitting requirements below apply to epochs for these paths. Every sample of an epoch stays
+in the same part of a split.
+
+- **ASR** uses the first epoch marked `asr_clean=1` in file order among that split's training epochs.
+  Mark only inspected clean recordings with that flag. Use a sampling rate above 82 Hz and epochs
+  at least five seconds long and at least ten ASR windows long. Every training split needs a
+  marked epoch. The ASR settings are `cutoff` (default 20 standard deviations) and `window_ms`
+  (default 500 ms).
+- **CSP** learns spatial filters from the training epochs and their class labels. It generates one
+  average-power feature per selected component per epoch. Set `n_components` within the signal
+  rank. `reg=auto` selects Ledoit–Wolf. `log=true` returns log power. `log=false` standardizes the
+  component powers using training statistics.
+- When both nodes are on a path, the worker reconstructs the channel signals with ASR first and
+  then extracts CSP power features. If the path includes ASR without CSP, the reconstructed time
+  samples become features. The GraphQL field `computingResult.eegProcessing` contains the JSON
+  execution record with the fitted algorithm order, parameters, calibration epoch IDs, and worker
+  source SHA-256.
 
 ## Classification requirements
 
@@ -65,7 +98,7 @@ minutes. Try the workflow on a stratified sample first (the same share of every 
 
 ## Example
 
-[`example-dataset.csv`](example-dataset.csv) is a valid file you can use to try the application:
+[`example-dataset.csv`](example-dataset.csv) is a feature-table file for a classification path without CSP or ASR:
 60 rows, two classes (`relaxed` and `focused`, 30 rows each) and four numeric columns.
 
 ```csv

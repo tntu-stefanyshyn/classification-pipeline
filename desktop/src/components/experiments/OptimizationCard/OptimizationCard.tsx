@@ -16,9 +16,9 @@ import {
   OptimizationStatus,
   PipelineStatus,
 } from '../../../graphql/types.generated';
-import { config } from '../../../config/config';
 import { useI18n } from '../../../i18n';
 import { getLocalizedTechnologyLabel } from '../../../utils/technologyLabel';
+import { ReportDownloadButton } from '../ReportDownloadButton';
 
 type LeaderboardRow = {
   id: string;
@@ -42,17 +42,31 @@ const averageMetric = (values?: number[] | null) => {
 const formatMetric = (value: number | null) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : '—';
 
-const normalizeProcessingTime = (duration?: number | null, sampleCount?: number | null) => {
+const normalizeProcessingTime = (
+  duration: number | null | undefined,
+  sampleCount: number | null | undefined,
+  cvDuration: number | null | undefined,
+  completedFoldCount: number | null | undefined
+) => {
+  if (typeof sampleCount !== 'number' || !Number.isFinite(sampleCount) || sampleCount <= 0) {
+    return null;
+  }
+  if (cvDuration == null && completedFoldCount == null) {
+    return typeof duration === 'number' && Number.isFinite(duration)
+      ? duration / sampleCount
+      : null;
+  }
   if (
-    typeof duration !== 'number' ||
-    !Number.isFinite(duration) ||
-    typeof sampleCount !== 'number' ||
-    !Number.isFinite(sampleCount) ||
-    sampleCount <= 0
+    typeof cvDuration !== 'number' ||
+    !Number.isFinite(cvDuration) ||
+    cvDuration < 0 ||
+    typeof completedFoldCount !== 'number' ||
+    !Number.isInteger(completedFoldCount) ||
+    completedFoldCount <= 0
   ) {
     return null;
   }
-  return duration / sampleCount;
+  return cvDuration / (sampleCount * completedFoldCount);
 };
 
 const OptimizationCard: FC = () => {
@@ -140,7 +154,9 @@ const OptimizationCard: FC = () => {
           averageRocAuc: averageMetric(computingResult?.rocAucScores),
           normalizedProcessingTime: normalizeProcessingTime(
             computingResult?.duration,
-            computingResult?.sampleCount
+            computingResult?.sampleCount,
+            computingResult?.cvDuration,
+            computingResult?.completedFoldCount
           ),
           pathNodes:
             pipeline.pathNodes?.map(
@@ -353,12 +369,6 @@ const OptimizationCard: FC = () => {
     return { min: Math.min(...scores), max: Math.max(...scores) };
   }, [sortedLeaderboard]);
 
-  const reportUrl = useMemo(() => {
-    if (!experiment) return '';
-    const baseUrl = config.renderer.graphqlEndpoint.replace(/\/graphql\/?$/, '');
-    return `${baseUrl}/experiments/${experiment._id}/report`;
-  }, [experiment]);
-
   const renderBarWidth = (score: number | null) => {
     if (score === null) return '0%';
     const { min, max } = chartRange;
@@ -399,13 +409,7 @@ const OptimizationCard: FC = () => {
           >
             {optimizationButtonLabel}
           </button>
-          <a
-            className="btn ghost small"
-            href={reportUrl}
-            download={`experiment-${experiment._id}-report.pdf`}
-          >
-            {messages.common.downloadPdf}
-          </a>
+          <ReportDownloadButton experimentId={experiment._id} className="btn ghost small" />
           <button className="btn ghost small" type="button" onClick={() => setHistoryOpen(true)}>
             {messages.optimizationCard.history}
           </button>

@@ -101,6 +101,30 @@ def _to_number(value: Any) -> Optional[float]:
     return None
 
 
+def _compute_ntps(result: Dict[str, Any]) -> Optional[float]:
+    sample_count = _to_number(result.get("sampleCount"))
+    if sample_count is None or sample_count <= 0:
+        return None
+
+    cv_duration = result.get("cvDuration")
+    completed_folds = result.get("completedFoldCount")
+    if cv_duration is None and completed_folds is None:
+        duration = _to_number(result.get("duration"))
+        return duration / sample_count if duration is not None else None
+
+    duration = _to_number(cv_duration)
+    fold_count = _to_number(completed_folds)
+    if (
+        duration is None
+        or duration < 0
+        or fold_count is None
+        or fold_count <= 0
+        or not fold_count.is_integer()
+    ):
+        return None
+    return duration / (sample_count * fold_count)
+
+
 def _flatten_numeric(value: Any) -> List[float]:
     if value is None:
         return []
@@ -184,6 +208,8 @@ def optimize(payload: Dict[str, Any]):
             rocAucScores
             sampleCount
             duration
+            cvDuration
+            completedFoldCount
           }
         }
       }
@@ -246,16 +272,13 @@ def optimize(payload: Dict[str, Any]):
         accuracy_values = _flatten_numeric(computingResult.get("accuracyScores"))
         f1_values = _flatten_numeric(computingResult.get("f1Scores"))
         roc_auc_values = _flatten_numeric(computingResult.get("rocAucScores"))
-        duration = _to_number(computingResult.get("duration"))
-        sample_count = _to_number(computingResult.get("sampleCount"))
+        ntps = _compute_ntps(computingResult)
 
         if (
             not accuracy_values
             or not f1_values
             or not roc_auc_values
-            or duration is None
-            or sample_count is None
-            or sample_count <= 0
+            or ntps is None
         ):
             continue
 
@@ -263,7 +286,7 @@ def optimize(payload: Dict[str, Any]):
           "accuracy":  vector_length(accuracy_values),
           "f1": vector_length(f1_values),
           "rocAuc": vector_length(roc_auc_values),
-          "ntps": duration / sample_count
+          "ntps": ntps
         }
         parsedPipelines.append({
             "pipelineId": pipeline["_id"],

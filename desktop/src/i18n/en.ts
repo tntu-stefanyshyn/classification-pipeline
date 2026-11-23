@@ -29,6 +29,13 @@ const en = {
     noDataAvailable: 'No data available',
     errorPrefix: 'Error',
   },
+  reportDownload: {
+    downloading: 'Downloading PDF...',
+    unauthorized: 'Sign in again to download the report.',
+    notFound: 'The report is not available: the experiment was not found.',
+    failed: 'The report could not be created. Try again.',
+    sessionUnavailable: 'The session could not be refreshed right now. Try again.',
+  },
   table: {
     page: 'Page',
     of: 'of',

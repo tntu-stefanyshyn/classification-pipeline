@@ -27,6 +27,14 @@ export class ComputationResultPayload {
   @prop({ required: true })
   duration!: number;
 
+  @Field(() => Float, { nullable: true })
+  @prop()
+  cvDuration?: number;
+
+  @Field(() => Int, { nullable: true })
+  @prop()
+  completedFoldCount?: number;
+
   @Field(() => [[Int]], { nullable: true })
   @prop({ type: () => [[Number]] })
   confusionMatrix?: number[][];
@@ -50,6 +58,10 @@ export class ComputationResultPayload {
   @Field(() => Float, { nullable: true })
   @prop()
   predictionDataPercent?: number;
+
+  @Field(() => String, { nullable: true })
+  @prop()
+  eegProcessing?: string;
 }
 
 @InputType()
@@ -72,6 +84,12 @@ export class ComputationResultPayloadInput {
   @Field(() => Float)
   duration!: number;
 
+  @Field(() => Float, { nullable: true })
+  cvDuration?: number;
+
+  @Field(() => Int, { nullable: true })
+  completedFoldCount?: number;
+
   @Field(() => [[[Int]]])
   confusionMatrixes!: number[][][];
 
@@ -86,4 +104,7 @@ export class ComputationResultPayloadInput {
 
   @Field(() => Float, { nullable: true })
   predictionDataPercent?: number;
+
+  @Field(() => String, { nullable: true })
+  eegProcessing?: string;
 }

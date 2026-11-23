@@ -117,6 +117,9 @@ type ComputationResultPayload {
   """
   channelNames: [String!]!
 
+  """Number of cross-validation folds that were completed."""
+  completedFoldCount: Int
+
   """
   A single confusion matrix. The compute handler sends `confusionMatrixes` instead.
   """
@@ -125,8 +128,18 @@ type ComputationResultPayload {
   """Confusion matrix of each fold. Rows and columns follow `channelNames`."""
   confusionMatrixes: [[[Int!]!]!]
 
+  """
+  Seconds spent in the cross-validation folds (training and prediction), without the time spent on reading and preparing the data.
+  """
+  cvDuration: Float
+
   """Duration of the whole run in seconds."""
   duration: Float!
+
+  """
+  JSON text that describes how the EEG data were processed: the splitter and, for each fold, the processing steps. Empty for runs that did not use it.
+  """
+  eegProcessing: String
 
   """Weighted F1 score of each fold, from 0 to 1."""
   f1Scores: [Float!]!
@@ -164,11 +177,24 @@ input ComputationResultPayloadInput {
   """
   channelNames: [String!]!
 
+  """Number of cross-validation folds that were completed."""
+  completedFoldCount: Int
+
   """Confusion matrix of each fold. Rows and columns follow `channelNames`."""
   confusionMatrixes: [[[Int!]!]!]!
 
+  """
+  Seconds spent in the cross-validation folds (training and prediction), without the time spent on reading and preparing the data.
+  """
+  cvDuration: Float
+
   """Duration of the whole run in seconds."""
   duration: Float!
+
+  """
+  JSON text that describes how the EEG data were processed: the splitter and, for each fold, the processing steps. Empty for runs that did not use it.
+  """
+  eegProcessing: String
 
   """Weighted F1 score of each fold, from 0 to 1."""
   f1Scores: [Float!]!

@@ -46,7 +46,7 @@ const TECHNOLOGY_SEEDS = [
   },
   {
     name: 'Приглушення короткочасних артефактів',
-    displayName: 'Transient Artifact Suppression / Приглушення короткочасних артефактів',
+    displayName: 'Artifact Subspace Reconstruction / Реконструкція підпростору артефактів',
     stage: ClassificationStage.DATA_ENHANCEMENT,
     settings: [
       {
@@ -54,27 +54,14 @@ const TECHNOLOGY_SEEDS = [
         label: 'Window length (ms) / Довжина вікна (мс)',
         type: TechnologySettingType.NUMBER,
         required: true,
-        defaultValue: '250',
+        defaultValue: '500',
       },
       {
-        key: 'threshold',
-        label: 'Threshold / Поріг',
+        key: 'cutoff',
+        label: 'ASR cutoff (standard deviations) / Поріг ASR (стандартні відхилення)',
         type: TechnologySettingType.NUMBER,
         required: true,
-        defaultValue: '0.8',
-      },
-      {
-        key: 'method',
-        label: 'Suppression method / Метод приглушення',
-        type: TechnologySettingType.SELECT,
-        defaultValue: 'median',
-        options: ['median', 'mean', 'winsor'],
-      },
-      {
-        key: 'taper',
-        label: 'Smooth tapering / Плавне згладжування',
-        type: TechnologySettingType.BOOLEAN,
-        defaultValue: 'true',
+        defaultValue: '20',
       },
     ],
   },

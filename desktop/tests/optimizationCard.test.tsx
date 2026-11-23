@@ -106,8 +106,10 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
               accuracyScores: [0.9, 0.8],
               f1Scores: [0.7, 0.6],
               rocAucScores: [0.95, 0.85],
-              duration: 12.345,
-              sampleCount: 5,
+              duration: 150,
+              sampleCount: 1000,
+              cvDuration: 120,
+              completedFoldCount: 5,
             },
           },
           {
@@ -156,8 +158,9 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
     tree,
     (element) => getElementName(element) === 'DataTable'
   )[0];
-  const downloadLink = findElements(tree, (element) => element.type === 'a').find(
-    (element) => element.props.download === 'experiment-exp-1-report.pdf'
+  const downloadButton = findElement(
+    tree,
+    (element) => getElementName(element) === 'ReportDownloadButton'
   );
 
   assert.equal(leaderboardTable.props.className, 'path-table optimization-leaderboard-table');
@@ -201,9 +204,16 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
   );
   assert.equal(
     leaderboardTable.props.columns[5].cell({
-      row: { original: { normalizedProcessingTime: 2.469 } },
+      row: {
+        original: leaderboardTable.props.data.find((row: { id: string }) => row.id === 'pipe-1'),
+      },
     }),
-    '2.469000 с/зразок'
+    '0.024000 с/зразок'
+  );
+  assert.equal(
+    leaderboardTable.props.data.find((row: { id: string }) => row.id === 'pipe-2')
+      .normalizedProcessingTime,
+    0.95
   );
   leaderboardTable.props.columns[6].cell({
     row: { original: { queue: 'local' } },
@@ -214,6 +224,11 @@ test('OptimizationCard starts optimization, renders leaderboard, and exposes his
 
   assert.deepEqual(optimizeCalls, [{ variables: { experimentId: 'exp-1' } }]);
   assert.deepEqual(refetchCalls, ['experiment', 'pipelines']);
-  assert.equal(downloadLink?.props.href, 'http://localhost:4000/experiments/exp-1/report');
+  // The report is fetched with the access token, not opened through a plain link.
+  assert.deepEqual(downloadButton?.props, { experimentId: 'exp-1', className: 'btn ghost small' });
+  assert.equal(
+    findElements(tree, (element) => element.type === 'a' && Boolean(element.props.download)).length,
+    0
+  );
   assert.ok(state.calls.some((call) => call.index === 0 && call.value === true));
 });

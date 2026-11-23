@@ -33,6 +33,21 @@ export class ComputationResultPayload {
   @prop({ required: true })
   duration!: number;
 
+  @Field(() => Float, {
+    nullable: true,
+    description:
+      'Seconds spent in the cross-validation folds (training and prediction), without the time spent on reading and preparing the data.',
+  })
+  @prop()
+  cvDuration?: number;
+
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Number of cross-validation folds that were completed.',
+  })
+  @prop()
+  completedFoldCount?: number;
+
   @Field(() => [[Int]], {
     nullable: true,
     description:
@@ -75,6 +90,14 @@ export class ComputationResultPayload {
   })
   @prop()
   predictionDataPercent?: number;
+
+  @Field(() => String, {
+    nullable: true,
+    description:
+      'JSON text that describes how the EEG data were processed: the splitter and, for each fold, the processing steps. Empty for runs that did not use it.',
+  })
+  @prop()
+  eegProcessing?: string;
 }
 
 @InputType({
@@ -104,6 +127,19 @@ export class ComputationResultPayloadInput {
   @Field(() => Float, { description: 'Duration of the whole run in seconds.' })
   duration!: number;
 
+  @Field(() => Float, {
+    nullable: true,
+    description:
+      'Seconds spent in the cross-validation folds (training and prediction), without the time spent on reading and preparing the data.',
+  })
+  cvDuration?: number;
+
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Number of cross-validation folds that were completed.',
+  })
+  completedFoldCount?: number;
+
   @Field(() => [[[Int]]], {
     description: 'Confusion matrix of each fold. Rows and columns follow `channelNames`.',
   })
@@ -132,4 +168,11 @@ export class ComputationResultPayloadInput {
     description: 'Percentage of the data used for prediction, from the graph settings.',
   })
   predictionDataPercent?: number;
+
+  @Field(() => String, {
+    nullable: true,
+    description:
+      'JSON text that describes how the EEG data were processed: the splitter and, for each fold, the processing steps. Empty for runs that did not use it.',
+  })
+  eegProcessing?: string;
 }

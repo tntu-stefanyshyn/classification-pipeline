@@ -51,7 +51,7 @@ input ChangePipelineStatusInput {
 }
 
 """
-Stage of a classification pipeline. Stages run in the order listed; a path ends with classification.
+Stage of a classification pipeline. The stages run in this order: PREPROCESSING, DATA_ENHANCEMENT, FEATURE_EXTRACTION, DIMENSIONALITY_REDUCTION, CLASSIFICATION. A path ends with classification. The schema lists the values alphabetically.
 """
 enum ClassificationStage {
   """

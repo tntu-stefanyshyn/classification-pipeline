@@ -11,7 +11,7 @@ export enum ClassificationStage {
 registerEnumType(ClassificationStage, {
   name: 'ClassificationStage',
   description:
-    'Stage of a classification pipeline. Stages run in the order listed; a path ends with classification.',
+    'Stage of a classification pipeline. The stages run in this order: PREPROCESSING, DATA_ENHANCEMENT, FEATURE_EXTRACTION, DIMENSIONALITY_REDUCTION, CLASSIFICATION. A path ends with classification. The schema lists the values alphabetically.',
   valuesConfig: {
     PREPROCESSING: { description: 'Preprocessing of the data.' },
     DATA_ENHANCEMENT: { description: 'Data enhancement, for example artifact suppression.' },

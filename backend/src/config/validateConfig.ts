@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+
 import { durationToSeconds } from '../modules/auth/constants/token';
 import { ConfigError } from './classes/ConfigError';
 import {
@@ -36,7 +38,15 @@ const isHttpUrl = (value: string) => {
   }
 };
 
-const isMongoUri = (value: string) => /^mongodb(\+srv)?:\/\/\S+$/.test(value.trim());
+// The driver parses the string in its constructor without connecting, so a malformed value or one
+// without a host (`mongodb:///app`) is caught here instead of in `mongoose.connect`.
+const isMongoUri = (value: string) => {
+  try {
+    return Boolean(new mongoose.mongo.MongoClient(value.trim()));
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Checks the environment the backend reads in `config.ts`. It does not read `config` itself, so it
@@ -54,7 +64,7 @@ export const validateConfig = (env: Env = process.env): ConfigIssues => {
     );
   } else if (!isMongoUri(mongoUri)) {
     errors.push(
-      'MONGODB_URI must be a MongoDB connection string starting with mongodb:// or mongodb+srv://.'
+      'MONGODB_URI must be a valid MongoDB connection string with at least one host, for example mongodb://localhost:27017/app, mongodb://host1,host2/app?replicaSet=rs0 or mongodb+srv://cluster.example.net/app.'
     );
   }
 

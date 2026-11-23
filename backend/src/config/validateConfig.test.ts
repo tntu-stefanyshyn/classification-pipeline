@@ -22,11 +22,34 @@ test('a complete configuration has no errors and no warnings', () => {
 test('MONGODB_URI is required and must be a MongoDB connection string', () => {
   assert.match(errorsOf({ MONGODB_URI: undefined })[0], /MONGODB_URI is required/);
   assert.match(errorsOf({ MONGODB_URI: '   ' })[0], /MONGODB_URI is required/);
-  assert.match(errorsOf({ MONGODB_URI: 'http://localhost:27017' })[0], /mongodb:\/\//);
+  assert.match(
+    errorsOf({ MONGODB_URI: 'http://localhost:27017' })[0],
+    /valid MongoDB connection string/
+  );
   assert.deepEqual(
     errorsOf({ MONGODB_URI: 'mongodb+srv://user:pass@cluster.example.net/app' }),
     []
   );
+});
+
+test('MONGODB_URI needs a host and is parsed without connecting', () => {
+  [
+    'mongodb:///app',
+    'mongodb+srv:///app',
+    'mongodb://',
+    'mongodb://:27017/app',
+    'mongodb://host:99999/app',
+  ].forEach((value) => {
+    assert.match(errorsOf({ MONGODB_URI: value })[0], /valid MongoDB connection string/);
+  });
+  // A replica set with credentials, several hosts and options, and a Unix socket, are valid.
+  assert.deepEqual(
+    errorsOf({
+      MONGODB_URI: 'mongodb://user:p%40ss@h1:27017,h2:27018,h3/app?replicaSet=rs0&authSource=admin',
+    }),
+    []
+  );
+  assert.deepEqual(errorsOf({ MONGODB_URI: 'mongodb://%2Ftmp%2Fmongodb-27017.sock/app' }), []);
 });
 
 test('production refuses a missing or default JWT_SECRET', () => {

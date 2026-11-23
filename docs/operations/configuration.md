@@ -29,7 +29,7 @@ Fix the values in backend/.env or the environment; see docs/operations/configura
 
 It **fails** when:
 
-- `MONGODB_URI` is missing, blank or not a `mongodb://` or `mongodb+srv://` connection string;
+- `MONGODB_URI` is missing, blank, or not a connection string that the MongoDB driver can parse: it needs the `mongodb://` or `mongodb+srv://` scheme and at least one host, so `mongodb:///app` is rejected (the value is parsed, never connected to);
 - `NODE_ENV=production` and `JWT_SECRET` is missing or one of the default values `dev-secret` or `change-me`;
 - `NODE_ENV=production` and `BACKEND_SERVICE_TOKEN` is a placeholder from the example files (`change-me`, `change-me-service-token`);
 - a poll interval (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`) is not a whole number from 1 to 2147483647 (the longest delay a Node.js timer accepts; a longer one would fire after 1 ms and make the worker poll the database continuously);

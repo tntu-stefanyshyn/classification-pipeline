@@ -1,7 +1,7 @@
 import { Field, ID, InputType } from 'type-graphql';
 
-@InputType()
+@InputType({ description: 'Request to stop a run.' })
 export class StopExperimentRunInput {
-  @Field(() => ID)
+  @Field(() => ID, { description: 'Id of the pipeline to stop.' })
   runId!: string;
 }

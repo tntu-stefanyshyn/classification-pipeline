@@ -78,10 +78,12 @@ and select at least one classification technology.
 A local run waits for the desktop worker. Keep the desktop app open and make sure Docker is
 running. See "Local runs stay queued" in the [setup guide](../../SETUP.md#troubleshooting).
 
-If the pipelines instead return to **Idle** and their message says `Not authenticated`, the Local
-queue itself is the problem: the desktop worker does not pass the backend token to its container.
-Create a new experiment with only **Cloud** selected. A cloud run waits for a worker on the
-backend: the Docker worker or AWS Batch.
+If the pipelines instead return to **Idle** and their message says `Not authenticated`, the service
+token of the worker does not match the backend's: for the Local queue, check that
+`BACKEND_SERVICE_TOKEN` in `desktop/.env` has the same value as in `backend/.env` and restart the
+desktop. If the Local pipelines stay **Queued** and the desktop log says that the token is not set,
+the desktop worker is off for the same reason. You can also select only **Cloud**: a cloud run
+waits for a worker on the backend, the Docker worker or AWS Batch.
 
 ## Cloud runs do not start, and the backend prints "Хмарний воркер вимкнено"
 
@@ -94,8 +96,8 @@ Docker worker also executes it, with a local Docker image.
 `BACKEND_SERVICE_TOKEN` to a long random string, build the `aws-jobs` image and restart the
 backend, as described in the [setup guide](../../SETUP.md#3-configure-the-backend-and-s3-uploads).
 The worker then takes the queued Cloud pipelines of the existing experiment, and the optimization
-can start after they finish. Do not recreate the experiment with **Local** only: the Local queue
-currently fails with `Not authenticated`.
+can start after they finish. Do not recreate the experiment with **Local** only unless the desktop
+has the same `BACKEND_SERVICE_TOKEN` as the backend.
 
 **Fix, with AWS Batch:** configure AWS Batch and the results bucket as described in
 [AWS Jobs (AWS Batch)](../operations/aws-batch.md) and restart the backend.

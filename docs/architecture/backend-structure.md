@@ -18,7 +18,7 @@ Use this structure for new code in `backend/src`:
   - `rest/`: Express handlers of the feature's REST endpoints (for example the PDF report); like resolvers, they authenticate and call services.
   - `utils/`: feature-specific helpers (for example `buildGraphPaths`).
 - `graphql/`: app-level resolvers not tied to a feature (`health`, server info).
-- `config/`: configuration only.
+- `config/`: configuration only: `config.ts`, the startup validation (`validateConfig.ts`) and its `classes/` and `constants/`.
 - `migrations/`: data migrations. Each runs once; applied names are stored in the `applied_migrations` collection (class in `migrations/classes/`, model in `migrations/models/`). See [Database conventions](database-conventions.md).
 - `seeders/`: initial data (for example the technology catalog).
 - `types/`, `utils/`, `test/`: shared TypeScript types, helpers and test utilities.

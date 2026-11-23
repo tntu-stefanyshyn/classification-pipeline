@@ -30,12 +30,6 @@ This page describes how the system behaves today where that behavior is not idea
 
 ## Security
 
-### The PDF report endpoint is not authenticated
-
-- **Components:** `GET /experiments/:experimentId/report` in `backend/src/index.ts`.
-- **Behavior:** the endpoint checks only that the id is valid and that the experiment exists. There is no token check and no ownership check. The server also allows every origin (`cors()`).
-- **Consequence:** anyone who can reach the backend and knows an experiment id can download its report, which contains the experiment name, description, graph, file details and results.
-
 ### One shared service token
 
 - **Components:** `AuthFlow.isService`, `BACKEND_SERVICE_TOKEN`, the workers and containers.
@@ -45,7 +39,6 @@ This page describes how the system behaves today where that behavior is not idea
 ## Data and performance
 
 - **Unused collection.** `computation_results` has a model but no code uses it; results live in `pipelines.computingResult`.
-- **No index on `workflows.instanceId`.** Every status read filters by it. Aggregations such as claiming and pausing join `workflows` and `pipelines` with `$lookup`.
 - **Status and side effect are not atomic.** The side effect of a transition runs after the status is written, so a failing side effect leaves the new status (see [ADR 0002](decisions/0002-mongo-backed-workflows.md)).
 - **Polling.** The desktop polls the backend every 5 seconds for statuses, and workers poll for runs (`LOCAL_WORKER_POLL_MS`, `CLOUD_WORKER_POLL_MS`); there are no subscriptions. A status change can take several seconds to show.
 

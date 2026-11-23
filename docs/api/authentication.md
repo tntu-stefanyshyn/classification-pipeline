@@ -13,7 +13,7 @@ An empty `BACKEND_SERVICE_TOKEN` matches nothing, so worker operations stay clos
 
 | Operation                                                                                                                                                          | User JWT                   | Service token |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ------------- |
-| `enqueueExperimentRuns`, `stopExperimentRun`, `pauseExperimentRuns`, `resumeExperimentRuns`, `optimizeExperimentRuns`                                              | Owner of the experiment    | Rejected      |
+| `enqueueExperimentRuns`, `queueExperimentRuns`, `stopExperimentRun`, `pauseExperimentRuns`, `resumeExperimentRuns`, `optimizeExperimentRuns`                       | Owner of the experiment    | Rejected      |
 | `claimExperimentRun`, `completePipeline`, `updatePipelineProgress`, `updatePipelineOptimization`, `updateExperimentProgress`, `updateExperimentOptimizationResult` | Rejected                   | Allowed       |
 | `pipeline`, `pipelines`, `changePipelineStatus`, `experiment`                                                                                                      | Owner of the experiment    | Allowed       |
 | `signedDownloadUrl`                                                                                                                                                | Uploader of the file       | Allowed       |

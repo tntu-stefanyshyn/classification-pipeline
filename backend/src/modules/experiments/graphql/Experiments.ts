@@ -24,12 +24,18 @@ export class Experiments {
   private readonly auth = new AuthFlow();
 
   // #region FieldResolver
-  @FieldResolver(() => GraphStructure, { nullable: true })
+  @FieldResolver(() => GraphStructure, {
+    nullable: true,
+    description: 'The graph of the experiment.',
+  })
   graph(@Root() experiment: Experiment): Promise<GraphStructure | null> {
     return this.graphManager.getByExperimentId(experiment._id);
   }
 
-  @FieldResolver(() => ExperimentStatus, { nullable: true })
+  @FieldResolver(() => ExperimentStatus, {
+    nullable: true,
+    description: 'Current status of the experiment.',
+  })
   async status(@Root() { _id }: Experiment) {
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: _id,
@@ -40,15 +46,19 @@ export class Experiments {
   // #endregion FieldResolver
 
   // #region Query
-  @Query(() => [Experiment])
+  @Query(() => [Experiment], { description: 'The experiments of the signed-in user.' })
   async experiments(@Ctx() context: GraphQLContext): Promise<Experiment[]> {
     const user = await this.auth.me(context.req);
     return this.manager.list(user._id.toString());
   }
 
-  @Query(() => Experiment, { nullable: true })
+  @Query(() => Experiment, {
+    nullable: true,
+    description:
+      'One experiment by id. Returns `null` when it does not exist or belongs to another user. A worker (service token) can read any experiment.',
+  })
   async experiment(
-    @Arg('_id', () => ID) _id: string,
+    @Arg('_id', () => ID, { description: 'Id of the experiment.' }) _id: string,
     @Ctx() context: GraphQLContext
   ): Promise<Experiment | null> {
     const user = this.auth.isService(context.req) ? null : await this.auth.me(context.req);
@@ -61,18 +71,29 @@ export class Experiments {
   // #endregion Query
 
   // #region Mutation
-  @Mutation(() => Experiment)
+  @Mutation(() => Experiment, {
+    description: 'Creates an experiment with an empty graph for the signed-in user.',
+  })
   async createExperiment(
-    @Arg('input', () => CreateExperimentInput) input: CreateExperimentInput,
+    @Arg('input', () => CreateExperimentInput, {
+      description: 'Name, optional description and optional file.',
+    })
+    input: CreateExperimentInput,
     @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
     const user = await this.auth.me(context.req);
     return this.manager.create(input, user._id.toString());
   }
 
-  @Mutation(() => Experiment)
+  @Mutation(() => Experiment, {
+    description:
+      'Changes the name, description, file, graph nodes, graph settings or computation mode. Rejected once computations have started, except for attaching a file to an experiment that has none.',
+  })
   async updateExperiment(
-    @Arg('input', () => UpdateExperimentInput) input: UpdateExperimentInput,
+    @Arg('input', () => UpdateExperimentInput, {
+      description: 'The experiment id and the fields to change.',
+    })
+    input: UpdateExperimentInput,
     @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
     const user = await this.auth.me(context.req);
@@ -106,9 +127,15 @@ export class Experiments {
     return experiment;
   }
 
-  @Mutation(() => Experiment)
+  @Mutation(() => Experiment, {
+    description:
+      'Builds the graph from the technologies chosen per stage, replacing the current nodes. `CLASSIFICATION` must have at least one technology.',
+  })
   async generateExperimentGraph(
-    @Arg('input', () => GenerateExperimentGraphInput) input: GenerateExperimentGraphInput,
+    @Arg('input', () => GenerateExperimentGraphInput, {
+      description: 'The experiment id and the technologies per stage.',
+    })
+    input: GenerateExperimentGraphInput,
     @Ctx() context: GraphQLContext
   ): Promise<Experiment> {
     const user = await this.auth.me(context.req);
@@ -127,9 +154,15 @@ export class Experiments {
     return experiment;
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => Boolean, {
+    description:
+      'Moves the experiment along the allowed status transitions. Moving to `computing` checks the dataset file and generates the pipelines.',
+  })
   changeExperimentStatus(
-    @Arg('input', () => ChangeExperimentStatusInput) input: ChangeExperimentStatusInput,
+    @Arg('input', () => ChangeExperimentStatusInput, {
+      description: 'The experiment id and the status to move to.',
+    })
+    input: ChangeExperimentStatusInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
     return this.auth.me(context.req).then((user) => {
@@ -139,9 +172,14 @@ export class Experiments {
     });
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => Boolean, {
+    description: 'Reports the progress of the optimization. Worker operation (service token).',
+  })
   async updateExperimentProgress(
-    @Arg('input', () => UpdateExperimentProgressInput) input: UpdateExperimentProgressInput,
+    @Arg('input', () => UpdateExperimentProgressInput, {
+      description: 'The experiment id, progress, message and optimization status.',
+    })
+    input: UpdateExperimentProgressInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
     this.auth.requireService(context.req);
@@ -149,9 +187,13 @@ export class Experiments {
     return true;
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => Boolean, {
+    description: 'Stores the best pipeline and its score. Worker operation (service token).',
+  })
   async updateExperimentOptimizationResult(
-    @Arg('input', () => UpdateExperimentOptimizationResultInput)
+    @Arg('input', () => UpdateExperimentOptimizationResultInput, {
+      description: 'The experiment id, the best pipeline and its score.',
+    })
     input: UpdateExperimentOptimizationResultInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {

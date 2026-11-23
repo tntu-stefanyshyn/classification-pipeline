@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { createWorkflowReadIndexes, WorkflowModel } from './core/workflow/model/WorkflowModel';
 import { createHttpApp } from './app';
 import { config } from './config/config';
+import { ConfigError } from './config/classes/ConfigError';
+import { assertValidConfig } from './config/validateConfig';
 import { buildAppSchema } from './schema';
 import { GraphQLContext } from './types/context';
 import { runSeeders } from './seeders';
@@ -14,6 +16,8 @@ import { CloudComputationWorker } from './modules/computations/services/CloudCom
 import { LocalBackendComputationWorker } from './modules/computations/services/LocalBackendComputationWorker';
 
 async function bootstrap() {
+  // Fail before anything starts: a bad value should stop the backend here, not break a request later.
+  assertValidConfig();
   let cloudWorker: CloudComputationWorker | null = null;
   let localWorker: LocalBackendComputationWorker | null = null;
   let shuttingDown = false;
@@ -84,6 +88,10 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  console.error('Failed to start backend', error);
+  if (error instanceof ConfigError) {
+    console.error(error.message);
+  } else {
+    console.error('Failed to start backend', error);
+  }
   process.exit(1);
 });

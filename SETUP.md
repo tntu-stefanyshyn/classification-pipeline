@@ -273,6 +273,9 @@ string and restart the backend.
 
 ## Troubleshooting
 
+- **The backend stops with `Invalid backend configuration`:** the message lists every missing
+  or invalid value, for example a missing `MONGODB_URI`. Fix them in `backend/.env`; all
+  variables are described in the [configuration reference](docs/operations/configuration.md).
 - **CORS upload error:** confirm the bucket has the CORS rule above saved, with
   `AllowedOrigins: ["*"]`, `PUT`, and `Content-Type` allowed.
 - **S3 access denied:** check the bucket region and the backend credentials'

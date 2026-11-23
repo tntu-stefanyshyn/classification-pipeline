@@ -14,9 +14,13 @@ export class Storage {
   private readonly storage = new StorageClient();
 
   /** Signed-in users only: the key is issued under the caller's uploads (see uploadKeys). */
-  @Query(() => SignedUploadUrl)
+  @Query(() => SignedUploadUrl, {
+    description:
+      "A presigned `PUT` URL for uploading a CSV file straight to S3. The key is issued under the signed-in user's prefix.",
+  })
   async signedUploadUrl(
-    @Arg('input', () => SignedUploadRequest) input: SignedUploadRequest,
+    @Arg('input', () => SignedUploadRequest, { description: 'File name and optional MIME type.' })
+    input: SignedUploadRequest,
     @Ctx() context: GraphQLContext
   ): Promise<SignedUploadUrl> {
     const user = await authFlow.me(context.req);
@@ -27,9 +31,12 @@ export class Storage {
     );
   }
 
-  @Query(() => SignedUploadUrl)
+  @Query(() => SignedUploadUrl, {
+    description:
+      'A presigned `GET` URL for the dataset of a file record. Allowed for its uploader or a worker (service token).',
+  })
   async signedDownloadUrl(
-    @Arg('fileId', () => ID) fileId: string,
+    @Arg('fileId', () => ID, { description: 'Id of the file record.' }) fileId: string,
     @Ctx() context: GraphQLContext
   ): Promise<SignedUploadUrl> {
     const trimmedId = fileId.trim();

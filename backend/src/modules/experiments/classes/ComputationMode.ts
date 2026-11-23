@@ -6,7 +6,15 @@ export enum ComputationMode {
   both = 'both',
 }
 
-registerEnumType(ComputationMode, { name: 'ComputationMode' });
+registerEnumType(ComputationMode, {
+  name: 'ComputationMode',
+  description: "Which queues an experiment's graph allows.",
+  valuesConfig: {
+    local: { description: 'Only the `local` queue.' },
+    cloud: { description: 'Only the `cloud` queue.' },
+    both: { description: 'Both queues; the default.' },
+  },
+});
 
 export const COMPUTATION_MODE_VALUES: ComputationMode[] = [
   ComputationMode.local,

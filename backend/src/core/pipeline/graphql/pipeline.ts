@@ -23,7 +23,7 @@ export class PipelineResolver {
   private readonly access = new ExperimentAccess();
 
   // #region FieldResolver
-  @FieldResolver(() => [GraphNode])
+  @FieldResolver(() => [GraphNode], { description: 'The graph nodes of the path, in order.' })
   async pathNodes(@Root() { experimentId, pathNodeIds }: Pipeline): Promise<GraphNode[]> {
     const graphNodes = await GraphStructureModel.aggregate<GraphNode>([
       { $match: { experimentId } },
@@ -41,7 +41,7 @@ export class PipelineResolver {
     return orderedNodes;
   }
 
-  @FieldResolver(() => PipelineStatus)
+  @FieldResolver(() => PipelineStatus, { description: 'Current status of the pipeline.' })
   async status(@Root() { _id }: Pipeline) {
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: _id,
@@ -52,20 +52,28 @@ export class PipelineResolver {
   // #endregion FieldResolver
 
   // #region Query
-  @Query(() => [Pipeline])
+  @Query(() => [Pipeline], {
+    description: 'The pipelines of an experiment, optionally of one queue. Owner or worker.',
+  })
   async pipelines(
-    @Arg('experimentId', () => ID) experimentId: ObjectIdOrString,
+    @Arg('experimentId', () => ID, { description: 'Id of the experiment.' })
+    experimentId: ObjectIdOrString,
     @Ctx() context: GraphQLContext,
-    @Arg('queue', () => ComputationQueue, { nullable: true }) queue?: ComputationQueue
+    @Arg('queue', () => ComputationQueue, {
+      nullable: true,
+      description: 'Return only the pipelines of this queue.',
+    })
+    queue?: ComputationQueue
   ): Promise<Pipeline[]> {
     const principal = await this.auth.authenticate(context.req);
     await this.access.assertExperimentAccess(principal, experimentId);
     return PipelineBaseService.listByExperiment(experimentId, queue);
   }
 
-  @Query(() => Pipeline, { nullable: true })
+  @Query(() => Pipeline, { nullable: true, description: 'One pipeline by id. Owner or worker.' })
   async pipeline(
-    @Arg('pipelineId', () => ID) pipelineId: ObjectIdOrString,
+    @Arg('pipelineId', () => ID, { description: 'Id of the pipeline.' })
+    pipelineId: ObjectIdOrString,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline | null> {
     const principal = await this.auth.authenticate(context.req);
@@ -75,18 +83,29 @@ export class PipelineResolver {
   // #endregion Query
 
   // #region Mutation
-  @Mutation(() => Pipeline)
+  @Mutation(() => Pipeline, {
+    description:
+      'Stores the progress and a message of a running pipeline. Ignored when the execution is no longer current. Worker operation (service token).',
+  })
   updatePipelineProgress(
-    @Arg('input', () => UpdatePipelineProgressInput) input: UpdatePipelineProgressInput,
+    @Arg('input', () => UpdatePipelineProgressInput, {
+      description: 'The pipeline, its execution, progress and message.',
+    })
+    input: UpdatePipelineProgressInput,
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline> {
     this.auth.requireService(context.req);
     return PipelineBaseService.updatePipelineProgress(input);
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => Boolean, {
+    description: 'Stores the optimization score of a pipeline. Worker operation (service token).',
+  })
   async updatePipelineOptimization(
-    @Arg('input', () => UpdatePipelineOptimizationInput) input: UpdatePipelineOptimizationInput,
+    @Arg('input', () => UpdatePipelineOptimizationInput, {
+      description: 'The pipeline and its score.',
+    })
+    input: UpdatePipelineOptimizationInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
     this.auth.requireService(context.req);
@@ -94,9 +113,15 @@ export class PipelineResolver {
     return true;
   }
 
-  @Mutation(() => Boolean)
+  @Mutation(() => Boolean, {
+    description:
+      'Queues an idle pipeline or takes a queued one out of the queue. It cannot start a run or end a running one. Owner or worker.',
+  })
   async changePipelineStatus(
-    @Arg('input', () => ChangePipelineStatusInput) input: ChangePipelineStatusInput,
+    @Arg('input', () => ChangePipelineStatusInput, {
+      description: 'The pipeline and the status to move to.',
+    })
+    input: ChangePipelineStatusInput,
     @Ctx() context: GraphQLContext
   ): Promise<boolean> {
     const principal = await this.auth.authenticate(context.req);

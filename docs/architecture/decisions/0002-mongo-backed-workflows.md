@@ -17,6 +17,6 @@ The status and its history are not stored on the experiment or pipeline. They ar
 
 ## Consequences
 
-- A status read needs the workflow (`getWorkflow`, or `$lookup` in aggregations); `workflows.instanceId` has no index.
+- A status read needs the workflow (`getWorkflow`, or `$lookup` in aggregations). The read indexes `workflows` (`instanceId`, `type`) and (`type`, `status`) serve those reads; they are built in the background after startup, so queries scan until they exist.
 - The status write and its side effect are not one transaction: the side effect runs after the status is written, and a failing side effect leaves the new status in place. `ExperimentManager` reverts `computing` itself when the file check fails.
 - Adding a status or a transition means editing the transition list and the status enums, and the diagrams in [Lifecycle](../lifecycle.md).

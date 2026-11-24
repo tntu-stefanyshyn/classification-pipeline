@@ -34,8 +34,22 @@ import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { ExperimentManager } from '../../experiments/services/ExperimentManager';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { executionFilter } from '../../../core/pipeline/executionFilter';
-import { DUPLICATE_KEY_ERROR, ORPHAN_WAIT_ATTEMPTS, UNCOMPUTED_PIPELINES } from '../constants';
+import {
+  DUPLICATE_KEY_ERROR,
+  OPTIMIZATION_RUNNING,
+  ORPHAN_WAIT_ATTEMPTS,
+  RERUN_DURING_OPTIMIZATION,
+  UNCOMPUTED_PIPELINES,
+} from '../constants';
 import { isLostTransitionRace } from '../utils/isLostTransitionRace';
+
+type OptimizationClaim = {
+  /** The status the claim moved the experiment from; 
+ull when it was already in optimization. */
+  movedFrom: ExperimentStatus | null;
+  /** The optimization status before the claim, restored if the attempt does not run. */
+  previousStatus?: OptimizationStatus;
+};
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -64,7 +78,7 @@ export class ComputationManager {
       workflow.status === ExperimentStatus.completed;
 
     if (workflow.status === ExperimentStatus.optimization && isOptimizationInProgress) {
-      throw new Error('Оптимізація вже виконується.');
+      throw new Error(OPTIMIZATION_RUNNING);
     }
 
     if (!canEnterOptimization && workflow.status !== ExperimentStatus.optimization) {
@@ -86,6 +100,108 @@ export class ComputationManager {
     const optimizationTimeoutSeconds =
       Math.trunc(hyperOptimizationMinutesPerPipeline * 60 * graphPaths.length) || 0;
 
+    // Own the attempt before looking at the runs: a re-run admitted from now on sees `optimization`
+    // and is rejected, and one admitted earlier is seen by the check below.
+    const claim = await this.claimOptimization(experimentId, workflow.status as ExperimentStatus);
+    try {
+      if (await this.hasUncomputedRun(experimentId)) {
+        throw new Error(UNCOMPUTED_PIPELINES);
+      }
+      await this.optimizationRunner.run({
+        experimentId,
+        backendUrl: config.backend.graphqlUrl,
+        backendToken: config.backend.serviceToken,
+        hyperOptimizationMinutesPerPipeline,
+        timeoutSeconds: optimizationTimeoutSeconds,
+      });
+    } catch (error) {
+      await this.releaseOptimization(experimentId, claim, error);
+      throw error;
+    }
+
+    await this.experimentManager.changeStatus({
+      experimentId,
+      status: ExperimentStatus.completed,
+    });
+
+    return this.getOptimizationResult(experimentId);
+  }
+
+  /**
+   * Takes ownership of one optimization attempt, atomically, before its container starts: the move
+   * to `optimization` (only one caller wins it) and the `optimizing` mark (which also settles two
+   * callers that both find the experiment already in `optimization`). A caller that loses is
+   * refused, so two runners never write scores and the experiment status at the same time.
+   */
+  private async claimOptimization(
+    experimentId: ObjectIdOrString,
+    status: ExperimentStatus
+  ): Promise<OptimizationClaim> {
+    const alreadyRunning = new Error(OPTIMIZATION_RUNNING);
+    let movedFrom: ExperimentStatus | null = null;
+    if (status !== ExperimentStatus.optimization) {
+      try {
+        await this.experimentManager.changeStatus({
+          experimentId,
+          status: ExperimentStatus.optimization,
+        });
+      } catch (error) {
+        if (isLostTransitionRace(error)) throw alreadyRunning;
+        throw error;
+      }
+      // The status read before may have moved on (a re-run reopened the experiment), so the move
+      // we just made names where it really came from. Nobody else leaves `optimization` meanwhile.
+      const { history } = await this.workflowManager.getWorkflow({
+        instanceId: experimentId,
+        type: WorkflowType.EXPERIMENT,
+      });
+      movedFrom = (history.at(-1)?.previousStatus as ExperimentStatus | undefined) ?? status;
+    }
+    const previous = await ExperimentModel.findOneAndUpdate(
+      { _id: experimentId, 'optimization.status': { $ne: OptimizationStatus.optimizing } },
+      { $set: { 'optimization.status': OptimizationStatus.optimizing } },
+      { new: false }
+    ).lean();
+    if (!previous) {
+      if (movedFrom) await this.undoMove(experimentId, movedFrom);
+      throw alreadyRunning;
+    }
+    return { movedFrom, previousStatus: previous.optimization?.status };
+  }
+
+  private undoMove(experimentId: ObjectIdOrString, movedFrom: ExperimentStatus) {
+    return this.experimentManager.revertStatus(
+      experimentId,
+      ExperimentStatus.optimization,
+      movedFrom,
+      'Оптимізацію скасовано'
+    );
+  }
+
+  /**
+   * Gives the attempt back when it did not run. An attempt that ran and failed keeps its
+   * `optimization` status, as before, so it can be retried; its mark is `failed` unless the
+   * container already reported.
+   */
+  private async releaseOptimization(
+    experimentId: ObjectIdOrString,
+    claim: OptimizationClaim,
+    error: unknown
+  ) {
+    const notRun = error instanceof Error && error.message === UNCOMPUTED_PIPELINES;
+    const restore = notRun
+      ? claim.previousStatus
+        ? { $set: { 'optimization.status': claim.previousStatus } }
+        : { $unset: { 'optimization.status': 1 } }
+      : { $set: { 'optimization.status': OptimizationStatus.failed } };
+    await ExperimentModel.updateOne(
+      { _id: experimentId, 'optimization.status': OptimizationStatus.optimizing },
+      restore
+    );
+    if (notRun && claim.movedFrom) await this.undoMove(experimentId, claim.movedFrom);
+  }
+
+  private async hasUncomputedRun(experimentId: ObjectIdOrString): Promise<boolean> {
     const [uncomputedPipeline] = await PipelineModel.aggregate([
       { $match: { experimentId: stringIdToObjectId(experimentId) } },
       {
@@ -103,34 +219,8 @@ export class ComputationManager {
         },
       },
     ]);
-
-    if (uncomputedPipeline) {
-      throw new Error(UNCOMPUTED_PIPELINES);
-    }
-
-    if (canEnterOptimization) {
-      await this.experimentManager.changeStatus({
-        experimentId,
-        status: ExperimentStatus.optimization,
-      });
-    }
-
-    await this.optimizationRunner.run({
-      experimentId,
-      backendUrl: config.backend.graphqlUrl,
-      backendToken: config.backend.serviceToken,
-      hyperOptimizationMinutesPerPipeline,
-      timeoutSeconds: optimizationTimeoutSeconds,
-    });
-
-    await this.experimentManager.changeStatus({
-      experimentId,
-      status: ExperimentStatus.completed,
-    });
-
-    return this.getOptimizationResult(experimentId);
+    return Boolean(uncomputedPipeline);
   }
-
   async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<void> {
     const { experimentId, pipelineId, runAll } = input;
     if (runAll && pipelineId) {
@@ -279,7 +369,7 @@ export class ComputationManager {
 
     const experimentStatus = await this.experimentStatus(source.experimentId);
     if (experimentStatus === ExperimentStatus.optimization) {
-      throw new Error('Перезапуск недоступний під час оптимізації.');
+      throw new Error(RERUN_DURING_OPTIMIZATION);
     }
 
     // Each run can be re-run once, so the re-run hangs on the newest run of the path.
@@ -329,7 +419,7 @@ export class ComputationManager {
   private async reopenExperiment(experimentId: Types.ObjectId) {
     const status = await this.experimentStatus(experimentId);
     if (status === ExperimentStatus.optimization) {
-      throw new Error('Перезапуск недоступний під час оптимізації.');
+      throw new Error(RERUN_DURING_OPTIMIZATION);
     }
     if (status !== ExperimentStatus.completed) return;
     try {
@@ -338,8 +428,12 @@ export class ComputationManager {
         status: ExperimentStatus.computing,
       });
     } catch (error) {
-      // Another re-run reopened it first.
       if (!isLostTransitionRace(error)) throw error;
+      // Another re-run reopened it first, or an optimization took the experiment: only the first
+      // leaves the re-run valid.
+      if ((await this.experimentStatus(experimentId)) === ExperimentStatus.optimization) {
+        throw new Error(RERUN_DURING_OPTIMIZATION);
+      }
     }
   }
 
@@ -563,8 +657,8 @@ export class ComputationManager {
   /**
    * An optimized experiment that a re-run reopened (`computing` with a best pipeline left from the
    * last optimization) is optimized again when its last run completes. `optimize` itself refuses
-   * while a run is unfinished, so earlier completions do nothing.
-   * shortcut: two last runs completing at the same instant could both start it; add a lock if seen.
+   * while a run is unfinished, so earlier completions do nothing, and it takes ownership of the
+   * attempt atomically, so of several completions only one starts the optimizer.
    */
   private async reoptimizeAfterRerun(pipelineId: Types.ObjectId) {
     try {
@@ -579,7 +673,13 @@ export class ComputationManager {
       if (status !== ExperimentStatus.computing) return;
       await this.optimize(pipeline.experimentId);
     } catch (error) {
-      if (error instanceof Error && error.message === UNCOMPUTED_PIPELINES) return;
+      // Not the last run yet, or another completion owns the attempt: nothing to do.
+      if (
+        error instanceof Error &&
+        (error.message === UNCOMPUTED_PIPELINES || error.message === OPTIMIZATION_RUNNING)
+      ) {
+        return;
+      }
       console.error('Automatic re-optimization failed', error);
     }
   }

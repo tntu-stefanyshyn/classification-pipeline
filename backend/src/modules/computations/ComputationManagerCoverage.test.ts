@@ -50,6 +50,11 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
   stub(t, GraphStructureModel as unknown as Record<string, unknown>, 'findOne', () =>
     createLeanResult(graphDoc)
   );
+  // The attempt claim and its release: the mark is taken from the experiment as the test set it.
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
+    createLeanResult({ optimization: experimentDoc?.optimization })
+  );
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
   stub(
     t,
     PipelineModel as unknown as Record<string, unknown>,
@@ -57,12 +62,18 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
     async () => aggregateResult
   );
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({ status: workflowStatus }),
+    getWorkflow: async () => ({
+      status: workflowStatus,
+      history: [{ previousStatus: workflowStatus }],
+    }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'experimentManager', {
     changeStatus: async (...args: any[]) => {
       calls.push(['changeStatus', ...args]);
       return true;
+    },
+    revertStatus: async (...args: any[]) => {
+      calls.push(['revertStatus', ...args]);
     },
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
@@ -99,7 +110,15 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
 
   graphDoc = createGraph();
   aggregateResult = [{ _id: new Types.ObjectId() }];
+  calls.length = 0;
   await assert.rejects(() => manager.optimize(experimentId), /There are uncomuted pipelines/);
+  // The attempt was claimed before the check, so its move to `optimization` is undone.
+  assert.deepEqual(
+    calls.map((entry) =>
+      entry[0] === 'revertStatus' ? [entry[0], entry[2], entry[3]] : [entry[0]]
+    ),
+    [['changeStatus'], ['revertStatus', ExperimentStatus.optimization, ExperimentStatus.completed]]
+  );
 
   aggregateResult = [];
   workflowStatus = ExperimentStatus.optimization;
@@ -147,7 +166,10 @@ test('ComputationManager.enqueueRuns validates graph settings and queues selecte
     experimentId: pipelineExperimentId,
   }));
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({ status: workflowStatus }),
+    getWorkflow: async () => ({
+      status: workflowStatus,
+      history: [{ previousStatus: workflowStatus }],
+    }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async (...args: any[]) => {
@@ -328,7 +350,10 @@ test('ComputationManager.stopRun and claimNextRun cover queue transitions and ma
     returnUpdatedPipeline ? updatedPipeline : currentPipeline
   );
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({ status: workflowStatus }),
+    getWorkflow: async () => ({
+      status: workflowStatus,
+      history: [{ previousStatus: workflowStatus }],
+    }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     changeStatus: async (...args: any[]) => {

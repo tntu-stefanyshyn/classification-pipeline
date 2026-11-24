@@ -299,24 +299,36 @@ export class ExperimentManager {
     try {
       await this.ensureExperimentFileReady(instanceId);
     } catch (error) {
-      await WorkflowModel.updateOne(
-        { instanceId, type: WorkflowType.EXPERIMENT, status: ExperimentStatus.computing },
-        {
-          $set: { status: revertTo },
-          $push: {
-            history: {
-              previousStatus: ExperimentStatus.computing,
-              nextStatus: revertTo,
-              message: error instanceof Error ? error.message : 'Файл експерименту недоступний',
-              createdAt: new Date(),
-            },
-          },
-        }
+      await this.revertStatus(
+        instanceId,
+        ExperimentStatus.computing,
+        revertTo,
+        error instanceof Error ? error.message : 'Файл експерименту недоступний'
       );
       throw error;
     }
   }
 
+  /**
+   * Puts the experiment back to `to`, but only while it is still in `from`, so a later change by
+   * someone else is kept. It is not a transition: callers use it to undo one they just made.
+   */
+  async revertStatus(
+    instanceId: ObjectIdOrString,
+    from: ExperimentStatus,
+    to: ExperimentStatus,
+    message: string
+  ) {
+    await WorkflowModel.updateOne(
+      { instanceId, type: WorkflowType.EXPERIMENT, status: from },
+      {
+        $set: { status: to },
+        $push: {
+          history: { previousStatus: from, nextStatus: to, message, createdAt: new Date() },
+        },
+      }
+    );
+  }
   async changeStatus({ experimentId, status }: ChangeExperimentStatusInput) {
     if (status === ExperimentStatus.computing) {
       await this.ensureExperimentFileReady(experimentId);

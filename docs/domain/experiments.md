@@ -63,7 +63,7 @@ and the side effects are in [Lifecycle](../architecture/lifecycle.md#pipeline).
 - Graph settings require at least one allowed computation queue, and a run is accepted only for an allowed queue.
 - The computation mode of the graph (`local`, `cloud`, `both`) restricts which queue can be used.
 - Experiment updates and graph changes are blocked after computations start (statuses `computing`, `optimization` and `completed`). The exception is an update that sets only `fileId` on an experiment that has no file yet.
-- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`.
+- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`. The backend takes ownership of the attempt atomically before the container starts (the move to `optimization` and the `optimizing` mark), and only then checks the pipelines; if one is not completed, the claim is undone (status and mark go back). A re-run is rejected once the experiment is in `optimization`, and one admitted earlier is seen by that check, so a re-run and an optimization cannot both go ahead, and of several simultaneous starts (including the automatic one after a re-run) only one runs the optimizer.
 
 ## GraphQL behavior
 

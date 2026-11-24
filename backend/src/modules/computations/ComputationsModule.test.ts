@@ -205,11 +205,17 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
     getWorkflow: async ({ instanceId }: any) => {
       if (String(instanceId) === String(experimentId)) {
-        return { status: 'computing' };
+        return { status: 'computing', history: [{ previousStatus: 'computing' }] };
       }
       return { status: PipelineStatus.running };
     },
   } as any);
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
+    createLeanResult({ optimization: {} })
+  );
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
+    createLeanResult({ optimization: {} })
+  );
   stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
     run: async (...args: any[]) => {
       managerCalls.push(['runOptimization', ...args]);

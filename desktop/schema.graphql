@@ -220,6 +220,22 @@ input ComputationResultPayloadInput {
   sampleCount: Int!
 }
 
+"""
+A pipeline the user confirmed for a bulk action, as they saw it, so a pipeline that was stopped and restarted meanwhile is skipped instead of acted on.
+"""
+input ConfirmedRunInput {
+  """The `executionId` the user saw; empty for a pipeline that never ran."""
+  executionId: ID
+
+  """Id of the pipeline."""
+  pipelineId: ID!
+
+  """
+  The status the user saw. A `queued` pipeline the user saw may since have been taken by a worker (its next execution); any other change of execution counts as a different run.
+  """
+  status: PipelineStatus
+}
+
 """Data for a new experiment."""
 input CreateExperimentInput {
   """Optional description."""
@@ -656,33 +672,33 @@ type Mutation {
   ): Boolean!
 
   """
-  Returns the queued and running pipelines of an experiment to `idle` and returns the ones it really stopped; a pipeline that finished or was stopped meanwhile is left out. Owner only.
+  Returns the queued and running pipelines of an experiment to `idle` and returns the ones it really stopped; a pipeline that finished, was stopped meanwhile or (with `runs`) was restarted since the user confirmed it is left out. Owner only.
   """
   pauseExperimentRuns(
     """Id of the experiment."""
     experimentId: ID!
 
-    """
-    Only stop these pipelines (the ones the user confirmed); every queued or running one when omitted.
-    """
-    pipelineIds: [ID!]
-
     """Only stop the pipelines of this queue; all queues when omitted."""
     queue: ComputationQueue
+
+    """
+    Only stop these pipelines, and only while each is still the run the user confirmed; every queued or running one when omitted.
+    """
+    runs: [ConfirmedRunInput!]
   ): [Pipeline!]!
 
   """
-  Moves the listed `idle` pipelines of an experiment and queue to `queued` ("Queue all idle" on a list the user confirmed), after the same checks as `enqueueExperimentRuns`. Returns the pipelines that were really queued: a listed pipeline that changed status meanwhile, or does not belong to the experiment and queue, is left out. Owner only.
+  Moves the confirmed `idle` pipelines of an experiment and queue to `queued` ("Queue all idle" on a list the user confirmed), after the same checks as `enqueueExperimentRuns`. Returns the pipelines that were really queued: a confirmed pipeline that changed status or execution meanwhile, or does not belong to the experiment and queue, is left out. Owner only.
   """
   queueExperimentRuns(
     """Id of the experiment."""
     experimentId: ID!
 
-    """Ids of the pipelines the user confirmed."""
-    pipelineIds: [ID!]!
-
     """The queue the pipelines belong to."""
     queue: ComputationQueue!
+
+    """The pipelines the user confirmed, as they saw them."""
+    runs: [ConfirmedRunInput!]!
   ): [Pipeline!]!
 
   """

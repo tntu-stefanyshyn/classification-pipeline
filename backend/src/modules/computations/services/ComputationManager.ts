@@ -35,22 +35,21 @@ import { ExperimentManager } from '../../experiments/services/ExperimentManager'
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { executionFilter } from '../../../core/pipeline/executionFilter';
 import {
-  DUPLICATE_KEY_ERROR,
+  DEFAULT_OPTIMIZATION_LEASE_SECONDS,
+  OPTIMIZATION_BLOCKED_BY_RERUN,
+  OPTIMIZATION_LEASE_MARGIN_MS,
   OPTIMIZATION_RUNNING,
-  ORPHAN_WAIT_ATTEMPTS,
   RERUN_DURING_OPTIMIZATION,
+  RERUN_IN_PROGRESS,
+  RERUN_LEASE_MS,
+  RERUN_LOCK_WAIT_ATTEMPTS,
   UNCOMPUTED_PIPELINES,
 } from '../constants';
+import { ConfirmedRunInput } from '../classes/ConfirmedRunInput';
+import { confirmedExecutions, isConfirmedExecution } from '../utils/confirmedExecutions';
+import { ExperimentLock } from './ExperimentLock';
+import { ExperimentOperation } from '../../experiments/classes/ExperimentOperationLock';
 import { isLostTransitionRace } from '../utils/isLostTransitionRace';
-
-type OptimizationClaim = {
-  /** Marks the attempt that holds `optimizing`; every undo and release is conditional on it. */
-  attemptId: string;
-  /** Where the owner moved the experiment from, or `null` when it was already in `optimization`. */
-  movedFrom: ExperimentStatus | null;
-  /** The optimization status before the claim, restored if the attempt does not run. */
-  previousStatus?: OptimizationStatus;
-};
 
 export class ComputationManager {
   private readonly graphManager = new GraphManager();
@@ -59,9 +58,15 @@ export class ComputationManager {
   private readonly workflowManager = new WorkflowManager();
   private readonly pipelineManager = new PipelineManager();
   private readonly experimentManager = new ExperimentManager();
-  // Overridden by tests; the wait for a run whose workflow is still being created.
-  private orphanPollMs = 100;
+  private readonly experimentLock = new ExperimentLock();
+  // Overridden by tests; the pause between attempts to take a lock another re-run holds.
+  private lockPollMs = 100;
 
+  /**
+   * Runs the optimization of an experiment. The attempt holds the experiment lock from the check of
+   * its runs to its final status, so no re-run can be admitted and no other attempt can start in
+   * between, including after the container reported its result and before the status is final.
+   */
   async optimize(experimentId: ObjectIdOrString): Promise<OptimizationResult> {
     const experiment = await ExperimentModel.findById(experimentId).lean();
     if (!experiment) {
@@ -72,19 +77,7 @@ export class ComputationManager {
       instanceId: experimentId,
       type: WorkflowType.EXPERIMENT,
     });
-    const optimizationStatus = experiment.optimization?.status;
-    const isOptimizationInProgress = optimizationStatus === OptimizationStatus.optimizing;
-    const canEnterOptimization =
-      workflow.status === ExperimentStatus.computing ||
-      workflow.status === ExperimentStatus.completed;
-
-    if (workflow.status === ExperimentStatus.optimization && isOptimizationInProgress) {
-      throw new Error(OPTIMIZATION_RUNNING);
-    }
-
-    if (!canEnterOptimization && workflow.status !== ExperimentStatus.optimization) {
-      throw new Error('Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".');
-    }
+    this.assertOptimizable(workflow.status as ExperimentStatus);
 
     const graph = await GraphStructureModel.findOne({ experimentId }).lean();
     const metrics = graph?.settings?.metrics;
@@ -101,127 +94,82 @@ export class ComputationManager {
     const optimizationTimeoutSeconds =
       Math.trunc(hyperOptimizationMinutesPerPipeline * 60 * graphPaths.length) || 0;
 
-    // Own the attempt before looking at the runs: a re-run admitted from now on sees `optimization`
-    // and is rejected, and one admitted earlier is seen by the check below.
-    const claim = await this.claimOptimization(experimentId);
-    try {
-      if (await this.hasUncomputedRun(experimentId)) {
-        throw new Error(UNCOMPUTED_PIPELINES);
-      }
-      await this.optimizationRunner.run({
-        experimentId,
-        backendUrl: config.backend.graphqlUrl,
-        backendToken: config.backend.serviceToken,
-        hyperOptimizationMinutesPerPipeline,
-        timeoutSeconds: optimizationTimeoutSeconds,
-      });
-    } catch (error) {
-      await this.releaseOptimization(experimentId, claim, error);
-      throw error;
+    // The lease outlives the runner's own timeout, so it only frees an experiment whose backend died.
+    const lock = await this.experimentLock.acquire(
+      experimentId,
+      ExperimentOperation.optimization,
+      (optimizationTimeoutSeconds || DEFAULT_OPTIMIZATION_LEASE_SECONDS) * 1000 +
+        OPTIMIZATION_LEASE_MARGIN_MS
+    );
+    if (!lock.acquired) {
+      throw new Error(
+        lock.heldBy === ExperimentOperation.rerun
+          ? OPTIMIZATION_BLOCKED_BY_RERUN
+          : OPTIMIZATION_RUNNING
+      );
     }
 
-    await this.experimentManager.changeStatus({
-      experimentId,
-      status: ExperimentStatus.completed,
-    });
-
-    return this.getOptimizationResult(experimentId);
-  }
-
-  /**
-   * Takes ownership of one optimization attempt before its container starts. The `optimizing` mark,
-   * taken with a token in one conditional update, is the only lock: a caller that does not get it
-   * is refused and changes nothing. Only the owner then moves the experiment to `optimization`, so
-   * a losing caller can never move or undo the winner's workflow.
-   */
-  private async claimOptimization(experimentId: ObjectIdOrString): Promise<OptimizationClaim> {
-    const attemptId = new Types.ObjectId().toHexString();
-    const previous = await ExperimentModel.findOneAndUpdate(
-      { _id: experimentId, 'optimization.status': { $ne: OptimizationStatus.optimizing } },
-      {
-        $set: {
-          'optimization.status': OptimizationStatus.optimizing,
-          'optimization.attemptId': attemptId,
-        },
-      },
-      { new: false }
-    ).lean();
-    if (!previous) throw new Error(OPTIMIZATION_RUNNING);
-    const claim: OptimizationClaim = {
-      attemptId,
-      movedFrom: null,
-      previousStatus: previous.optimization?.status,
-    };
-
-    const { status } = await this.workflowManager.getWorkflow({
-      instanceId: experimentId,
-      type: WorkflowType.EXPERIMENT,
-    });
-    if (status !== ExperimentStatus.optimization) {
-      try {
+    let leftForUnfinishedRun = false;
+    try {
+      // Read again under the lock: the status may have changed since the first read.
+      const status = await this.experimentStatus(experimentId);
+      this.assertOptimizable(status);
+      // Nothing can add an unfinished run while the lock is held, so this stays true to the end.
+      if (await this.hasUncomputedRun(experimentId)) {
+        leftForUnfinishedRun = true;
+        throw new Error(UNCOMPUTED_PIPELINES);
+      }
+      if (status !== ExperimentStatus.optimization) {
         await this.experimentManager.changeStatus({
           experimentId,
           status: ExperimentStatus.optimization,
         });
+      }
+      await ExperimentModel.updateOne(
+        { _id: experimentId },
+        { $set: { 'optimization.status': OptimizationStatus.optimizing } }
+      );
+      try {
+        await this.optimizationRunner.run({
+          experimentId,
+          backendUrl: config.backend.graphqlUrl,
+          backendToken: config.backend.serviceToken,
+          hyperOptimizationMinutesPerPipeline,
+          timeoutSeconds: optimizationTimeoutSeconds,
+        });
       } catch (error) {
-        await this.releaseMark(experimentId, claim, null);
+        // The experiment stays in `optimization`, as before, so the attempt can be retried.
+        await ExperimentModel.updateOne(
+          { _id: experimentId, 'optimization.status': OptimizationStatus.optimizing },
+          { $set: { 'optimization.status': OptimizationStatus.failed } }
+        );
         throw error;
       }
-      // A re-run may have reopened the experiment since it was read, so the move just made names
-      // where it really came from. Nobody else leaves `optimization` while the mark is held.
-      const { history } = await this.workflowManager.getWorkflow({
-        instanceId: experimentId,
-        type: WorkflowType.EXPERIMENT,
-      });
-      claim.movedFrom = (history.at(-1)?.previousStatus ?? status) as ExperimentStatus;
-    }
-    return claim;
-  }
-
-  /**
-   * Gives the attempt back. One that did not run (a pipeline is unfinished) is undone: the status
-   * goes back first, while the mark is still held, and only then is the mark released, so nobody
-   * can claim in between and have their move undone. One that ran and failed keeps `optimization`,
-   * as before, so it can be retried; its mark is `failed` unless the container already reported.
-   */
-  private async releaseOptimization(
-    experimentId: ObjectIdOrString,
-    claim: OptimizationClaim,
-    error: unknown
-  ) {
-    const notRun = error instanceof Error && error.message === UNCOMPUTED_PIPELINES;
-    if (!notRun) {
-      await this.releaseMark(experimentId, claim, OptimizationStatus.failed);
-      return;
-    }
-    if (claim.movedFrom) {
-      await this.experimentManager.revertStatus(
+      await this.experimentManager.changeStatus({
         experimentId,
-        ExperimentStatus.optimization,
-        claim.movedFrom,
-        'Оптимізацію скасовано: є незавершені конвеєри'
-      );
+        status: ExperimentStatus.completed,
+      });
+    } finally {
+      await this.experimentLock.release(experimentId, lock.token);
+      // A run that completed while the lock was held found it busy and left the optimization to
+      // the holder, so a holder that did not optimize because of an unfinished run looks again.
+      if (leftForUnfinishedRun) void this.reoptimizeIfReady(experimentId);
     }
-    await this.releaseMark(experimentId, claim, claim.previousStatus ?? null);
+
+    return this.getOptimizationResult(experimentId);
   }
 
-  /** Replaces the mark of this attempt only, so a later attempt's mark is never touched. */
-  private releaseMark(
-    experimentId: ObjectIdOrString,
-    claim: OptimizationClaim,
-    status: OptimizationStatus | null
-  ) {
-    return ExperimentModel.updateOne(
-      {
-        _id: experimentId,
-        'optimization.status': OptimizationStatus.optimizing,
-        'optimization.attemptId': claim.attemptId,
-      },
-      status
-        ? { $set: { 'optimization.status': status } }
-        : { $unset: { 'optimization.status': 1 } }
-    );
+  private assertOptimizable(status: ExperimentStatus) {
+    const allowed = [
+      ExperimentStatus.computing,
+      ExperimentStatus.completed,
+      ExperimentStatus.optimization,
+    ];
+    if (!allowed.includes(status)) {
+      throw new Error('Оптимізацію можна запускати лише зі статусів "Обчислення" або "Завершено".');
+    }
   }
+
   private async hasUncomputedRun(experimentId: ObjectIdOrString): Promise<boolean> {
     const [uncomputedPipeline] = await PipelineModel.aggregate([
       { $match: { experimentId: stringIdToObjectId(experimentId) } },
@@ -233,7 +181,8 @@ export class ComputationManager {
           as: 'workflow',
         },
       },
-      { $unwind: { path: '$workflow' } },
+      // A run without a workflow (an interrupted re-run) is unfinished too.
+      { $unwind: { path: '$workflow', preserveNullAndEmptyArrays: true } },
       {
         $match: {
           'workflow.status': { $ne: PipelineStatus.completed },
@@ -242,6 +191,7 @@ export class ComputationManager {
     ]);
     return Boolean(uncomputedPipeline);
   }
+
   async enqueueRuns(input: EnqueueExperimentRunsInput): Promise<void> {
     const { experimentId, pipelineId, runAll } = input;
     if (runAll && pipelineId) {
@@ -263,30 +213,37 @@ export class ComputationManager {
       if (String(pipeline.experimentId) !== String(experimentId)) {
         throw new Error('Конвеєр не знайдено');
       }
-      pipelineIds = [input.rerun ? await this.prepareRerun(pipeline) : pipeline._id];
+      if (input.rerun) {
+        await this.admitRerun(pipeline);
+        return;
+      }
+      pipelineIds = [pipeline._id];
     }
 
     await this.queueIdle(pipelineIds);
   }
 
   /**
-   * Queues the given runs of one queue, for a bulk action the user confirmed on a list of runs.
-   * Returns the runs that were really queued; a run that changed status since the list was read,
-   * or does not belong to the experiment and queue, is left out, so the caller can count it as
-   * skipped.
+   * Queues the runs of one queue that the user confirmed, each only while it is still the execution
+   * the user saw. Returns the runs that were really queued; a run that changed status or execution
+   * since the list was read, or does not belong to the experiment and queue, is left out, so the
+   * caller can count it as skipped.
    */
   async queueRunsByIds(
     experimentId: ObjectIdOrString,
     queue: ComputationQueue,
-    pipelineIds: string[]
+    runs: ConfirmedRunInput[]
   ): Promise<Pipeline[]> {
     await this.assertRunnable(experimentId, queue);
     const candidates = await PipelineModel.find({
-      _id: { $in: pipelineIds },
+      _id: { $in: runs.map((run) => run.pipelineId) },
       experimentId: stringIdToObjectId(experimentId),
       queue,
     }).lean();
-    const queued = await this.queueIdle(candidates.map((run) => run._id));
+    const queued = await this.queueIdle(
+      candidates.map((run) => run._id),
+      confirmedExecutions(runs)
+    );
     return PipelineModel.find({ _id: { $in: queued } }).lean();
   }
 
@@ -340,10 +297,14 @@ export class ComputationManager {
 
   /**
    * Moves the idle runs among `pipelineIds` to `queued`. A run that changed status since it was
-   * read (a worker or another client) is skipped instead of failing the whole action.
-   * Returns the ids that were queued.
+   * read (a worker or another client) is skipped instead of failing the whole action, and with
+   * `executions` so is a run whose execution is no longer the one the user confirmed; the update
+   * checks the execution it read, so a change in between is skipped too. Returns the queued ids.
    */
-  private async queueIdle(pipelineIds: Types.ObjectId[]): Promise<Types.ObjectId[]> {
+  private async queueIdle(
+    pipelineIds: Types.ObjectId[],
+    executions?: ReturnType<typeof confirmedExecutions>
+  ): Promise<Types.ObjectId[]> {
     const queued = await Promise.all(
       pipelineIds.map(async (nextPipelineId) => {
         const workflow = await this.workflowManager.getWorkflow({
@@ -351,11 +312,26 @@ export class ComputationManager {
           type: WorkflowType.PIPELINE,
         });
         if (workflow.status !== PipelineStatus.idle) return null;
+        if (
+          executions &&
+          !isConfirmedExecution(
+            executions,
+            nextPipelineId,
+            PipelineStatus.idle,
+            workflow.executionId
+          )
+        ) {
+          return null;
+        }
         try {
-          await this.pipelineManager.changeStatus({
-            pipelineId: nextPipelineId,
-            status: PipelineStatus.queued,
-          });
+          const input = { pipelineId: nextPipelineId, status: PipelineStatus.queued };
+          if (executions) {
+            await this.pipelineManager.changeStatus(input, undefined, {
+              executionId: workflow.executionId ?? null,
+            });
+          } else {
+            await this.pipelineManager.changeStatus(input);
+          }
           return nextPipelineId;
         } catch (error) {
           if (!isLostTransitionRace(error)) throw error;
@@ -367,10 +343,46 @@ export class ComputationManager {
   }
 
   /**
+   * Admits a re-run: everything from choosing the run to queueing it happens while this request
+   * holds the experiment lock, so a second click waits and then finds the queued run, an
+   * optimization cannot start in between, and a run is only ever queued after the experiment was
+   * reopened with its CSV file checked again. If the admission fails, nothing it made is left.
+   */
+  private async admitRerun(source: Pipeline) {
+    const token = await this.acquireForRerun(source.experimentId);
+    let admitted = false;
+    try {
+      const runId = await this.prepareRerun(source);
+      await this.queueIdle([runId]);
+      admitted = true;
+    } finally {
+      await this.experimentLock.release(source.experimentId, token);
+      // A run that completed while the lock was held left the optimization to the holder.
+      if (!admitted) void this.reoptimizeIfReady(source.experimentId);
+    }
+  }
+
+  /** Waits for another re-run's admission to finish; an optimization in progress is a refusal. */
+  private async acquireForRerun(experimentId: Types.ObjectId): Promise<string> {
+    for (let attempt = 0; attempt < RERUN_LOCK_WAIT_ATTEMPTS; attempt += 1) {
+      const lock = await this.experimentLock.acquire(
+        experimentId,
+        ExperimentOperation.rerun,
+        RERUN_LEASE_MS
+      );
+      if (lock.acquired) return lock.token;
+      if (lock.heldBy === ExperimentOperation.optimization) {
+        throw new Error(RERUN_DURING_OPTIMIZATION);
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.lockPollMs));
+    }
+    throw new Error(RERUN_IN_PROGRESS);
+  }
+
+  /**
    * A re-run is a new run of the same path, so the finished one stays for comparison. Returns the
    * run to queue: the source itself unless it is completed, or the run of this path that is already
-   * waiting or running, so a second click creates nothing. Two simultaneous first clicks are
-   * settled by the unique `rerunOf` index: the loser takes the run the winner created.
+   * waiting or running, so a second click creates nothing. Runs under the experiment lock.
    */
   private async prepareRerun(source: Pipeline): Promise<Types.ObjectId> {
     if ((await this.runStatus(source)) !== PipelineStatus.completed) return source._id;
@@ -382,14 +394,13 @@ export class ComputationManager {
     }).lean();
     for (const run of sameRuns) {
       if ((await this.runStatus(run)) !== PipelineStatus.completed) {
-        // A request that died after creating the run may have left the experiment closed.
+        // An admission that died after creating the run may have left the experiment closed.
         await this.reopenExperiment(source.experimentId);
         return run._id;
       }
     }
 
-    const experimentStatus = await this.experimentStatus(source.experimentId);
-    if (experimentStatus === ExperimentStatus.optimization) {
+    if ((await this.experimentStatus(source.experimentId)) === ExperimentStatus.optimization) {
       throw new Error(RERUN_DURING_OPTIMIZATION);
     }
 
@@ -398,29 +409,19 @@ export class ComputationManager {
       (newest, run) => (+new Date(run.createdAt) > +new Date(newest.createdAt) ? run : newest),
       source
     );
-    let created;
-    try {
-      created = await PipelineModel.create({
-        graphStructureId: source.graphStructureId,
-        queue: source.queue,
-        pathNodeIds: source.pathNodeIds,
-        experimentId: source.experimentId,
-        rerunOf: latest._id,
-      });
-    } catch (error) {
-      if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR) throw error;
-      const winner = await PipelineModel.findOne({ rerunOf: latest._id }).lean();
-      if (!winner) throw error;
-      await this.runStatus(winner);
-      await this.reopenExperiment(source.experimentId);
-      return winner._id;
-    }
-    await this.ensureRunWorkflow(created._id);
+    const created = await PipelineModel.create({
+      graphStructureId: source.graphStructureId,
+      queue: source.queue,
+      pathNodeIds: source.pathNodeIds,
+      experimentId: source.experimentId,
+      rerunOf: latest._id,
+    });
+    await this.pipelineManager.ensureRerunWorkflow(created._id);
     try {
       await this.reopenExperiment(source.experimentId);
     } catch (error) {
-      // The experiment could not be reopened (an optimization started meanwhile, or its file is
-      // gone): no new run.
+      // The experiment could not be reopened (its file is gone): no new run. Nobody else could
+      // have queued it, because the lock is still held.
       await PipelineModel.deleteOne({ _id: created._id });
       await WorkflowModel.deleteOne({ instanceId: created._id, type: WorkflowType.PIPELINE });
       throw error;
@@ -428,7 +429,7 @@ export class ComputationManager {
     return created._id;
   }
 
-  private async experimentStatus(experimentId: Types.ObjectId): Promise<ExperimentStatus> {
+  private async experimentStatus(experimentId: ObjectIdOrString): Promise<ExperimentStatus> {
     const workflow = await this.workflowManager.getWorkflow({
       instanceId: experimentId,
       type: WorkflowType.EXPERIMENT,
@@ -436,72 +437,37 @@ export class ComputationManager {
     return workflow.status as ExperimentStatus;
   }
 
-  /** A completed experiment goes back to `computing` for a re-run; any other status stays. */
+  /**
+   * A completed experiment goes back to `computing` for a re-run; any other status stays. The
+   * transition checks the CSV file before and again after the status write and puts the status
+   * back if it is gone, so this returns only once the file is confirmed.
+   */
   private async reopenExperiment(experimentId: Types.ObjectId) {
     const status = await this.experimentStatus(experimentId);
     if (status === ExperimentStatus.optimization) {
       throw new Error(RERUN_DURING_OPTIMIZATION);
     }
     if (status !== ExperimentStatus.completed) return;
-    try {
-      await this.experimentManager.changeStatus({
-        experimentId,
-        status: ExperimentStatus.computing,
-      });
-    } catch (error) {
-      if (!isLostTransitionRace(error)) throw error;
-      // Another re-run reopened it first, or an optimization took the experiment: only the first
-      // leaves the re-run valid.
-      if ((await this.experimentStatus(experimentId)) === ExperimentStatus.optimization) {
-        throw new Error(RERUN_DURING_OPTIMIZATION);
-      }
-    }
+    await this.experimentManager.changeStatus({
+      experimentId,
+      status: ExperimentStatus.computing,
+    });
   }
 
   /**
-   * The status of a run. A re-run is created before its workflow, so a run without one is either
-   * being created by another request, which we wait for, or was left behind by a request that
-   * died: then the idle workflow is created here. Both creators use `ensureRunWorkflow`, so a slow
-   * original creator and a recovery cannot add two.
+   * The status of a run. Only an admission holding the lock creates re-runs, so a run without a
+   * workflow here was left by one that died between its two writes: its idle workflow is created.
    */
   private async runStatus(run: Pipeline): Promise<PipelineStatus> {
-    for (let attempt = 0; attempt < ORPHAN_WAIT_ATTEMPTS; attempt += 1) {
-      const workflow = await this.findRunWorkflow(run._id);
-      if (workflow) return workflow.status as PipelineStatus;
-      await new Promise((resolve) => setTimeout(resolve, this.orphanPollMs));
-    }
-    await this.ensureRunWorkflow(run._id);
+    const workflow = await this.findRunWorkflow(run._id);
+    if (workflow) return workflow.status as PipelineStatus;
+    await this.pipelineManager.ensureRerunWorkflow(run._id);
     return PipelineStatus.idle;
-  }
-
-  /**
-   * Atomic get-or-create of the idle workflow of a re-run, shared by the request that created the
-   * run and by a recovery. An existing workflow is left as it is, whatever its status, and the
-   * unique `rerun` index on workflows settles two creators that both find none.
-   */
-  private async ensureRunWorkflow(runId: Types.ObjectId) {
-    try {
-      await WorkflowModel.updateOne(
-        { instanceId: runId, type: WorkflowType.PIPELINE },
-        {
-          $setOnInsert: {
-            status: PipelineStatus.idle,
-            rerun: true,
-            history: [{ previousStatus: PipelineStatus.idle, createdAt: new Date() }],
-          },
-        },
-        { upsert: true }
-      );
-    } catch (error) {
-      // The other creator inserted it first, which is the workflow we wanted.
-      if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR) throw error;
-    }
   }
 
   private findRunWorkflow(runId: Types.ObjectId) {
     return WorkflowModel.findOne({ instanceId: runId, type: WorkflowType.PIPELINE }).lean();
   }
-
   async stopRun(pipelineId: string): Promise<Pipeline> {
     const pipeline = await PipelineBaseService.getById(pipelineId);
     const workflow = await this.workflowManager.getWorkflow({
@@ -675,43 +641,35 @@ export class ComputationManager {
     return false;
   }
 
-  /**
-   * An optimized experiment that a re-run reopened (`computing` with a best pipeline left from the
-   * last optimization) is optimized again when its last run completes. `optimize` itself refuses
-   * while a run is unfinished, so earlier completions do nothing, and it takes ownership of the
-   * attempt atomically, so of several completions only one starts the optimizer.
-   */
+  /** A completed run may be the last one of a re-run: see `reoptimizeIfReady`. */
   private async reoptimizeAfterRerun(pipelineId: Types.ObjectId) {
+    const pipeline = await PipelineModel.findById(pipelineId)
+      .lean()
+      .catch(() => null);
+    if (pipeline) await this.reoptimizeIfReady(pipeline.experimentId);
+  }
+
+  /**
+   * An optimized experiment that a re-run reopened (`computing`, with a best pipeline left from the
+   * last optimization) is optimized again once all its runs are completed. This is checked when a
+   * run completes and whenever the experiment lock is let go without optimizing, because a run
+   * that completed while the lock was held found it busy and left the optimization to the holder.
+   * Of several callers only the one that takes the lock optimizes.
+   */
+  private async reoptimizeIfReady(experimentId: ObjectIdOrString) {
     try {
-      const pipeline = await PipelineModel.findById(pipelineId).lean();
-      if (!pipeline) return;
-      const experiment = await ExperimentModel.findById(pipeline.experimentId).lean();
+      const experiment = await ExperimentModel.findById(experimentId).lean();
       if (!experiment?.optimization?.bestPipelineId) return;
-      const { status } = await this.workflowManager.getWorkflow({
-        instanceId: pipeline.experimentId,
-        type: WorkflowType.EXPERIMENT,
-      });
-      if (status !== ExperimentStatus.computing) return;
-      // A run that completes while this attempt holds the claim sees `optimization` and leaves, so
-      // when the attempt is given back for an unfinished run, look again: if that run has finished
-      // meanwhile, nobody else will start the optimization. Each retry needs every run completed,
-      // so the bound only stops a stream of new re-runs from keeping this call busy.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          await this.optimize(pipeline.experimentId);
-          return;
-        } catch (error) {
-          if (!(error instanceof Error) || error.message !== UNCOMPUTED_PIPELINES) throw error;
-          if (await this.hasUncomputedRun(pipeline.experimentId)) return;
-        }
-      }
+      if ((await this.experimentStatus(experimentId)) !== ExperimentStatus.computing) return;
+      if (await this.hasUncomputedRun(experimentId)) return;
+      await this.optimize(experimentId);
     } catch (error) {
-      // Another completion owns the attempt: it does the optimization.
-      if (error instanceof Error && error.message === OPTIMIZATION_RUNNING) return;
+      // The lock is busy (its holder looks again when it lets go), or a run became unfinished.
+      const handled = [OPTIMIZATION_RUNNING, OPTIMIZATION_BLOCKED_BY_RERUN, UNCOMPUTED_PIPELINES];
+      if (error instanceof Error && handled.includes(error.message)) return;
       console.error('Automatic re-optimization failed', error);
     }
   }
-
   /** Returns false when the report belongs to an execution that is no longer current. */
   async completePipeline({ payload, pipelineId, executionId }: CompletePipelineInput) {
     const pipeline = await PipelineBaseService.getById(pipelineId);
@@ -757,8 +715,9 @@ export class ComputationManager {
   async pauseExperimentRuns(
     experimentId: ObjectIdOrString,
     queue?: ComputationQueue,
-    pipelineIds?: string[]
+    confirmedRuns?: ConfirmedRunInput[]
   ): Promise<Pipeline[]> {
+    const confirmed = confirmedRuns ? confirmedExecutions(confirmedRuns) : undefined;
     const runs = await WorkflowModel.aggregate<Pipeline>([
       {
         $match: {
@@ -782,7 +741,9 @@ export class ComputationManager {
           ...(queue ? { queue } : {}),
           // A confirmed list limits the action to those runs, so one that became eligible after
           // the confirmation is left alone.
-          ...(pipelineIds ? { _id: { $in: pipelineIds.map(stringIdToObjectId) } } : {}),
+          ...(confirmedRuns
+            ? { _id: { $in: confirmedRuns.map((run) => stringIdToObjectId(run.pipelineId)) } }
+            : {}),
         },
       },
     ]);
@@ -791,15 +752,20 @@ export class ComputationManager {
 
     // Only the runs this call really stopped are returned; one that finished or was stopped by
     // someone else meanwhile is left out, so the caller can report how many were skipped.
-    const paused = await Promise.all(runs.map((run) => this.pauseRun(run._id)));
+    const paused = await Promise.all(runs.map((run) => this.pauseRun(run._id, confirmed)));
     const runIds = runs.filter((_, index) => paused[index]).map((run) => run._id);
     return PipelineModel.find({ _id: { $in: runIds } }).lean();
   }
 
   // Queued and running runs both go back to idle, so no worker can claim them after the pause.
   // If a worker claims the run while it is being paused, re-read the status and stop it instead.
-  // Returns whether this call moved the run to idle.
-  private async pauseRun(pipelineId: Types.ObjectId): Promise<boolean> {
+  // Returns whether this call moved the run to idle. With `confirmed`, only the run the user saw
+  // is stopped: one that was stopped and started again meanwhile is a new run and is skipped. The
+  // status change is conditional on the execution read, so a restart in between is skipped too.
+  private async pauseRun(
+    pipelineId: Types.ObjectId,
+    confirmed?: ReturnType<typeof confirmedExecutions>
+  ): Promise<boolean> {
     // queued -> running is the only change a worker can make first, so two retries suffice.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const { status, executionId } = await this.workflowManager.getWorkflow({
@@ -807,6 +773,12 @@ export class ComputationManager {
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return false;
+      if (
+        confirmed &&
+        !isConfirmedExecution(confirmed, pipelineId, status as PipelineStatus, executionId)
+      ) {
+        return false;
+      }
       if (status === PipelineStatus.running) await this.stopExecutionJob(pipelineId, executionId);
       try {
         await this.pipelineManager.changeStatus(

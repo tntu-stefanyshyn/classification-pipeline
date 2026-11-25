@@ -138,11 +138,11 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         $queue: ComputationQueue!
         $machineInfo: PipelineMachineInfoInput
         $experimentId: ID!
-        $pipelineIds: [ID!]!
+        $runs: [ConfirmedRunInput!]!
         $complete: CompletePipelineInput!
       ) {
         enqueueExperimentRuns(input: $enqueue)
-        queueExperimentRuns(experimentId: $experimentId, queue: $queue, pipelineIds: $pipelineIds) {
+        queueExperimentRuns(experimentId: $experimentId, queue: $queue, runs: $runs) {
           _id
         }
         stopExperimentRun(input: $stop) {
@@ -156,7 +156,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
             hostname
           }
         }
-        pauseExperimentRuns(experimentId: $experimentId, pipelineIds: $pipelineIds) {
+        pauseExperimentRuns(experimentId: $experimentId, runs: $runs) {
           _id
         }
         resumeExperimentRuns(experimentId: $experimentId) {
@@ -182,7 +182,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
           memoryGb: 16,
         },
         experimentId,
-        pipelineIds: [runId],
+        runs: [{ pipelineId: runId, executionId: '3', status: 'running' }],
         complete: {
           pipelineId: runId,
           executionId: '4',
@@ -242,7 +242,12 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
   assert.deepEqual(toPlainValue(calls), [
     ['optimize', experimentId],
     ['enqueueRuns', { experimentId, queue: 'local', runAll: true, rerun: false }],
-    ['queueRunsByIds', experimentId, 'local', [runId]],
+    [
+      'queueRunsByIds',
+      experimentId,
+      'local',
+      [{ pipelineId: runId, executionId: '3', status: 'running' }],
+    ],
     ['stopRun', runId],
     [
       'claimNextRun',
@@ -254,7 +259,12 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         memoryGb: 16,
       },
     ],
-    ['pauseExperimentRuns', experimentId, null, [runId]],
+    [
+      'pauseExperimentRuns',
+      experimentId,
+      null,
+      [{ pipelineId: runId, executionId: '3', status: 'running' }],
+    ],
     ['resumeExperimentRuns', experimentId],
     [
       'completePipeline',

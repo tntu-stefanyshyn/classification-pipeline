@@ -13,11 +13,12 @@ import { ComputationManager } from './services/ComputationManager';
 
 type RunSeed = {
   _id: Types.ObjectId;
-  /** `undefined` is a run that has no workflow yet. */
+  /** `undefined` is a run that has no workflow (an interrupted admission). */
   status?: PipelineStatus;
   createdAt?: Date;
 };
 
+// `prepareRerun` runs under the experiment lock (see `admitRerun`), so it is tested on its own.
 const setup = (t: TestContext, experimentStatus: ExperimentStatus, runs: RunSeed[]) => {
   const experimentId = new Types.ObjectId();
   const pathNodeIds = [new Types.ObjectId()];
@@ -29,7 +30,6 @@ const setup = (t: TestContext, experimentStatus: ExperimentStatus, runs: RunSeed
     pathNodeIds,
   }));
   const manager = new ComputationManager() as any;
-  manager.orphanPollMs = 1;
   const created: unknown[] = [];
   const experimentChanges: unknown[] = [];
 
@@ -38,8 +38,7 @@ const setup = (t: TestContext, experimentStatus: ExperimentStatus, runs: RunSeed
     return run?.status ? { status: run.status } : null;
   });
   stub(t, manager.workflowManager, 'getWorkflow', async () => ({ status: experimentStatus }));
-  // Both creation paths (the request and a recovery) go through this atomic get-or-create.
-  stub(t, manager, 'ensureRunWorkflow', async (runId: Types.ObjectId) => {
+  stub(t, manager.pipelineManager, 'ensureRerunWorkflow', async (runId: Types.ObjectId) => {
     created.push(runId);
   });
   stub(t, manager.experimentManager, 'changeStatus', async (input: unknown) => {
@@ -90,56 +89,18 @@ test('the re-run hangs on the newest run of the path', async (t) => {
   assert.equal(String(rerunOf), String(newest._id));
 });
 
-test('a simultaneous re-run that loses the race gets the run the other one created', async (t) => {
-  const { manager, source, created } = setup(t, ExperimentStatus.computing, [completed()]);
-  const winner = { _id: new Types.ObjectId(), status: PipelineStatus.idle };
-  stub(t, PipelineModel as any, 'create', async () => {
-    throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
-  });
-  stub(t, PipelineModel as any, 'findOne', () => ({ lean: async () => winner }));
-  stub(t, manager, 'findRunWorkflow', async (runId: Types.ObjectId) => ({
-    status: String(runId) === String(winner._id) ? winner.status : PipelineStatus.completed,
-  }));
-
-  const id = await manager.prepareRerun(source);
-
-  assert.equal(String(id), String(winner._id));
-  assert.equal(created.length, 0);
-});
-
-test('a re-run seen before its workflow exists is waited for, not an error', async (t) => {
-  const { manager, source, created } = setup(t, ExperimentStatus.computing, [completed()]);
-  // The winner has created the run but not yet its workflow: it appears on the third look.
-  const inFlight = { _id: new Types.ObjectId() };
-  let looks = 0;
-  stub(t, PipelineModel as any, 'find', () => ({ lean: async () => [source, inFlight] }));
-  stub(t, manager, 'findRunWorkflow', async (runId: Types.ObjectId) => {
-    if (String(runId) === String(source._id)) return { status: PipelineStatus.completed };
-    looks += 1;
-    return looks < 3 ? null : { status: PipelineStatus.idle };
-  });
-
-  const id = await manager.prepareRerun(source);
-
-  assert.equal(String(id), String(inFlight._id));
-  assert.equal(created.length, 0);
-});
-
-test('a run left without a workflow by a request that died gets one and is reused', async (t) => {
+test('a run left without a workflow by an interrupted admission gets one and is reused', async (t) => {
+  const orphan = { _id: new Types.ObjectId() };
   const { manager, source, created, experimentChanges } = setup(t, ExperimentStatus.completed, [
     completed(),
+    orphan,
   ]);
-  const orphan = { _id: new Types.ObjectId() };
-  stub(t, PipelineModel as any, 'find', () => ({ lean: async () => [source, orphan] }));
-  stub(t, manager, 'findRunWorkflow', async (runId: Types.ObjectId) =>
-    String(runId) === String(source._id) ? { status: PipelineStatus.completed } : null
-  );
 
   const id = await manager.prepareRerun(source);
 
   assert.equal(String(id), String(orphan._id));
   assert.deepEqual(created, [orphan._id]);
-  // The experiment the dead request left closed is reopened.
+  // The experiment the interrupted admission left closed is reopened.
   assert.equal(experimentChanges.length, 1);
 });
 
@@ -167,46 +128,114 @@ test('a second re-run click reuses the run that is already waiting', async (t) =
   assert.equal(created.length, 0);
 });
 
-const reoptimize = async (
+test('re-run is rejected while the experiment is optimizing', async (t) => {
+  const { manager, source } = setup(t, ExperimentStatus.optimization, [completed()]);
+
+  await assert.rejects(() => manager.prepareRerun(source), /оптимізації/);
+});
+
+// The admission waits for another admission's lock and refuses during an optimization.
+const lockSequence = (t: TestContext, results: any[]) => {
+  const manager = new ComputationManager() as any;
+  manager.lockPollMs = 1;
+  const acquired: unknown[] = [];
+  stub(t, manager.experimentLock, 'acquire', async (...args: unknown[]) => {
+    acquired.push(args[1]);
+    return results.shift() ?? { acquired: true, token: 'last' };
+  });
+  return { manager, acquired };
+};
+
+test('a re-run admission waits for another admission to let go of the lock', async (t) => {
+  const { manager, acquired } = lockSequence(t, [
+    { acquired: false, heldBy: 'rerun' },
+    { acquired: false, heldBy: 'rerun' },
+    { acquired: true, token: 'mine' },
+  ]);
+
+  assert.equal(await manager.acquireForRerun(new Types.ObjectId()), 'mine');
+  assert.deepEqual(acquired, ['rerun', 'rerun', 'rerun']);
+});
+
+test('a re-run admission is refused while an optimization holds the lock', async (t) => {
+  const { manager } = lockSequence(t, [{ acquired: false, heldBy: 'optimization' }]);
+
+  await assert.rejects(() => manager.acquireForRerun(new Types.ObjectId()), /оптимізації/);
+});
+
+test('a re-run admission gives up when another admission does not finish', async (t) => {
+  const { manager } = lockSequence(
+    t,
+    Array.from({ length: 200 }, () => ({ acquired: false, heldBy: 'rerun' }))
+  );
+
+  await assert.rejects(() => manager.acquireForRerun(new Types.ObjectId()), /уже виконується/);
+});
+
+test('an admission that failed lets go of the lock and checks readiness again', async (t) => {
+  const manager = new ComputationManager() as any;
+  const calls: unknown[] = [];
+  stub(t, manager, 'acquireForRerun', async () => 'token');
+  stub(t, manager, 'prepareRerun', async () => {
+    throw new Error('Файл експерименту не знайдено');
+  });
+  stub(t, manager.experimentLock, 'release', async (...args: unknown[]) => {
+    calls.push(['release', args[1]]);
+  });
+  stub(t, manager, 'reoptimizeIfReady', async () => {
+    calls.push(['recheck']);
+  });
+
+  await assert.rejects(
+    () => manager.admitRerun({ experimentId: new Types.ObjectId() }),
+    /Файл експерименту/
+  );
+
+  assert.deepEqual(calls, [['release', 'token'], ['recheck']]);
+});
+
+const readiness = (
   t: TestContext,
   experiment: { optimization?: { bestPipelineId?: Types.ObjectId } },
   status: ExperimentStatus,
+  unfinished: boolean,
   optimize: () => Promise<unknown>
 ) => {
   const manager = new ComputationManager() as any;
-  stub(t, PipelineModel as any, 'findById', () => ({
-    lean: async () => ({ experimentId: new Types.ObjectId() }),
-  }));
   stub(t, ExperimentModel as any, 'findById', () => ({ lean: async () => experiment }));
   stub(t, manager.workflowManager, 'getWorkflow', async () => ({ status }));
+  stub(t, manager, 'hasUncomputedRun', async () => unfinished);
   stub(t, manager, 'optimize', optimize);
-  // After an attempt refused for an unfinished run, the run is looked at again: still unfinished.
-  stub(t, manager, 'hasUncomputedRun', async () => true);
-  await manager.reoptimizeAfterRerun(new Types.ObjectId());
+  return manager.reoptimizeIfReady(new Types.ObjectId());
 };
 
-test('the last re-run completing optimizes an experiment that was optimized before', async (t) => {
+const optimized = { optimization: { bestPipelineId: new Types.ObjectId() } };
+
+test('an optimized experiment whose runs are all completed is optimized again', async (t) => {
   let runs = 0;
-  const optimized = { optimization: { bestPipelineId: new Types.ObjectId() } };
-  await reoptimize(t, optimized, ExperimentStatus.computing, async () => void runs++);
+  await readiness(t, optimized, ExperimentStatus.computing, false, async () => void runs++);
   assert.equal(runs, 1);
 });
 
 test('a first-time experiment is not optimized automatically', async (t) => {
   let runs = 0;
-  await reoptimize(t, {}, ExperimentStatus.computing, async () => void runs++);
+  await readiness(t, {}, ExperimentStatus.computing, false, async () => void runs++);
   assert.equal(runs, 0);
 });
 
-test('a re-run that is not the last one only leaves the optimization for later', async (t) => {
-  const optimized = { optimization: { bestPipelineId: new Types.ObjectId() } };
-  await reoptimize(t, optimized, ExperimentStatus.computing, async () => {
-    throw new Error('There are uncomuted pipelines.');
-  });
+test('an experiment with an unfinished run is left for that run to complete', async (t) => {
+  let runs = 0;
+  await readiness(t, optimized, ExperimentStatus.computing, true, async () => void runs++);
+  assert.equal(runs, 0);
 });
 
-test('re-run is rejected while the experiment is optimizing', async (t) => {
-  const { manager, source } = setup(t, ExperimentStatus.optimization, [completed()]);
-
-  await assert.rejects(() => manager.prepareRerun(source), /оптимізації/);
+test('a busy experiment is left to the lock holder, which checks again when it lets go', async (t) => {
+  for (const message of [
+    'Оптимізація вже виконується.',
+    'Оптимізацію не можна запустити, поки перезапуск ставиться в чергу. Спробуйте ще раз.',
+  ]) {
+    await readiness(t, optimized, ExperimentStatus.computing, false, async () => {
+      throw new Error(message);
+    });
+  }
 });

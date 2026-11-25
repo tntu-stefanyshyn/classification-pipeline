@@ -95,10 +95,18 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
     [m]
   );
   const metricColumns = useMemo<ColumnDef<MetricCompareRow>[]>(() => {
-    const scoreCell = (mean: number | null, folds: number[]) => (
+    // Every fold is shown, and highlighted where the other run differs: equal means can hide
+    // folds that changed.
+    const scoreCell = (mean: number | null, folds: number[], differs: boolean[]) => (
       <>
         {formatScore(mean)}
-        <div className="muted small">{folds.map((fold) => formatScore(fold)).join(' · ')}</div>
+        <div className="muted small compare-folds">
+          {folds.map((fold, index) => (
+            <span key={index} className={highlight(differs[index] ?? false)}>
+              {formatScore(fold)}
+            </span>
+          ))}
+        </div>
       </>
     );
     return [
@@ -106,18 +114,20 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
       {
         header: m.compareRun('A'),
         id: 'a',
-        cell: ({ row }) => scoreCell(row.original.meanA, row.original.foldsA),
+        cell: ({ row }) =>
+          scoreCell(row.original.meanA, row.original.foldsA, row.original.foldDiffers),
       },
       {
         header: m.compareRun('B'),
         id: 'b',
-        cell: ({ row }) => scoreCell(row.original.meanB, row.original.foldsB),
+        cell: ({ row }) =>
+          scoreCell(row.original.meanB, row.original.foldsB, row.original.foldDiffers),
       },
       {
         header: m.compareDelta,
         id: 'delta',
         cell: ({ row }) => (
-          <span className={highlight(Boolean(row.original.delta))}>
+          <span className={highlight(row.original.meanDiffers)}>
             {formatDelta(row.original.delta)}
           </span>
         ),

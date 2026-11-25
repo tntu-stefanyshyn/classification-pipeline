@@ -1641,6 +1641,12 @@ h1 {
   background: rgba(245, 158, 11, 0.12);
 }
 
+.compare-folds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 .compare-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

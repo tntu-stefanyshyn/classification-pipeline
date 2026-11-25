@@ -210,11 +210,17 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
       return { status: PipelineStatus.running };
     },
   } as any);
-  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
-    createLeanResult({ optimization: {} })
-  );
-  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
-    createLeanResult({ optimization: {} })
+  stub(t, manager as unknown as Record<string, unknown>, 'experimentLock', {
+    acquire: async () => ({ acquired: true, token: 'token' }),
+    release: async () => undefined,
+  } as any);
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
+  // A completed run checks whether a re-run's optimization is due; not what this test is about.
+  stub(
+    t,
+    manager as unknown as Record<string, unknown>,
+    'reoptimizeAfterRerun',
+    async () => undefined
   );
   stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
     run: async (...args: any[]) => {

@@ -2,6 +2,7 @@ import { Arg, Ctx, ID, Mutation, Query, Resolver } from 'type-graphql';
 import { OptimizationResult } from '../classes/OptimizationResult';
 import { ComputationQueue } from '../classes/ComputationQueue';
 import { EnqueueExperimentRunsInput } from '../classes/EnqueueExperimentRunsInput';
+import { ConfirmedRunInput } from '../classes/ConfirmedRunInput';
 import { StopExperimentRunInput } from '../classes/StopExperimentRunInput';
 import { CompletePipelineInput } from '../classes/CompleteExperimentRunInput';
 import { FailExperimentRunInput } from '../classes/FailExperimentRunInput';
@@ -50,19 +51,21 @@ export class ComputationResolver {
 
   @Mutation(() => [Pipeline], {
     description:
-      'Moves the listed `idle` pipelines of an experiment and queue to `queued` ("Queue all idle" on a list the user confirmed), after the same checks as `enqueueExperimentRuns`. Returns the pipelines that were really queued: a listed pipeline that changed status meanwhile, or does not belong to the experiment and queue, is left out. Owner only.',
+      'Moves the confirmed `idle` pipelines of an experiment and queue to `queued` ("Queue all idle" on a list the user confirmed), after the same checks as `enqueueExperimentRuns`. Returns the pipelines that were really queued: a confirmed pipeline that changed status or execution meanwhile, or does not belong to the experiment and queue, is left out. Owner only.',
   })
   async queueExperimentRuns(
     @Arg('experimentId', () => ID, { description: 'Id of the experiment.' }) experimentId: string,
     @Arg('queue', () => ComputationQueue, { description: 'The queue the pipelines belong to.' })
     queue: ComputationQueue,
-    @Arg('pipelineIds', () => [ID], { description: 'Ids of the pipelines the user confirmed.' })
-    pipelineIds: string[],
+    @Arg('runs', () => [ConfirmedRunInput], {
+      description: 'The pipelines the user confirmed, as they saw them.',
+    })
+    runs: ConfirmedRunInput[],
     @Ctx() context: GraphQLContext
   ): Promise<Pipeline[]> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, experimentId);
-    return this.manager.queueRunsByIds(experimentId, queue, pipelineIds);
+    return this.manager.queueRunsByIds(experimentId, queue, runs);
   }
 
   @Mutation(() => Pipeline, {
@@ -101,7 +104,7 @@ export class ComputationResolver {
 
   @Mutation(() => [Pipeline], {
     description:
-      'Returns the queued and running pipelines of an experiment to `idle` and returns the ones it really stopped; a pipeline that finished or was stopped meanwhile is left out. Owner only.',
+      'Returns the queued and running pipelines of an experiment to `idle` and returns the ones it really stopped; a pipeline that finished, was stopped meanwhile or (with `runs`) was restarted since the user confirmed it is left out. Owner only.',
   })
   async pauseExperimentRuns(
     @Arg('experimentId', () => ID, { description: 'Id of the experiment.' }) experimentId: string,
@@ -111,16 +114,16 @@ export class ComputationResolver {
       description: 'Only stop the pipelines of this queue; all queues when omitted.',
     })
     queue?: ComputationQueue,
-    @Arg('pipelineIds', () => [ID], {
+    @Arg('runs', () => [ConfirmedRunInput], {
       nullable: true,
       description:
-        'Only stop these pipelines (the ones the user confirmed); every queued or running one when omitted.',
+        'Only stop these pipelines, and only while each is still the run the user confirmed; every queued or running one when omitted.',
     })
-    pipelineIds?: string[]
+    runs?: ConfirmedRunInput[]
   ): Promise<Pipeline[]> {
     const user = await this.auth.me(context.req);
     await this.access.assertExperimentOwner(user._id, experimentId);
-    return this.manager.pauseExperimentRuns(experimentId, queue, pipelineIds);
+    return this.manager.pauseExperimentRuns(experimentId, queue, runs);
   }
 
   @Mutation(() => [Pipeline], {

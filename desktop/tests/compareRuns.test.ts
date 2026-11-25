@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   buildMetricRows,
+  foldDiffers,
   buildSettingsRows,
   rowPercent,
 } from '../src/components/experiments/ComputationCard/components/CompareModal/utils/compare';
@@ -107,4 +108,25 @@ test('metric rows give the mean per run, the per-fold values and the B - A diffe
 test('confusion matrix cells are compared as row percentages', () => {
   assert.equal(rowPercent(1, [1, 3]), 25);
   assert.equal(rowPercent(0, [0, 0]), 0);
+});
+
+test('equal means with different fold scores are highlighted per fold', () => {
+  const runA = makeRun({});
+  const runB = makeRun({});
+  runA.computingResult.accuracyScores = [0.875, 0.625];
+  runB.computingResult.accuracyScores = [0.625, 0.875];
+
+  const [accuracy] = buildMetricRows(runA, runB, {
+    accuracy: 'Accuracy',
+    f1: 'F1',
+    rocAuc: 'ROC AUC',
+  });
+
+  assert.equal(accuracy.meanA, accuracy.meanB);
+  assert.equal(accuracy.meanDiffers, false);
+  assert.deepEqual(accuracy.foldDiffers, [true, true]);
+});
+
+test('folds that round to the same shown score are not highlighted, a missing fold is', () => {
+  assert.deepEqual(foldDiffers([0.12341, 0.5], [0.12344, 0.5, 0.7]), [false, false, true]);
 });

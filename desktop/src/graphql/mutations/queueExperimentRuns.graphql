@@ -1,5 +1,9 @@
-mutation QueueExperimentRuns($experimentId: ID!, $queue: ComputationQueue!, $pipelineIds: [ID!]!) {
-  queueExperimentRuns(experimentId: $experimentId, queue: $queue, pipelineIds: $pipelineIds) {
+mutation QueueExperimentRuns(
+  $experimentId: ID!
+  $queue: ComputationQueue!
+  $runs: [ConfirmedRunInput!]!
+) {
+  queueExperimentRuns(experimentId: $experimentId, queue: $queue, runs: $runs) {
     _id
   }
 }

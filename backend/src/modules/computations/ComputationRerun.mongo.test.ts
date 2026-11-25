@@ -9,9 +9,11 @@ import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { ExperimentStatus } from '../experiments/classes/ExperimentStatus';
 import { ComputationQueue } from './classes/ComputationQueue';
 import { ComputationManager } from './services/ComputationManager';
+import { PipelineManager } from '../../core/pipeline/services/PipelineManager';
+import { ExperimentModel } from '../experiments/models/ExperimentModel';
 
-// The unique index is what settles two simultaneous first re-runs, so it needs a real MongoDB.
-// CI provides the database (see Dockerfile.ci).
+// Re-run admissions are serialized by the experiment lock, and the unique indexes back it up, so
+// they are tested against a real MongoDB. CI provides the database (see Dockerfile.ci).
 const uri = process.env.MONGODB_TEST_URI;
 const skip = uri ? false : 'MONGODB_TEST_URI is not set';
 
@@ -27,7 +29,10 @@ const useDatabase = async (t: TestContext) => {
 };
 
 const seedCompletedRun = async () => {
-  const experimentId = new Types.ObjectId();
+  const { _id: experimentId } = await ExperimentModel.create({
+    createdById: new Types.ObjectId(),
+    name: 'experiment',
+  });
   const source = await PipelineModel.create({
     experimentId,
     graphStructureId: new Types.ObjectId(),
@@ -54,19 +59,20 @@ test('simultaneous first re-runs of one path create a single run', { skip }, asy
   const { experimentId, source } = await seedCompletedRun();
 
   const manager = new ComputationManager() as any;
-  const ids = await Promise.all(Array.from({ length: 5 }, () => manager.prepareRerun(source)));
+  manager.lockPollMs = 10;
+  await Promise.all(Array.from({ length: 5 }, () => manager.admitRerun(source)));
 
-  assert.equal(new Set(ids.map(String)).size, 1);
-  assert.notEqual(String(ids[0]), String(source._id));
-  assert.equal(await PipelineModel.countDocuments({ experimentId }), 2);
-  assert.equal(
-    await WorkflowModel.countDocuments({ instanceId: ids[0], type: WorkflowType.PIPELINE }),
-    1
-  );
+  const reruns = await PipelineModel.find({ experimentId, rerunOf: source._id }).lean();
+  assert.equal(reruns.length, 1);
+  const workflows = await WorkflowModel.find({ instanceId: reruns[0]._id }).lean();
+  assert.equal(workflows.length, 1);
+  assert.equal(workflows[0].status, PipelineStatus.queued);
+  // The lock is let go once every admission is done.
+  assert.equal((await ExperimentModel.findById(experimentId).lean())?.operationLock, undefined);
 });
 
 test(
-  'a re-run whose request died before creating the workflow is recovered',
+  'a re-run whose admission died before creating the workflow is recovered',
   { skip },
   async (t) => {
     await useDatabase(t);
@@ -81,15 +87,13 @@ test(
     });
 
     const manager = new ComputationManager() as any;
-    manager.orphanPollMs = 1;
-    // Several retries find the same orphan at once; all of them must settle on one workflow.
-    const ids = await Promise.all(Array.from({ length: 5 }, () => manager.prepareRerun(source)));
+    manager.lockPollMs = 10;
+    // Several clicks find the same orphan; all of them settle on it and its one workflow.
+    await Promise.all(Array.from({ length: 5 }, () => manager.admitRerun(source)));
 
-    assert.equal(new Set(ids.map(String)).size, 1);
-    assert.equal(String(ids[0]), String(orphan._id));
     const workflows = await WorkflowModel.find({ instanceId: orphan._id }).lean();
     assert.equal(workflows.length, 1);
-    assert.equal(workflows[0].status, PipelineStatus.idle);
+    assert.equal(workflows[0].status, PipelineStatus.queued);
     assert.equal(await PipelineModel.countDocuments({ experimentId }), 2);
   }
 );
@@ -100,9 +104,9 @@ test(
   async (t) => {
     await useDatabase(t);
     const runId = new Types.ObjectId();
-    const manager = new ComputationManager() as any;
+    const manager = new PipelineManager();
 
-    await Promise.all(Array.from({ length: 10 }, () => manager.ensureRunWorkflow(runId)));
+    await Promise.all(Array.from({ length: 10 }, () => manager.ensureRerunWorkflow(runId)));
 
     const workflows = await WorkflowModel.find({ instanceId: runId }).lean();
     assert.equal(workflows.length, 1);
@@ -114,12 +118,12 @@ test(
 test('a slow creator does not hide a workflow that has moved on', { skip }, async (t) => {
   await useDatabase(t);
   const runId = new Types.ObjectId();
-  const manager = new ComputationManager() as any;
-  await manager.ensureRunWorkflow(runId);
+  const manager = new PipelineManager();
+  await manager.ensureRerunWorkflow(runId);
   // A recovery created the workflow and a worker has queued the run since.
   await WorkflowModel.updateOne({ instanceId: runId }, { $set: { status: PipelineStatus.queued } });
 
-  await manager.ensureRunWorkflow(runId);
+  await manager.ensureRerunWorkflow(runId);
 
   const workflows = await WorkflowModel.find({ instanceId: runId }).lean();
   assert.equal(workflows.length, 1);

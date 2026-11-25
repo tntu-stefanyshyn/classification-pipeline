@@ -22,7 +22,11 @@ export interface MetricCompareRow {
   meanB: number | null;
   foldsA: number[];
   foldsB: number[];
+  /** Per fold, whether the two runs show a different score there (a missing fold differs too). */
+  foldDiffers: boolean[];
   delta: number | null;
+  /** Whether the shown means differ; equal means can still hide different folds. */
+  meanDiffers: boolean;
 }
 
 export interface SettingsLabels {

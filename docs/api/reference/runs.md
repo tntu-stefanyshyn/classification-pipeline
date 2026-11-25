@@ -4,9 +4,10 @@ A **pipeline** (also called a run) is the computation of one graph path in one q
 
 | Operation                    | Kind     | Access          | Purpose                                                         |
 | ---------------------------- | -------- | --------------- | --------------------------------------------------------------- |
-| `enqueueExperimentRuns`      | Mutation | Owner           | Queues idle pipelines.                                          |
+| `enqueueExperimentRuns`      | Mutation | Owner           | Queues idle pipelines, or re-runs a completed one.              |
+| `queueExperimentRuns`        | Mutation | Owner           | Queues the idle pipelines the user confirmed (Queue all idle).  |
 | `stopExperimentRun`          | Mutation | Owner           | Stops a running pipeline.                                       |
-| `pauseExperimentRuns`        | Mutation | Owner           | Returns all queued and running pipelines to `idle`.             |
+| `pauseExperimentRuns`        | Mutation | Owner           | Returns queued and running pipelines to `idle` (Stop all).      |
 | `resumeExperimentRuns`       | Mutation | Owner           | Queues the idle pipelines again.                                |
 | `optimizeExperimentRuns`     | Query    | Owner           | Runs the optimization and returns the best pipeline.            |
 | `pipelines`                  | Query    | Owner or worker | The pipelines of an experiment.                                 |
@@ -52,22 +53,24 @@ A pipeline can be stopped, queued again and claimed by another worker while the 
 | `experimentId` | ID!               | The experiment.                                                                        |
 | `queue`        | ComputationQueue! | `local` or `cloud`. It must be allowed by the graph settings and the computation mode. |
 | `pipelineId`   | ID                | Queue only this pipeline.                                                              |
-| `runAll`       | Boolean           | Queue every pipeline of the experiment.                                                |
-| `rerun`        | Boolean           | Reserved: the backend does not read it.                                                |
+| `runAll`       | Boolean           | Queue every pipeline of the given queue.                                               |
+| `rerun`        | Boolean           | With `pipelineId` of a completed pipeline: start a new run of its path (see below).    |
 
-Send either `pipelineId` or `runAll`. Only pipelines in `idle` are queued; the others are left as they are. Errors:
+Send either `pipelineId` or `runAll`. Only pipelines in `idle` are queued; the others are left as they are. With `rerun`, a new run of the path is created and queued and the completed one is kept; a run of that path that is already waiting or running is used instead. A re-run is admitted under the experiment lock (see [Experiment lock](../../domain/experiments.md#experiment-lock)): a second click waits for the first, and a re-run is refused during an optimization. Errors:
 
-| Message                                                                      | Meaning                                         |
-| ---------------------------------------------------------------------------- | ----------------------------------------------- |
-| `Provide either runAll or pathNodeIds, not both.`                            | Both `pipelineId` and `runAll` were sent.       |
-| `Path node ids are required for a single run.`                               | Neither was sent.                               |
-| `Спочатку заповніть налаштування графа.`                                     | The graph settings are missing.                 |
-| `Оберіть хоча б один тип обчислень у налаштуваннях графа.`                   | No queue is selected in the settings.           |
-| `Обраний тип обчислень не дозволений у налаштуваннях графа.`                 | The queue is not among the selected queues.     |
-| `Цей граф дозволяє лише локальні обчислення.` / `...лише хмарні обчислення.` | The computation mode forbids the queue.         |
-| `Налаштування ваг метрик некоректні. Перевірте значення.`                    | The metric weights do not sum to 1.             |
-| `Усі конвеєри мають містити етап класифікації.`                              | A path has no classification stage.             |
-| `Конвеєр не знайдено`                                                        | The pipeline does not belong to the experiment. |
+| Message                                                                      | Meaning                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------ |
+| `Provide either runAll or pathNodeIds, not both.`                            | Both `pipelineId` and `runAll` were sent.        |
+| `Path node ids are required for a single run.`                               | Neither was sent.                                |
+| `Спочатку заповніть налаштування графа.`                                     | The graph settings are missing.                  |
+| `Оберіть хоча б один тип обчислень у налаштуваннях графа.`                   | No queue is selected in the settings.            |
+| `Обраний тип обчислень не дозволений у налаштуваннях графа.`                 | The queue is not among the selected queues.      |
+| `Цей граф дозволяє лише локальні обчислення.` / `...лише хмарні обчислення.` | The computation mode forbids the queue.          |
+| `Налаштування ваг метрик некоректні. Перевірте значення.`                    | The metric weights do not sum to 1.              |
+| `Усі конвеєри мають містити етап класифікації.`                              | A path has no classification stage.              |
+| `Конвеєр не знайдено`                                                        | The pipeline does not belong to the experiment.  |
+| `Перезапуск недоступний під час оптимізації.`                                | A re-run was asked for during an optimization.   |
+| `Перезапуск уже виконується, спробуйте ще раз.`                              | Another re-run of the experiment did not finish. |
 
 ```graphql
 mutation Enqueue($input: EnqueueExperimentRunsInput!) {
@@ -82,7 +85,9 @@ mutation Enqueue($input: EnqueueExperimentRunsInput!) {
 ## `stopExperimentRun`, `pauseExperimentRuns`, `resumeExperimentRuns`
 
 - `stopExperimentRun(input: { runId: ID! }): Pipeline!` stops a `running` pipeline and returns it to `idle` with the message "Зупинено користувачем" ("Stopped by the user"). Any other status is returned unchanged. A cloud job is cancelled first.
-- `pauseExperimentRuns(experimentId: ID!): [Pipeline!]!` returns all `queued` and `running` pipelines of the experiment to `idle` and returns them.
+- `queueExperimentRuns(experimentId: ID!, queue: ComputationQueue!, runs: [ConfirmedRunInput!]!): [Pipeline!]!` queues the confirmed `idle` pipelines of that queue and returns the ones it really queued; a pipeline that changed status or execution since the user confirmed it is skipped. It makes the same checks as `enqueueExperimentRuns`.
+- `pauseExperimentRuns(experimentId: ID!, queue: ComputationQueue, runs: [ConfirmedRunInput!]): [Pipeline!]!` returns the `queued` and `running` pipelines of the experiment to `idle` (only of `queue` when given) and returns the ones it really stopped. With `runs`, only those pipelines, and each only while it is still the run the user saw: a pipeline that was stopped and started again meanwhile is skipped.
+- `ConfirmedRunInput` is `{ pipelineId: ID!, executionId: ID, status: PipelineStatus }`: the pipeline as the user saw it. A pipeline seen `queued` may since have been taken by a worker (its next execution); any other change of execution counts as a different run.
 - `resumeExperimentRuns(experimentId: ID!): [Pipeline!]!` queues the `idle` pipelines again.
 
 ```graphql

@@ -13,6 +13,15 @@ export const mean = (values?: number[] | null) =>
 export const formatScore = (value: number | null | undefined) =>
   typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : NO_DATA;
 
+/**
+ * Per fold, whether the two runs show a different score: compared as displayed, so values that
+ * round to the same number are equal, and a fold only one run has differs.
+ */
+export const foldDiffers = (foldsA: number[], foldsB: number[]) =>
+  Array.from(
+    { length: Math.max(foldsA.length, foldsB.length) },
+    (_, index) => formatScore(foldsA[index]) !== formatScore(foldsB[index])
+  );
 export const formatDelta = (delta: number | null) =>
   delta === null ? NO_DATA : `${delta > 0 ? '+' : ''}${delta.toFixed(4)}`;
 
@@ -101,7 +110,9 @@ const metric = (
     meanB,
     foldsA: foldsA ?? [],
     foldsB: foldsB ?? [],
+    foldDiffers: foldDiffers(foldsA ?? [], foldsB ?? []),
     delta: meanA !== null && meanB !== null ? meanB - meanA : null,
+    meanDiffers: formatScore(meanA) !== formatScore(meanB),
   };
 };
 

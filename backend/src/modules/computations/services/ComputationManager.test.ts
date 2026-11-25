@@ -127,12 +127,14 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
 
 test('ComputationManager.queueRunsByIds returns only the confirmed runs it really queued', async (t) => {
   const manager = new ComputationManager();
-  const [first, claimed, queuedByAnother] = [
+  const [first, claimed, queuedByAnother, restarted] = [
+    new Types.ObjectId(),
     new Types.ObjectId(),
     new Types.ObjectId(),
     new Types.ObjectId(),
   ];
   const asked: string[][] = [];
+  const conditions: unknown[] = [];
 
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult({ _id: new Types.ObjectId() })
@@ -154,40 +156,56 @@ test('ComputationManager.queueRunsByIds returns only the confirmed runs it reall
   stub(t, PipelineModel as unknown as Record<string, unknown>, 'find', (filter: any) => ({
     lean: async () => {
       asked.push(filter._id.$in.map(String));
-      return [first, claimed, queuedByAnother]
+      return [first, claimed, queuedByAnother, restarted]
         .filter((id) => filter._id.$in.map(String).includes(String(id)))
         .map((_id) => ({ _id }));
     },
   }));
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    // Another client queued `queuedByAnother` after the list was read.
-    getWorkflow: async ({ instanceId }: { instanceId: Types.ObjectId }) => ({
-      status:
-        String(instanceId) === String(queuedByAnother)
-          ? PipelineStatus.queued
-          : PipelineStatus.idle,
-    }),
+    getWorkflow: async ({ instanceId }: { instanceId: Types.ObjectId }) => {
+      // Another client queued `queuedByAnother` after the list was read.
+      if (String(instanceId) === String(queuedByAnother)) return { status: PipelineStatus.queued };
+      // `restarted` is idle again, but after a new execution the user did not see.
+      if (String(instanceId) === String(restarted)) {
+        return { status: PipelineStatus.idle, executionId: 2 };
+      }
+      return { status: PipelineStatus.idle, executionId: 1 };
+    },
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'pipelineManager', {
     // A worker claimed `claimed` between the read and the update.
-    changeStatus: async ({ pipelineId }: { pipelineId: Types.ObjectId }) => {
+    changeStatus: async (
+      { pipelineId }: { pipelineId: Types.ObjectId },
+      _fields: unknown,
+      expected: unknown
+    ) => {
+      conditions.push(expected);
       if (String(pipelineId) === String(claimed)) throw new Error('TRANSITION_NOT_FOUND');
       return true;
     },
   } as any);
 
-  const result = await manager.queueRunsByIds(
-    new Types.ObjectId(),
-    ComputationQueue.local,
-    [first, claimed, queuedByAnother, new Types.ObjectId()].map(String)
-  );
+  const seen = (id: Types.ObjectId) => ({
+    pipelineId: String(id),
+    executionId: '1',
+    status: PipelineStatus.idle,
+  });
+  const result = await manager.queueRunsByIds(new Types.ObjectId(), ComputationQueue.local, [
+    seen(first),
+    seen(claimed),
+    seen(queuedByAnother),
+    seen(restarted),
+    seen(new Types.ObjectId()),
+  ]);
 
-  // Only `first` was queued by this call; the other three confirmed ids are the skipped ones.
+  // Only `first` was queued by this call; the other confirmed ids are the skipped ones.
   assert.equal(asked.length, 2);
   assert.deepEqual(
     result.map((run) => String(run._id)),
     [String(first)]
   );
+  // The update is conditional on the execution the user saw.
+  assert.deepEqual(conditions[0], { executionId: 1 });
 });
 test('ComputationManager.enqueueRuns rejects graphs without classification in every path', async (t) => {
   const manager = new ComputationManager();

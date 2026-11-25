@@ -166,6 +166,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
             pathNodeIds: ['node-1', 'node-4'],
             pathNodes: [],
             status: 'running',
+            executionId: '4',
             queue: 'local',
             createdAt: '2026-04-10T10:00:00Z',
             updatedAt: '2026-04-10T10:00:00Z',
@@ -254,10 +255,23 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
   await buttonWithText('Зупинити все')!.props.onClick();
   // The confirmed ids are sent, so a run that became eligible later is not touched.
   assert.deepEqual(queueCalls, [
-    { variables: { experimentId: 'exp-1', queue: 'local', pipelineIds: ['run-2'] } },
+    {
+      variables: {
+        experimentId: 'exp-1',
+        queue: 'local',
+        runs: [{ pipelineId: 'run-2', executionId: null, status: 'idle' }],
+      },
+    },
   ]);
   assert.deepEqual(pauseCalls, [
-    { variables: { experimentId: 'exp-1', queue: 'local', pipelineIds: ['run-3'] } },
+    {
+      variables: {
+        experimentId: 'exp-1',
+        queue: 'local',
+        // The execution the user saw goes with each run, so a restarted run is skipped.
+        runs: [{ pipelineId: 'run-3', executionId: '4', status: 'running' }],
+      },
+    },
   ]);
   assert.equal(enqueueCalls.length, 0);
   assert.equal(confirmQuestions.length, 2);

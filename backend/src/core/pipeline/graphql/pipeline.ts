@@ -9,8 +9,8 @@ import { AuthFlow } from '../../../modules/auth/services/AuthFlow';
 import { ExperimentAccess } from '../../../modules/experiments/services/ExperimentAccess';
 import { ObjectIdOrString } from '../../../types/context';
 import type { GraphQLContext } from '../../../types/context';
-import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
+import { WorkflowModel } from '../../workflow/model/WorkflowModel';
 import { PipelineStatus } from '../enums';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { PipelineManager } from '../services/PipelineManager';
@@ -18,7 +18,6 @@ import { PipelineManager } from '../services/PipelineManager';
 @Resolver(() => Pipeline)
 export class PipelineResolver {
   private readonly pipelineManager = new PipelineManager();
-  private readonly workflowManager = new WorkflowManager();
   private readonly auth = new AuthFlow();
   private readonly access = new ExperimentAccess();
 
@@ -42,12 +41,16 @@ export class PipelineResolver {
   }
 
   @FieldResolver(() => PipelineStatus, { description: 'Current status of the pipeline.' })
-  async status(@Root() { _id }: Pipeline) {
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: _id,
-      type: WorkflowType.PIPELINE,
-    });
-    return workflow.status;
+  async status(@Root() { _id, rerunOf }: Pipeline) {
+    // The newest workflow, as `WorkflowManager.getWorkflow` reads it.
+    const workflow = await WorkflowModel.findOne({ instanceId: _id, type: WorkflowType.PIPELINE })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (workflow) return workflow.status;
+    // A re-run whose admission stopped between creating it and its workflow: finish it here, so
+    // the run list keeps working and the run can be queued again from the desktop.
+    if (rerunOf) await this.pipelineManager.ensureRerunWorkflow(_id);
+    return PipelineStatus.idle;
   }
   // #endregion FieldResolver
 

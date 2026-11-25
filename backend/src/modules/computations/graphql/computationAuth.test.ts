@@ -174,8 +174,8 @@ const operations: Array<{
     name: 'queueExperimentRuns',
     executes: 'queueRunsByIds',
     source:
-      'mutation($id: ID!, $ids: [ID!]!) { queueExperimentRuns(experimentId: $id, queue: local, pipelineIds: $ids) { _id } }',
-    variables: { id: experimentId, ids: [pipelineId] },
+      'mutation($id: ID!, $runs: [ConfirmedRunInput!]!) { queueExperimentRuns(experimentId: $id, queue: local, runs: $runs) { _id } }',
+    variables: { id: experimentId, runs: [{ pipelineId, executionId: null }] },
     expected: USER_ONLY(EXPERIMENT_NOT_FOUND),
   },
   {

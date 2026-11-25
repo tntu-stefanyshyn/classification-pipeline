@@ -202,25 +202,30 @@ const ComputationCard: FC = () => {
     return map;
   }, [graphPaths, runsByPath]);
 
-  // Bulk actions work on the runs the user confirmed: their ids are sent, so a run that became
-  // eligible after the confirmation is left alone, and the result is counted against that list.
+  // Bulk actions work on the runs the user confirmed, as they saw them (status and execution): a
+  // run that became eligible after the confirmation, or was stopped and restarted meanwhile, is
+  // left alone, and the result is counted against that list.
   const handleBulk = async (kind: 'queue' | 'stop') => {
     if (!id) return;
-    const confirmedIds = runs
+    const confirmed = runs
       .filter((run) =>
         kind === 'queue'
           ? run.status === PipelineStatus.idle
           : run.status === PipelineStatus.queued || run.status === PipelineStatus.running
       )
-      .map((run) => run._id);
+      .map((run) => ({
+        pipelineId: run._id,
+        executionId: run.executionId ?? null,
+        status: run.status,
+      }));
     const m = messages.computationCard;
-    if (confirmedIds.length === 0) {
+    if (confirmed.length === 0) {
       setActionStatus(m.bulkNothing);
       return;
     }
     const queueName = messages.statuses.computationQueue[activeQueue];
     const question = kind === 'queue' ? m.queueAllConfirm : m.stopAllConfirm;
-    if (!window.confirm(`${question} (${queueName}): ${confirmedIds.length}`)) return;
+    if (!window.confirm(`${question} (${queueName}): ${confirmed.length}`)) return;
 
     setBulkBusy(true);
     try {
@@ -228,16 +233,16 @@ const ComputationCard: FC = () => {
       let done = 0;
       if (kind === 'queue') {
         const { data } = await queueRuns({
-          variables: { experimentId: id, queue: activeQueue, pipelineIds: confirmedIds },
+          variables: { experimentId: id, queue: activeQueue, runs: confirmed },
         });
         done = data?.queueExperimentRuns.length ?? 0;
       } else {
         const { data } = await pauseRuns({
-          variables: { experimentId: id, queue: activeQueue, pipelineIds: confirmedIds },
+          variables: { experimentId: id, queue: activeQueue, runs: confirmed },
         });
         done = data?.pauseExperimentRuns.length ?? 0;
       }
-      const skipped = confirmedIds.length - done;
+      const skipped = confirmed.length - done;
       setActionStatus(
         `${m.bulkDone}: ${done}.${skipped > 0 ? ` ${m.bulkSkipped}: ${skipped}.` : ''}`
       );

@@ -43,6 +43,7 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
   let workflowStatus = ExperimentStatus.computing;
   let graphDoc: any = createGraph();
   let aggregateResult: any[] = [];
+  let lock: any = { acquired: true, token: 'token-1' };
 
   stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findById', () =>
     createLeanResult(experimentDoc)
@@ -50,11 +51,15 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
   stub(t, GraphStructureModel as unknown as Record<string, unknown>, 'findOne', () =>
     createLeanResult(graphDoc)
   );
-  // The attempt claim and its release: the mark is taken from the experiment as the test set it.
-  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'findOneAndUpdate', () =>
-    createLeanResult({ optimization: experimentDoc?.optimization })
+  stub(
+    t,
+    ExperimentModel as unknown as Record<string, unknown>,
+    'updateOne',
+    async (...args: any[]) => {
+      calls.push(['mark', args[1].$set['optimization.status']]);
+      return {};
+    }
   );
-  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
   stub(
     t,
     PipelineModel as unknown as Record<string, unknown>,
@@ -62,23 +67,29 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
     async () => aggregateResult
   );
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async () => ({
-      status: workflowStatus,
-      history: [{ previousStatus: workflowStatus }],
-    }),
+    getWorkflow: async () => ({ status: workflowStatus }),
   } as any);
   stub(t, manager as unknown as Record<string, unknown>, 'experimentManager', {
     changeStatus: async (...args: any[]) => {
-      calls.push(['changeStatus', ...args]);
+      calls.push(['changeStatus', args[0].status]);
       return true;
     },
-    revertStatus: async (...args: any[]) => {
-      calls.push(['revertStatus', ...args]);
+  } as any);
+  stub(t, manager as unknown as Record<string, unknown>, 'experimentLock', {
+    acquire: async (...args: any[]) => {
+      calls.push(['acquire', args[1]]);
+      return lock;
+    },
+    release: async (...args: any[]) => {
+      calls.push(['release', args[1]]);
     },
   } as any);
+  stub(t, manager as unknown as Record<string, unknown>, 'reoptimizeIfReady', async () => {
+    calls.push(['recheck']);
+  });
   stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
     run: async (...args: any[]) => {
-      calls.push(['run', ...args]);
+      calls.push(['run', args[0].timeoutSeconds]);
     },
   } as any);
   stub(
@@ -89,10 +100,6 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
   );
 
   await assert.rejects(() => manager.optimize(experimentId), /Experiment not found/);
-
-  experimentDoc = { _id: experimentId, optimization: { status: OptimizationStatus.optimizing } };
-  workflowStatus = ExperimentStatus.optimization;
-  await assert.rejects(() => manager.optimize(experimentId), /Оптимізація вже виконується/);
 
   experimentDoc = { _id: experimentId, optimization: { status: OptimizationStatus.failed } };
   workflowStatus = ExperimentStatus.configuring;
@@ -108,37 +115,63 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
   graphDoc = { settings: createGraph().settings, nodes: [] };
   await assert.rejects(() => manager.optimize(experimentId), /Graph has no paths for optimization/);
 
+  // The experiment lock is held by another attempt, or by a re-run being admitted.
   graphDoc = createGraph();
+  lock = { acquired: false, heldBy: 'optimization' };
+  await assert.rejects(() => manager.optimize(experimentId), /Оптимізація вже виконується/);
+  lock = { acquired: false, heldBy: 'rerun' };
+  await assert.rejects(() => manager.optimize(experimentId), /перезапуск ставиться в чергу/);
+  lock = { acquired: true, token: 'token-1' };
+
+  // An unfinished run: nothing is changed, the lock is let go and readiness is checked again.
   aggregateResult = [{ _id: new Types.ObjectId() }];
   calls.length = 0;
   await assert.rejects(() => manager.optimize(experimentId), /There are uncomuted pipelines/);
-  // The attempt was claimed before the check, so its move to `optimization` is undone.
-  assert.deepEqual(
-    calls.map((entry) =>
-      entry[0] === 'revertStatus' ? [entry[0], entry[2], entry[3]] : [entry[0]]
-    ),
-    [['changeStatus'], ['revertStatus', ExperimentStatus.optimization, ExperimentStatus.completed]]
-  );
+  assert.deepEqual(calls, [['acquire', 'optimization'], ['release', 'token-1'], ['recheck']]);
 
+  // A retry of an attempt that failed: already in `optimization`, so no move.
   aggregateResult = [];
   workflowStatus = ExperimentStatus.optimization;
   calls.length = 0;
   assert.deepEqual(await manager.optimize(experimentId), result);
-  assert.deepEqual(
-    calls.filter((entry) => entry[0] === 'changeStatus').map((entry) => entry[1].status),
-    [ExperimentStatus.completed]
-  );
-  assert.equal(calls.find((entry) => entry[0] === 'run')?.[1].timeoutSeconds, 120);
+  assert.deepEqual(calls, [
+    ['acquire', 'optimization'],
+    ['mark', OptimizationStatus.optimizing],
+    ['run', 120],
+    ['changeStatus', ExperimentStatus.completed],
+    ['release', 'token-1'],
+  ]);
 
+  // The lock is held through the final status, which is written before it is let go.
   workflowStatus = ExperimentStatus.completed;
   calls.length = 0;
   await manager.optimize(experimentId);
-  assert.deepEqual(
-    calls.filter((entry) => entry[0] === 'changeStatus').map((entry) => entry[1].status),
-    [ExperimentStatus.optimization, ExperimentStatus.completed]
-  );
-});
+  assert.deepEqual(calls, [
+    ['acquire', 'optimization'],
+    ['changeStatus', ExperimentStatus.optimization],
+    ['mark', OptimizationStatus.optimizing],
+    ['run', 120],
+    ['changeStatus', ExperimentStatus.completed],
+    ['release', 'token-1'],
+  ]);
 
+  // A runner failure keeps `optimization` for a retry, marks `failed` and lets go of the lock.
+  stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
+    run: async () => {
+      throw new Error('container failed');
+    },
+  } as any);
+  workflowStatus = ExperimentStatus.computing;
+  calls.length = 0;
+  await assert.rejects(() => manager.optimize(experimentId), /container failed/);
+  assert.deepEqual(calls, [
+    ['acquire', 'optimization'],
+    ['changeStatus', ExperimentStatus.optimization],
+    ['mark', OptimizationStatus.optimizing],
+    ['mark', OptimizationStatus.failed],
+    ['release', 'token-1'],
+  ]);
+});
 test('ComputationManager.enqueueRuns validates graph settings and queues selected runs', async (t) => {
   const manager = new ComputationManager();
   const experimentId = new Types.ObjectId();

@@ -34,4 +34,8 @@ export class ExperimentOptimization {
   })
   @prop()
   bestScore?: number;
+
+  /** The attempt that holds `optimizing`: only it may undo or release the optimization. */
+  @prop()
+  attemptId?: string;
 }

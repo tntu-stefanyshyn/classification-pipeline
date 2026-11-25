@@ -217,3 +217,91 @@ test('a failed attempt keeps its optimization status and can be retried', { skip
   await manager.optimize(experimentId);
   assert.equal(starts.count, 1);
 });
+
+test(
+  'a caller refused between the owner claim and its move does not undo the owner',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { experimentId } = await seed(ExperimentStatus.computing);
+    const owner = new ComputationManager() as any;
+    const other = new ComputationManager() as any;
+    const starts = { count: 0 };
+    slowRunner(owner, starts);
+    slowRunner(other, starts);
+    // The second caller arrives after the owner took the mark and before it moved the workflow.
+    const move = owner.experimentManager.changeStatus.bind(owner.experimentManager);
+    let entered = false;
+    owner.experimentManager.changeStatus = async (input: { status: ExperimentStatus }) => {
+      if (input.status === ExperimentStatus.optimization && !entered) {
+        entered = true;
+        await assert.rejects(() => other.optimize(experimentId), /вже виконується/);
+      }
+      return move(input);
+    };
+
+    await owner.optimize(experimentId);
+
+    assert.equal(entered, true);
+    assert.equal(starts.count, 1);
+    assert.equal(await statusOf(experimentId), ExperimentStatus.completed);
+    const workflow = await WorkflowModel.findOne({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    }).lean();
+    // Nothing undid the owner's move: no rollback entry in the history.
+    assert.equal(
+      workflow?.history.some((item) => /скасовано/.test(String(item.message))),
+      false
+    );
+  }
+);
+
+test(
+  'a re-run finishing while another attempt holds the claim still gets the optimization',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { experimentId, source } = await seed(ExperimentStatus.computing);
+    // The second re-run is still running when the first one completes.
+    const second = await PipelineModel.create({
+      experimentId,
+      graphStructureId: source.graphStructureId,
+      queue: source.queue,
+      pathNodeIds: source.pathNodeIds,
+      rerunOf: source._id,
+    });
+    await WorkflowModel.create({
+      type: WorkflowType.PIPELINE,
+      instanceId: second._id,
+      status: PipelineStatus.running,
+    });
+    const first = new ComputationManager() as any;
+    const late = new ComputationManager() as any;
+    const starts = { count: 0 };
+    slowRunner(first, starts);
+    slowRunner(late, starts);
+    // Between the first attempt's check (which sees the second run unfinished) and its rollback,
+    // the second run completes and its own callback finds the experiment in `optimization`.
+    const check = first.hasUncomputedRun.bind(first);
+    let interleaved = false;
+    first.hasUncomputedRun = async (id: Types.ObjectId) => {
+      const unfinished = await check(id);
+      if (unfinished && !interleaved) {
+        interleaved = true;
+        await WorkflowModel.updateOne(
+          { instanceId: second._id, type: WorkflowType.PIPELINE },
+          { $set: { status: PipelineStatus.completed } }
+        );
+        await late.reoptimizeAfterRerun(second._id);
+      }
+      return unfinished;
+    };
+
+    await first.reoptimizeAfterRerun(source._id);
+
+    assert.equal(interleaved, true);
+    assert.equal(starts.count, 1);
+    assert.equal(await statusOf(experimentId), ExperimentStatus.completed);
+  }
+);

@@ -180,6 +180,8 @@ const reoptimize = async (
   stub(t, ExperimentModel as any, 'findById', () => ({ lean: async () => experiment }));
   stub(t, manager.workflowManager, 'getWorkflow', async () => ({ status }));
   stub(t, manager, 'optimize', optimize);
+  // After an attempt refused for an unfinished run, the run is looked at again: still unfinished.
+  stub(t, manager, 'hasUncomputedRun', async () => true);
   await manager.reoptimizeAfterRerun(new Types.ObjectId());
 };
 

@@ -44,8 +44,9 @@ import {
 import { isLostTransitionRace } from '../utils/isLostTransitionRace';
 
 type OptimizationClaim = {
-  /** The status the claim moved the experiment from; 
-ull when it was already in optimization. */
+  /** Marks the attempt that holds `optimizing`; every undo and release is conditional on it. */
+  attemptId: string;
+  /** Where the owner moved the experiment from, or `null` when it was already in `optimization`. */
   movedFrom: ExperimentStatus | null;
   /** The optimization status before the claim, restored if the attempt does not run. */
   previousStatus?: OptimizationStatus;
@@ -102,7 +103,7 @@ export class ComputationManager {
 
     // Own the attempt before looking at the runs: a re-run admitted from now on sees `optimization`
     // and is rejected, and one admitted earlier is seen by the check below.
-    const claim = await this.claimOptimization(experimentId, workflow.status as ExperimentStatus);
+    const claim = await this.claimOptimization(experimentId);
     try {
       if (await this.hasUncomputedRun(experimentId)) {
         throw new Error(UNCOMPUTED_PIPELINES);
@@ -128,17 +129,34 @@ export class ComputationManager {
   }
 
   /**
-   * Takes ownership of one optimization attempt, atomically, before its container starts: the move
-   * to `optimization` (only one caller wins it) and the `optimizing` mark (which also settles two
-   * callers that both find the experiment already in `optimization`). A caller that loses is
-   * refused, so two runners never write scores and the experiment status at the same time.
+   * Takes ownership of one optimization attempt before its container starts. The `optimizing` mark,
+   * taken with a token in one conditional update, is the only lock: a caller that does not get it
+   * is refused and changes nothing. Only the owner then moves the experiment to `optimization`, so
+   * a losing caller can never move or undo the winner's workflow.
    */
-  private async claimOptimization(
-    experimentId: ObjectIdOrString,
-    status: ExperimentStatus
-  ): Promise<OptimizationClaim> {
-    const alreadyRunning = new Error(OPTIMIZATION_RUNNING);
-    let movedFrom: ExperimentStatus | null = null;
+  private async claimOptimization(experimentId: ObjectIdOrString): Promise<OptimizationClaim> {
+    const attemptId = new Types.ObjectId().toHexString();
+    const previous = await ExperimentModel.findOneAndUpdate(
+      { _id: experimentId, 'optimization.status': { $ne: OptimizationStatus.optimizing } },
+      {
+        $set: {
+          'optimization.status': OptimizationStatus.optimizing,
+          'optimization.attemptId': attemptId,
+        },
+      },
+      { new: false }
+    ).lean();
+    if (!previous) throw new Error(OPTIMIZATION_RUNNING);
+    const claim: OptimizationClaim = {
+      attemptId,
+      movedFrom: null,
+      previousStatus: previous.optimization?.status,
+    };
+
+    const { status } = await this.workflowManager.getWorkflow({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    });
     if (status !== ExperimentStatus.optimization) {
       try {
         await this.experimentManager.changeStatus({
@@ -146,42 +164,25 @@ export class ComputationManager {
           status: ExperimentStatus.optimization,
         });
       } catch (error) {
-        if (isLostTransitionRace(error)) throw alreadyRunning;
+        await this.releaseMark(experimentId, claim, null);
         throw error;
       }
-      // The status read before may have moved on (a re-run reopened the experiment), so the move
-      // we just made names where it really came from. Nobody else leaves `optimization` meanwhile.
+      // A re-run may have reopened the experiment since it was read, so the move just made names
+      // where it really came from. Nobody else leaves `optimization` while the mark is held.
       const { history } = await this.workflowManager.getWorkflow({
         instanceId: experimentId,
         type: WorkflowType.EXPERIMENT,
       });
-      movedFrom = (history.at(-1)?.previousStatus as ExperimentStatus | undefined) ?? status;
+      claim.movedFrom = (history.at(-1)?.previousStatus ?? status) as ExperimentStatus;
     }
-    const previous = await ExperimentModel.findOneAndUpdate(
-      { _id: experimentId, 'optimization.status': { $ne: OptimizationStatus.optimizing } },
-      { $set: { 'optimization.status': OptimizationStatus.optimizing } },
-      { new: false }
-    ).lean();
-    if (!previous) {
-      if (movedFrom) await this.undoMove(experimentId, movedFrom);
-      throw alreadyRunning;
-    }
-    return { movedFrom, previousStatus: previous.optimization?.status };
-  }
-
-  private undoMove(experimentId: ObjectIdOrString, movedFrom: ExperimentStatus) {
-    return this.experimentManager.revertStatus(
-      experimentId,
-      ExperimentStatus.optimization,
-      movedFrom,
-      'Оптимізацію скасовано'
-    );
+    return claim;
   }
 
   /**
-   * Gives the attempt back when it did not run. An attempt that ran and failed keeps its
-   * `optimization` status, as before, so it can be retried; its mark is `failed` unless the
-   * container already reported.
+   * Gives the attempt back. One that did not run (a pipeline is unfinished) is undone: the status
+   * goes back first, while the mark is still held, and only then is the mark released, so nobody
+   * can claim in between and have their move undone. One that ran and failed keeps `optimization`,
+   * as before, so it can be retried; its mark is `failed` unless the container already reported.
    */
   private async releaseOptimization(
     experimentId: ObjectIdOrString,
@@ -189,18 +190,38 @@ export class ComputationManager {
     error: unknown
   ) {
     const notRun = error instanceof Error && error.message === UNCOMPUTED_PIPELINES;
-    const restore = notRun
-      ? claim.previousStatus
-        ? { $set: { 'optimization.status': claim.previousStatus } }
-        : { $unset: { 'optimization.status': 1 } }
-      : { $set: { 'optimization.status': OptimizationStatus.failed } };
-    await ExperimentModel.updateOne(
-      { _id: experimentId, 'optimization.status': OptimizationStatus.optimizing },
-      restore
-    );
-    if (notRun && claim.movedFrom) await this.undoMove(experimentId, claim.movedFrom);
+    if (!notRun) {
+      await this.releaseMark(experimentId, claim, OptimizationStatus.failed);
+      return;
+    }
+    if (claim.movedFrom) {
+      await this.experimentManager.revertStatus(
+        experimentId,
+        ExperimentStatus.optimization,
+        claim.movedFrom,
+        'Оптимізацію скасовано: є незавершені конвеєри'
+      );
+    }
+    await this.releaseMark(experimentId, claim, claim.previousStatus ?? null);
   }
 
+  /** Replaces the mark of this attempt only, so a later attempt's mark is never touched. */
+  private releaseMark(
+    experimentId: ObjectIdOrString,
+    claim: OptimizationClaim,
+    status: OptimizationStatus | null
+  ) {
+    return ExperimentModel.updateOne(
+      {
+        _id: experimentId,
+        'optimization.status': OptimizationStatus.optimizing,
+        'optimization.attemptId': claim.attemptId,
+      },
+      status
+        ? { $set: { 'optimization.status': status } }
+        : { $unset: { 'optimization.status': 1 } }
+    );
+  }
   private async hasUncomputedRun(experimentId: ObjectIdOrString): Promise<boolean> {
     const [uncomputedPipeline] = await PipelineModel.aggregate([
       { $match: { experimentId: stringIdToObjectId(experimentId) } },
@@ -671,15 +692,22 @@ export class ComputationManager {
         type: WorkflowType.EXPERIMENT,
       });
       if (status !== ExperimentStatus.computing) return;
-      await this.optimize(pipeline.experimentId);
-    } catch (error) {
-      // Not the last run yet, or another completion owns the attempt: nothing to do.
-      if (
-        error instanceof Error &&
-        (error.message === UNCOMPUTED_PIPELINES || error.message === OPTIMIZATION_RUNNING)
-      ) {
-        return;
+      // A run that completes while this attempt holds the claim sees `optimization` and leaves, so
+      // when the attempt is given back for an unfinished run, look again: if that run has finished
+      // meanwhile, nobody else will start the optimization. Each retry needs every run completed,
+      // so the bound only stops a stream of new re-runs from keeping this call busy.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await this.optimize(pipeline.experimentId);
+          return;
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== UNCOMPUTED_PIPELINES) throw error;
+          if (await this.hasUncomputedRun(pipeline.experimentId)) return;
+        }
       }
+    } catch (error) {
+      // Another completion owns the attempt: it does the optimization.
+      if (error instanceof Error && error.message === OPTIMIZATION_RUNNING) return;
       console.error('Automatic re-optimization failed', error);
     }
   }

@@ -7,6 +7,7 @@ import { config } from '../../../config/config';
 import { PipelineBaseService } from '../../../core/pipeline';
 import { PipelineResolver } from '../../../core/pipeline/graphql/pipeline';
 import { PipelineManager } from '../../../core/pipeline/services/PipelineManager';
+import { WorkflowModel } from '../../../core/workflow/model/WorkflowModel';
 import { UserModel } from '../../../core/user';
 import {
   buildGraphqlSchema,
@@ -93,6 +94,7 @@ const stubBackend = (t: TestContext) => {
     record('optimize', { runId: pipelineId, pathNodeIds: [], score: 0.5 })
   );
   stub(t, manager, 'enqueueRuns', record('enqueueRuns', undefined));
+  stub(t, manager, 'queueRunsByIds', record('queueRunsByIds', [pipeline]));
   stub(t, manager, 'stopRun', record('stopRun', pipeline));
   stub(t, manager, 'claimNextRun', record('claimNextRun', pipeline));
   stub(t, manager, 'pauseExperimentRuns', record('pauseExperimentRuns', [pipeline]));
@@ -102,6 +104,10 @@ const stubBackend = (t: TestContext) => {
 
   const pipelineManager = PipelineManager.prototype as unknown as Record<string, unknown>;
   stub(t, pipelineManager, 'changeStatusFromApi', record('changeStatusFromApi', true));
+  // Queueing reads the run's workflow first (see prepareToQueue); none here, so nothing to prepare.
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () => ({
+    sort: () => ({ lean: async () => null }),
+  }));
 
   const experiments = ExperimentManager.prototype as unknown as Record<string, unknown>;
   stub(t, experiments, 'updateExperimentProgress', record('updateExperimentProgress', true));
@@ -167,6 +173,14 @@ const operations: Array<{
     source:
       'mutation($input: EnqueueExperimentRunsInput!) { enqueueExperimentRuns(input: $input) }',
     variables: { input: { experimentId, queue: 'local', runAll: true } },
+    expected: USER_ONLY(EXPERIMENT_NOT_FOUND),
+  },
+  {
+    name: 'queueExperimentRuns',
+    executes: 'queueRunsByIds',
+    source:
+      'mutation($id: ID!, $runs: [ConfirmedRunInput!]!) { queueExperimentRuns(experimentId: $id, queue: local, runs: $runs) { _id } }',
+    variables: { id: experimentId, runs: [{ pipelineId, executionId: null }] },
     expected: USER_ONLY(EXPERIMENT_NOT_FOUND),
   },
   {

@@ -4,6 +4,8 @@ query Pipelines($experimentId: ID!, $queue: ComputationQueue) {
     experimentId
     queue
     status
+    executionId
+    admissionId
     progress
     statusMessage
     optimizationScores

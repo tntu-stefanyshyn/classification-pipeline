@@ -114,7 +114,7 @@ test('ComputationResolver delegates all operations to ComputationManager', async
     },
     enqueueRuns: async (...args: any[]) => {
       calls.push(['enqueue', ...args]);
-      return true;
+      return undefined;
     },
     stopRun: async (...args: any[]) => {
       calls.push(['stop', ...args]);
@@ -205,11 +205,23 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
   stub(t, manager as unknown as Record<string, unknown>, 'workflowManager', {
     getWorkflow: async ({ instanceId }: any) => {
       if (String(instanceId) === String(experimentId)) {
-        return { status: 'computing' };
+        return { status: 'computing', history: [{ previousStatus: 'computing' }] };
       }
       return { status: PipelineStatus.running };
     },
   } as any);
+  stub(t, manager as unknown as Record<string, unknown>, 'experimentLock', {
+    acquire: async () => ({ acquired: true, token: 'token' }),
+    release: async () => undefined,
+  } as any);
+  stub(t, ExperimentModel as unknown as Record<string, unknown>, 'updateOne', async () => ({}));
+  // A completed run checks whether a re-run's optimization is due; not what this test is about.
+  stub(
+    t,
+    manager as unknown as Record<string, unknown>,
+    'reoptimizeAfterRerun',
+    async () => undefined
+  );
   stub(t, manager as unknown as Record<string, unknown>, 'optimizationRunner', {
     run: async (...args: any[]) => {
       managerCalls.push(['runOptimization', ...args]);
@@ -293,6 +305,8 @@ test('ComputationManager handles optimization and run lifecycle helpers', async 
 
 test('ComputationManager pauses, resumes and normalizes machine info', async (t) => {
   const manager = new ComputationManager();
+  // Whether the experiment must be reopened first is covered by OptimizationAdmission.mongo.test.ts.
+  stub(t, manager as unknown as Record<string, unknown>, 'prepareToQueue', async () => undefined);
   const experimentId = new Types.ObjectId();
   const pipelineId = new Types.ObjectId();
   const calls: any[] = [];

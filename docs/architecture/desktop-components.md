@@ -52,6 +52,7 @@ SomeComponent/
 ## Tables
 
 - For tabular data use `DataTable` (`src/components/ui/DataTable`) instead of a custom `<table>`.
+- Exception: a confusion matrix is a grid of numbers, not a list of records (no paging, a header row and column of class labels, one coloured cell per value), so it uses the `confusion-table` markup, as `ResultView` and the run comparison (`CompareModal/components/ConfusionMatrices`) do.
 - Render row actions as icons without text, but with `aria-label` or `title` for accessibility.
 
 ## Types

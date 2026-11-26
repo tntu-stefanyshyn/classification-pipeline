@@ -9,16 +9,17 @@ import { AuthFlow } from '../../../modules/auth/services/AuthFlow';
 import { ExperimentAccess } from '../../../modules/experiments/services/ExperimentAccess';
 import { ObjectIdOrString } from '../../../types/context';
 import type { GraphQLContext } from '../../../types/context';
-import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
+import { WorkflowModel } from '../../workflow/model/WorkflowModel';
 import { PipelineStatus } from '../enums';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { PipelineManager } from '../services/PipelineManager';
+import { ComputationManager } from '../../../modules/computations/services/ComputationManager';
 
 @Resolver(() => Pipeline)
 export class PipelineResolver {
   private readonly pipelineManager = new PipelineManager();
-  private readonly workflowManager = new WorkflowManager();
+  private readonly computations = new ComputationManager();
   private readonly auth = new AuthFlow();
   private readonly access = new ExperimentAccess();
 
@@ -42,14 +43,30 @@ export class PipelineResolver {
   }
 
   @FieldResolver(() => PipelineStatus, { description: 'Current status of the pipeline.' })
-  async status(@Root() { _id }: Pipeline) {
-    const workflow = await this.workflowManager.getWorkflow({
-      instanceId: _id,
-      type: WorkflowType.PIPELINE,
-    });
-    return workflow.status;
+  async status(@Root() { _id, rerunOf }: Pipeline) {
+    const workflow = await this.findWorkflow(_id);
+    if (workflow) return workflow.status;
+    // A re-run whose admission stopped between creating it and its workflow: finish it here, so
+    // the run list keeps working and the run can be queued again from the desktop.
+    if (rerunOf) await this.pipelineManager.ensureRerunWorkflow(_id);
+    return PipelineStatus.idle;
   }
-  // #endregion FieldResolver
+
+  @FieldResolver(() => ID, {
+    nullable: true,
+    description:
+      'Id of the current queue admission: new every time the pipeline is queued and kept when a worker takes it. A bulk action sends it back with the pipelines the user confirmed.',
+  })
+  async admissionId(@Root() { _id }: Pipeline) {
+    return (await this.findWorkflow(_id))?.admissionId ?? null;
+  }
+
+  // The newest workflow, as `WorkflowManager.getWorkflow` reads it.
+  private findWorkflow(pipelineId: Pipeline['_id'] | string) {
+    return WorkflowModel.findOne({ instanceId: pipelineId, type: WorkflowType.PIPELINE })
+      .sort({ createdAt: -1 })
+      .lean();
+  } // #endregion FieldResolver
 
   // #region Query
   @Query(() => [Pipeline], {
@@ -129,6 +146,14 @@ export class PipelineResolver {
     // Runs start only through claimExperimentRun, which enforces one local run per machine.
     if (input.status === PipelineStatus.running) {
       throw new Error('Запуск можна почати лише через claimExperimentRun');
+    }
+    // Queueing an idle run may first have to reopen its experiment; see `prepareToQueue`.
+    if (
+      input.status === PipelineStatus.queued &&
+      (await this.findWorkflow(input.pipelineId))?.status === PipelineStatus.idle
+    ) {
+      const { experimentId } = await PipelineBaseService.getById(input.pipelineId);
+      await this.computations.prepareToQueue(experimentId);
     }
     return this.pipelineManager.changeStatusFromApi(input);
   }

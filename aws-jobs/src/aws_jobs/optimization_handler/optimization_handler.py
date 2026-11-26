@@ -200,6 +200,7 @@ def optimize(payload: Dict[str, Any]):
         pipelines(experimentId: $experimentId) {
           _id
           status
+          createdAt
           pathNodeIds
           computingResult {
             accuracyScores
@@ -255,10 +256,18 @@ def optimize(payload: Dict[str, Any]):
 
     parsedPipelines: List[Dict[str, Any]] = []
 
+    # A re-run adds a new pipeline for the same path; only the latest completed run of each
+    # path competes, whatever its queue, so an old result cannot win over the re-run.
+    latest_runs: Dict[Any, Dict[str, Any]] = {}
     for pipeline in pipelines or []:
         if str(pipeline.get("status") or "").lower() != "completed":
             continue
+        key = tuple(pipeline.get("pathNodeIds") or [pipeline.get("_id")])
+        current = latest_runs.get(key)
+        if current is None or str(pipeline.get("createdAt") or "") >= str(current.get("createdAt") or ""):
+            latest_runs[key] = pipeline
 
+    for pipeline in latest_runs.values():
         computingResult = pipeline.get("computingResult") or {}
         accuracy_values = _flatten_numeric(computingResult.get("accuracyScores"))
         f1_values = _flatten_numeric(computingResult.get("f1Scores"))

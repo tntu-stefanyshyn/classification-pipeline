@@ -52,7 +52,16 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
     'enqueueRuns',
     async (...args: any[]) => {
       calls.push(['enqueueRuns', ...args]);
-      return true;
+      return undefined;
+    }
+  );
+  stub(
+    t,
+    ComputationManager.prototype as unknown as Record<string, unknown>,
+    'queueRunsByIds',
+    async (...args: any[]) => {
+      calls.push(['queueRunsByIds', ...args]);
+      return [{ _id: runId }];
     }
   );
   stub(
@@ -129,9 +138,13 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         $queue: ComputationQueue!
         $machineInfo: PipelineMachineInfoInput
         $experimentId: ID!
+        $runs: [ConfirmedRunInput!]!
         $complete: CompletePipelineInput!
       ) {
         enqueueExperimentRuns(input: $enqueue)
+        queueExperimentRuns(experimentId: $experimentId, queue: $queue, runs: $runs) {
+          _id
+        }
         stopExperimentRun(input: $stop) {
           _id
           queue
@@ -143,7 +156,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
             hostname
           }
         }
-        pauseExperimentRuns(experimentId: $experimentId) {
+        pauseExperimentRuns(experimentId: $experimentId, runs: $runs) {
           _id
         }
         resumeExperimentRuns(experimentId: $experimentId) {
@@ -169,6 +182,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
           memoryGb: 16,
         },
         experimentId,
+        runs: [{ pipelineId: runId, executionId: '3', status: 'running' }],
         complete: {
           pipelineId: runId,
           executionId: '4',
@@ -209,6 +223,7 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
   assert.equal(mutationResult.errors, undefined);
   assert.deepEqual(toPlainValue(mutationResult.data), {
     enqueueExperimentRuns: true,
+    queueExperimentRuns: [{ _id: runId }],
     stopExperimentRun: {
       _id: runId,
       queue: 'local',
@@ -227,6 +242,12 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
   assert.deepEqual(toPlainValue(calls), [
     ['optimize', experimentId],
     ['enqueueRuns', { experimentId, queue: 'local', runAll: true, rerun: false }],
+    [
+      'queueRunsByIds',
+      experimentId,
+      'local',
+      [{ pipelineId: runId, executionId: '3', status: 'running' }],
+    ],
     ['stopRun', runId],
     [
       'claimNextRun',
@@ -238,7 +259,12 @@ test('Computation GraphQL executes optimization and run lifecycle mutations', as
         memoryGb: 16,
       },
     ],
-    ['pauseExperimentRuns', experimentId],
+    [
+      'pauseExperimentRuns',
+      experimentId,
+      null,
+      [{ pipelineId: runId, executionId: '3', status: 'running' }],
+    ],
     ['resumeExperimentRuns', experimentId],
     [
       'completePipeline',

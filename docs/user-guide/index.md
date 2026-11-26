@@ -167,11 +167,8 @@ colors each pipeline by its status:
 - After a stop, **Latest activity** can still show a leftover message from the stopped run, and the
   stopped computation can keep using your computer for a few minutes before it ends (seen with
   Docker Desktop on Windows). The result of a stopped run is not saved.
-- **Pause and resume:** the application has no pause or resume button, so you cannot pause the
-  queued pipelines of an experiment. The backend API has the operations `pauseExperimentRuns` (it
-  returns the queued and running pipelines to **Idle**) and `resumeExperimentRuns` (it queues the
-  idle pipelines again), but the interface does not use them. To interrupt the work, stop the running
-  pipeline and start it later with the play button.
+- **Stop all and resume:** the "Stop all" button returns the queued and running pipelines of the selected queue (Local or Cloud) to **Idle**, after a confirmation that shows how many pipelines it affects. The message afterwards tells how many were stopped and how many were skipped because their status changed meanwhile or they were restarted since you confirmed. There is no separate pause button. The backend API also has `resumeExperimentRuns` (it queues the idle pipelines again), which the interface does not use: to continue, press the play button of a pipeline or "Queue all idle".
+- **Queue all idle, run again and comparison:** "Queue all idle" queues the idle pipelines of the selected queue after the same kind of confirmation. The "Run again" button on a completed row starts a new run of that path while keeping the old result. If the experiment is already optimized, a warning says the optimization result will be recalculated; it starts by itself when the last re-run finishes. To compare two runs, tick the checkbox next to two completed pipelines and press "Compare runs": the window shows their settings (the parameters of every node, the prediction data share, queue, folds, device), the mean and per-fold metrics with the difference, and both confusion matrices side by side. Differences are highlighted, also for single folds: two runs with the same mean can still differ fold by fold.
 
 ![Pipelines waiting in the queue, one completed](images/11-computing-statuses.png)
 

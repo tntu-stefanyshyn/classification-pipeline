@@ -369,12 +369,10 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
       return true;
     },
   } as any);
-  stub(t, resolver as unknown as Record<string, unknown>, 'workflowManager', {
-    getWorkflow: async (...args: any[]) => {
-      workflowCalls.push(args);
-      return { status: PipelineStatus.completed };
-    },
-  } as any);
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', (...args: any[]) => {
+    workflowCalls.push(args);
+    return { sort: () => createLeanResult({ status: PipelineStatus.completed }) };
+  });
 
   assert.equal(await resolver.status({ _id: pipeline._id } as any), PipelineStatus.completed);
   assert.deepEqual(await resolver.pipelines('exp-1', context, ComputationQueue.cloud), [pipeline]);
@@ -420,4 +418,66 @@ test('PipelineResolver delegates status, queries and mutations', async (t) => {
   assert.deepEqual(statusCalls[0], [{ pipelineId: 'pipeline-1', status: PipelineStatus.queued }]);
   assert.equal(statusCalls.length, 1);
   assert.deepEqual(workflowCalls[0], [{ instanceId: pipeline._id, type: 'PIPELINE' }]);
+});
+
+test('PipelineResolver.status keeps the run list working for a re-run without a workflow', async (t) => {
+  const resolver = new PipelineResolver();
+  const ensured: unknown[] = [];
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () => ({
+    sort: () => createLeanResult(null),
+  }));
+  stub(t, resolver as unknown as Record<string, unknown>, 'pipelineManager', {
+    ensureRerunWorkflow: async (runId: unknown) => {
+      ensured.push(runId);
+    },
+  } as any);
+  const rerun = { _id: new Types.ObjectId(), rerunOf: new Types.ObjectId() };
+  const other = { _id: new Types.ObjectId() };
+
+  // The interrupted re-run reads as idle and gets its workflow, so it can be queued again.
+  assert.equal(await resolver.status(rerun as any), PipelineStatus.idle);
+  assert.deepEqual(ensured, [rerun._id]);
+  // Any other run without a workflow reads as idle too, without writing anything.
+  assert.equal(await resolver.status(other as any), PipelineStatus.idle);
+  assert.equal(ensured.length, 1);
+});
+
+test('PipelineResolver.changePipelineStatus makes the experiment ready before queueing an idle run', async (t) => {
+  const resolver = new PipelineResolver();
+  const experimentId = new Types.ObjectId();
+  const calls: unknown[] = [];
+  let workflowStatus = PipelineStatus.idle;
+  stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
+    authenticate: async () => ({ kind: 'user' }),
+  } as any);
+  stub(t, resolver as unknown as Record<string, unknown>, 'access', {
+    assertPipelineAccess: async () => undefined,
+  } as any);
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () => ({
+    sort: () => createLeanResult({ status: workflowStatus }),
+  }));
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
+    experimentId,
+  }));
+  stub(t, resolver as unknown as Record<string, unknown>, 'computations', {
+    prepareToQueue: async (id: unknown) => calls.push(['prepare', id]),
+  } as any);
+  stub(t, resolver as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatusFromApi: async () => {
+      calls.push(['queue']);
+      return true;
+    },
+  } as any);
+  const input = { pipelineId: String(new Types.ObjectId()), status: PipelineStatus.queued };
+  const context = { req: { headers: {} } } as any;
+
+  await resolver.changePipelineStatus(input as any, context);
+  assert.deepEqual(calls, [['prepare', experimentId], ['queue']]);
+
+  // A run that is not idle needs no preparation (the status change is refused or a no-op).
+  calls.length = 0;
+  workflowStatus = PipelineStatus.queued;
+  await resolver.changePipelineStatus({ ...input, status: PipelineStatus.idle } as any, context);
+  await resolver.changePipelineStatus(input as any, context);
+  assert.deepEqual(calls, [['queue'], ['queue']]);
 });

@@ -168,6 +168,103 @@ test('pausing moves queued and running runs to idle and cancels cloud jobs', asy
   assert.equal(queued.status, PipelineStatus.idle);
 });
 
+test('stop all of one queue leaves the other queue untouched', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const local = createRun({ experimentId, status: PipelineStatus.running });
+  const cloud = createRun({ experimentId, queue: ComputationQueue.cloud });
+  installStore(t, [local, cloud]);
+  const { manager } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, ComputationQueue.local);
+
+  assert.equal(paused.length, 1);
+  assert.equal(local.status, PipelineStatus.idle);
+  assert.equal(cloud.status, PipelineStatus.queued);
+});
+
+test('stop all returns only the runs it really stopped', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const stopped = createRun({ experimentId });
+  const finishedMeanwhile = createRun({ experimentId });
+  installStore(t, [stopped, finishedMeanwhile]);
+  const { manager } = managerWithCancelLog(t);
+  stub(
+    t,
+    manager as unknown as Record<string, unknown>,
+    'pauseRun',
+    async (runId: Types.ObjectId) => String(runId) === String(stopped._id)
+  );
+
+  const paused = await manager.pauseExperimentRuns(experimentId);
+
+  assert.deepEqual(
+    paused.map((run) => String(run._id)),
+    [String(stopped._id)]
+  );
+});
+
+test('stop all of a confirmed list leaves a run that became eligible later alone', async (t) => {
+  const experimentId = new Types.ObjectId();
+  const confirmed = createRun({ experimentId });
+  const queuedLater = createRun({ experimentId });
+  installStore(t, [confirmed, queuedLater]);
+  const { manager } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, undefined, [
+    { pipelineId: String(confirmed._id), executionId: null, status: PipelineStatus.queued },
+  ]);
+
+  assert.deepEqual(
+    paused.map((run) => String(run._id)),
+    [String(confirmed._id)]
+  );
+  assert.equal(confirmed.status, PipelineStatus.idle);
+  assert.equal(queuedLater.status, PipelineStatus.queued);
+});
+
+test('stop all skips a confirmed run that another client stopped and restarted', async (t) => {
+  const experimentId = new Types.ObjectId();
+  // The user saw execution 1 running; meanwhile it was stopped and a new execution 2 started.
+  const restarted = createRun({
+    experimentId,
+    queue: ComputationQueue.cloud,
+    status: PipelineStatus.running,
+    executionId: 2,
+    cloudJobId: 'job-of-execution-2',
+  });
+  installStore(t, [restarted]);
+  const { manager, cancelledJobs } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, undefined, [
+    { pipelineId: String(restarted._id), executionId: '1', status: PipelineStatus.running },
+  ]);
+
+  assert.deepEqual(paused, []);
+  assert.equal(restarted.status, PipelineStatus.running);
+  assert.deepEqual(cancelledJobs, []);
+});
+
+test('stop all still stops a confirmed queued run that a worker took meanwhile', async (t) => {
+  const experimentId = new Types.ObjectId();
+  // The user saw it queued after execution 1; a worker then took it as execution 2.
+  const taken = createRun({
+    experimentId,
+    queue: ComputationQueue.cloud,
+    status: PipelineStatus.running,
+    executionId: 2,
+    cloudJobId: 'job-2',
+  });
+  installStore(t, [taken]);
+  const { manager, cancelledJobs } = managerWithCancelLog(t);
+
+  const paused = await manager.pauseExperimentRuns(experimentId, undefined, [
+    { pipelineId: String(taken._id), executionId: '1', status: PipelineStatus.queued },
+  ]);
+
+  assert.equal(paused.length, 1);
+  assert.equal(taken.status, PipelineStatus.idle);
+  assert.deepEqual(cancelledJobs, ['job-2']);
+});
 test('resuming re-queues the paused runs so workers can claim them again', async (t) => {
   const experimentId = new Types.ObjectId();
   const first = createRun({ experimentId });

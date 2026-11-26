@@ -1631,6 +1631,28 @@ h1 {
   border-right: none;
 }
 
+.compare-table th,
+.compare-table td {
+  text-align: left;
+}
+
+.compare-diff {
+  box-shadow: inset 3px 0 0 #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.compare-folds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .status-legend {
   gap: 0.5rem 0.75rem;
 }

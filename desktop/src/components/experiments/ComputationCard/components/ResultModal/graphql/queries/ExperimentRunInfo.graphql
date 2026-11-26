@@ -36,6 +36,10 @@ query PipelineInfo($pipelineId: ID!) {
       _id
       label
       technology
+      settings {
+        key
+        value
+      }
     }
     history {
       createdAt

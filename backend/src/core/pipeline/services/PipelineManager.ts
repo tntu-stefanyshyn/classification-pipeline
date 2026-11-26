@@ -6,6 +6,8 @@ import { PipelineStatus } from '../enums';
 import { Pipeline } from '../classes/Pipeline';
 import { WorkflowManager } from '../../workflow/services/WorkflowManager';
 import { WorkflowType } from '../../workflow/enums';
+import { WorkflowModel } from '../../workflow/model/WorkflowModel';
+import { DUPLICATE_KEY_ERROR } from '../../../modules/computations/constants';
 import { Transitions } from '../../workflow/services/WorkflowManager.types.';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { stringIdsToObjectIds, stringIdToObjectId } from '../../../utils';
@@ -166,7 +168,12 @@ export class PipelineManager {
       transitions,
       type: WorkflowType.PIPELINE,
       message: normalizedMessage,
-      fields,
+      // Every move to `queued` is a new admission, with a new id; a worker's claim keeps it, so a
+      // confirmed bulk action can tell the request the user saw from one queued again since.
+      fields:
+        status === PipelineStatus.queued
+          ? { ...fields, admissionId: new Types.ObjectId().toHexString() }
+          : fields,
       expected,
     });
 
@@ -213,4 +220,29 @@ export class PipelineManager {
   private readonly executionTransitions = this.transitions.filter(
     (transition) => transition.from === PipelineStatus.running
   );
+
+  /**
+   * Atomic get-or-create of the idle workflow of a re-run. A re-run is created before its
+   * workflow, so this is shared by the admission that created it and by every reader that finds it
+   * without one (an admission that died in between). An existing workflow is left as it is,
+   * whatever its status, and the unique `rerun` index on workflows settles two creators.
+   */
+  async ensureRerunWorkflow(runId: Types.ObjectId) {
+    try {
+      await WorkflowModel.updateOne(
+        { instanceId: runId, type: WorkflowType.PIPELINE },
+        {
+          $setOnInsert: {
+            status: PipelineStatus.idle,
+            rerun: true,
+            history: [{ previousStatus: PipelineStatus.idle, createdAt: new Date() }],
+          },
+        },
+        { upsert: true }
+      );
+    } catch (error) {
+      // The other creator inserted it first, which is the workflow we wanted.
+      if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR) throw error;
+    }
+  }
 }

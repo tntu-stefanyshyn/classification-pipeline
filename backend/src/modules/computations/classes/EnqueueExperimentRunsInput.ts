@@ -19,9 +19,13 @@ export class EnqueueExperimentRunsInput {
   })
   pipelineId?: ObjectIdOrString;
 
-  @Field({ nullable: true, description: 'Queue every pipeline of the experiment that is `idle`.' })
+  @Field({ nullable: true, description: 'Queue every pipeline of the given queue that is `idle`.' })
   runAll?: boolean;
 
-  @Field({ nullable: true, description: 'Reserved. The backend does not read it yet.' })
+  @Field({
+    nullable: true,
+    description:
+      'With pipelineId of a completed pipeline: start a new run of the same path and queue it, keeping the finished one. A run of that path that is already waiting or running is used instead. Rejected while the experiment is in optimization.',
+  })
   rerun?: boolean;
 }

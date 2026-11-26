@@ -20,6 +20,10 @@ import { PipelineStatus } from '../../pipeline/enums';
     },
   }
 )
+// The workflow of a re-run is created with `rerun: true` by an atomic get-or-create, so the request
+// and a recovery cannot both insert it. Only those documents are in this index, so existing data
+// cannot make it fail to build.
+@index({ instanceId: 1 }, { unique: true, partialFilterExpression: { rerun: true } })
 // Declare only what must exist before the backend starts: `WorkflowModel.init()` waits for every
 // index declared here. Read indexes go to `createWorkflowReadIndexes` so they build in the background.
 @ObjectType({ description: 'The status of an experiment or a pipeline with its history.' })
@@ -50,6 +54,14 @@ export class Workflow extends TimeStamps {
 
   @prop({ type: () => String })
   machineHostname?: string;
+
+  /** Set on the workflow of a re-run; see the unique index above. */
+  @prop({ type: () => Boolean })
+  rerun?: boolean;
+
+  /** Id of the pipeline's current queue admission: new on every move to `queued`. */
+  @prop({ type: () => String })
+  admissionId?: string;
 
   /** Number of the pipeline's current execution, set by the claim that starts it. */
   @prop({ type: () => Number })

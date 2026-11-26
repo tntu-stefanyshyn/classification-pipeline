@@ -26,8 +26,10 @@ how the desktop constructor and the experiment details page apply them.
 | `completed`    | Set when optimization has finished.                                                                             |
 
 Allowed transitions: `creating → configuring → computing → optimization → completed`, and
-`completed → optimization` (optimization can be run again). The diagram and what each transition
-does are in [Lifecycle](../architecture/lifecycle.md#experiment).
+`completed → optimization` (optimization can be run again) and `completed → computing` (a re-run
+reopens the experiment and is rejected while the status is `optimization`; when the last re-run
+finishes, the optimization starts again by itself, see "GraphQL behavior" below). The diagram and
+what each transition does are in [Lifecycle](../architecture/lifecycle.md#experiment).
 An experiment cannot enter `computing` without an attached, available CSV file.
 
 ## Pipeline status lifecycle
@@ -61,14 +63,26 @@ and the side effects are in [Lifecycle](../architecture/lifecycle.md#pipeline).
 - Graph settings require at least one allowed computation queue, and a run is accepted only for an allowed queue.
 - The computation mode of the graph (`local`, `cloud`, `both`) restricts which queue can be used.
 - Experiment updates and graph changes are blocked after computations start (statuses `computing`, `optimization` and `completed`). The exception is an update that sets only `fileId` on an experiment that has no file yet.
-- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`.
+- Optimization can be started only from the `computing` or `completed` status, and only one optimization can run at a time. All pipelines, in every selected queue, must be `completed`; a pipeline without a workflow (an interrupted re-run) counts as not completed.
 
 ## GraphQL behavior
 
 - Only the owner of an experiment can start, stop, pause, resume, optimize or read its runs; workers report with the service token. See [Authentication](../api/authentication.md).
-- `enqueueExperimentRuns` checks the graph settings and the classification stage coverage, then moves `idle` pipelines to `queued`.
+- `enqueueExperimentRuns` checks the graph settings and the classification stage coverage, then moves `idle` pipelines to `queued`. With `runAll` only the pipelines of the given `queue` are queued ("Queue all idle"). It returns `true`; a run that changed status between the read and the update (a worker or another client) is skipped instead of failing the whole action.
+- `queueExperimentRuns(experimentId, queue, runs)` is "Queue all idle" on the list the user confirmed. Each entry of `runs` names a pipeline with the `admissionId`, `executionId` and status the user saw. Only the listed runs of that experiment and queue that are still `idle` in that admission and execution are queued (the update checks both as it read them), and the runs it really queued are returned, so a run that changed status or execution meanwhile is the difference between the list and the result, and a run that became idle after the confirmation is left alone.
+- `enqueueExperimentRuns` with `pipelineId` and `rerun: true` on a `completed` pipeline creates a new pipeline (run) for the same path and queue and queues it; the finished one stays. If a run of that path is already `idle`, `queued` or `running`, that run is used instead, so a double click creates nothing. A re-run is rejected while the experiment is in `optimization`; for a `completed` experiment the status goes `completed -> computing` (the CSV file is checked again after the status write, and the status goes back to `completed` if it is gone or being deleted), and the optimization starts again by itself when the last re-run finishes. The optimization uses the latest completed run of every path (whatever its queue), so an old result cannot win over a re-run; the older runs stay for comparison.
+- `pauseExperimentRuns(experimentId, queue?, runs?)` is "Stop all": `queued` and `running` pipelines go back to `idle` (cloud jobs are cancelled); `queue` limits it to Local or Cloud, and `runs` to the runs the user confirmed, each only while it is still the run the user saw: the same queue admission (`admissionId`, new every time a pipeline is queued and kept when a worker takes it), and in it the same execution or, for a run seen `queued`, the execution a worker started by taking it. A run that was stopped and queued or started again meanwhile is a new request and is skipped, and its job is not cancelled. It returns only the runs it really stopped.
 - `stopExperimentRun(input: { runId })` stops a `running` pipeline and returns it to `idle`; for any other status it returns the pipeline unchanged. A cloud job is cancelled first when one exists.
 - `PipelineStatus.idle` is also what the UI shows for a path that has no runs.
+
+### Experiment lock
+
+Optimization attempts and re-run admissions change the runs and the status of an experiment, so they are serialized by one lock per experiment (`operationLock` on the experiment, see `ExperimentLock`). Taking it is one conditional update, so of two callers exactly one gets it, and it carries a token: only its holder can let it go. It is a lease (`expiresAt`), so a holder whose backend died stops blocking the experiment once the lease has passed (a re-run admission briefly, an optimization for its runner timeout plus a margin).
+
+- An optimization attempt holds the lock from the check of its pipelines to its final status: the move to `optimization`, the runner and the move to `completed` all happen under it. A second optimization, manual or automatic, is refused ("Оптимізація вже виконується"), also after the container has reported its result and before the status is final. A re-run asked for meanwhile is refused.
+- A re-run admission holds the lock from choosing the run to queueing it: create the run and its workflow, reopen the experiment with the CSV check, queue. A second click waits for the first admission and then finds the queued run; an optimization asked for meanwhile is refused. If the admission fails (the file is gone), it removes the run it made before letting go, so nobody can have queued it.
+- A re-run admission always checks again whether the automatic re-optimization is due after it lets go of the lock, and so does an optimization attempt that stopped because a run was unfinished: a run that completed while the lock was held found it busy and left the optimization to the holder (for example a running run that a repeated click reused).
+- A re-run is created before its workflow. If an admission stops in between, the run list reads that run as `idle` and creates its idle workflow (an atomic get-or-create, backed by a unique partial index on workflows: `instanceId`, only for workflows of re-runs, flagged `rerun: true`), so the list keeps working and the run can be queued again. If the admission stopped before reopening the experiment, the experiment is still `completed`: every action that queues an idle run (`enqueueExperimentRuns`, `queueExperimentRuns`, `resumeExperimentRuns`, `changePipelineStatus`) first reopens it under the lock with the CSV check, as the admission would have, so the automatic re-optimization follows its completion. Each run can be re-run once (unique `rerunOf` index of the pipeline). The backend waits for these indexes at startup.
 
 ## Claiming runs
 
@@ -128,4 +142,4 @@ A run (pipeline) can be stopped or paused, queued again and claimed by a new exe
 
 - The **Download PDF** button appears only when the experiment status is `completed`.
 - The REST endpoint is `GET {API_BASE}/experiments/:experimentId/report`, where `API_BASE` is the GraphQL URL without `/graphql`. See [REST report](../api/index.md#rest-report).
-- Only the owner of the experiment can download the report: the request needs the user JWT, and another user's experiment gets `404`. The desktop app sends the token with `fetch` and saves the PDF as a file; when the download fails it says why (sign in again, not found, server error, session not refreshed for now, or no connection).
+- `pauseExperimentRuns(experimentId, queue?, runs?)` is "Stop all": `queued` and `running` pipelines go back to `idle` (cloud jobs are cancelled); `queue` limits it to Local or Cloud, and `runs` to the runs the user confirmed, each only while it is still the run the user saw: the same queue admission (`admissionId`, new every time a pipeline is queued and kept when a worker takes it), and in it the same execution or, for a run seen `queued`, the execution a worker started by taking it. A run that was stopped and queued or started again meanwhile is a new request and is skipped, and its job is not cancelled. It returns only the runs it really stopped.

@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { Field, ID, ObjectType } from 'type-graphql';
 import { PipelineMachineInfo } from '../../../core/pipeline/classes/PipelineMachineInfo';
 import { ExperimentOptimization } from './ExperimentOptimization';
+import { ExperimentOperationLock } from './ExperimentOperationLock';
 
 @ObjectType({ description: 'A classification experiment: a dataset and a graph of stages.' })
 export class Experiment extends TimeStamps {
@@ -39,6 +40,10 @@ export class Experiment extends TimeStamps {
   })
   @prop({ _id: false, type: () => ExperimentOptimization })
   optimization?: ExperimentOptimization;
+
+  /** Serializes optimization attempts and re-run admissions; see `ExperimentLock`. */
+  @prop({ _id: false, type: () => ExperimentOperationLock })
+  operationLock?: ExperimentOperationLock;
 
   @Field(() => Date, { description: 'When the experiment was created.' })
   declare createdAt: Date;

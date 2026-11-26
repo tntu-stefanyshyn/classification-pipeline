@@ -615,3 +615,95 @@ test(
     assert.deepEqual((await runStatuses(experimentId)).statuses, [PipelineStatus.idle]);
   }
 );
+
+// An admission that stopped after the run and its workflow, before reopening the experiment.
+const strandedRerun = async (experimentId: Types.ObjectId, source: any) => {
+  const run = await PipelineModel.create({
+    experimentId,
+    graphStructureId: source.graphStructureId,
+    queue: source.queue,
+    pathNodeIds: source.pathNodeIds,
+    rerunOf: source._id,
+  });
+  await createManager().pipelineManager.ensureRerunWorkflow(run._id);
+  return run;
+};
+
+const completeAndCallBack = async (manager: any, runId: Types.ObjectId) => {
+  await WorkflowModel.updateOne(
+    { instanceId: runId, type: WorkflowType.PIPELINE },
+    { $set: { status: PipelineStatus.completed } }
+  );
+  await manager.reoptimizeAfterRerun(runId);
+};
+
+for (const [action, queue] of [
+  [
+    'Queue all idle',
+    async (manager: any, experimentId: Types.ObjectId, runId: Types.ObjectId) =>
+      manager.queueRunsByIds(experimentId, ComputationQueue.local, [await confirm(runId)]),
+  ],
+  [
+    'a single queue action',
+    async (manager: any, experimentId: Types.ObjectId, runId: Types.ObjectId) =>
+      manager.enqueueRuns({
+        experimentId: String(experimentId),
+        queue: ComputationQueue.local,
+        pipelineId: String(runId),
+      }),
+  ],
+  [
+    'resume',
+    async (manager: any, experimentId: Types.ObjectId) =>
+      manager.resumeExperimentRuns(String(experimentId)),
+  ],
+] as const) {
+  test(
+    `${action} reopens the experiment of a recovered re-run, so its completion re-optimizes`,
+    {
+      skip,
+    },
+    async (t) => {
+      await useDatabase(t);
+      const { experimentId, source } = await seed(ExperimentStatus.completed);
+      const run = await strandedRerun(experimentId, source);
+      const manager = createManager();
+      const starts = { count: 0 };
+      runner(manager, starts);
+
+      await queue(manager, experimentId, run._id);
+
+      assert.equal(await statusOf(experimentId), ExperimentStatus.computing);
+      assert.deepEqual((await runStatuses(experimentId)).statuses, [
+        PipelineStatus.completed,
+        PipelineStatus.queued,
+      ]);
+      await completeAndCallBack(manager, run._id);
+      await waitFor(async () => (await statusOf(experimentId)) === ExperimentStatus.completed);
+      assert.equal(starts.count, 1);
+    }
+  );
+}
+
+test('a recovered re-run whose CSV file is gone is not queued', { skip }, async (t) => {
+  await useDatabase(t);
+  const { experimentId, source } = await seed(ExperimentStatus.completed);
+  const run = await strandedRerun(experimentId, source);
+  const manager = createManager(async () => {
+    throw new Error('Файл експерименту не знайдено або він недоступний.');
+  });
+
+  await assert.rejects(
+    () =>
+      manager.queueRunsByIds(experimentId, ComputationQueue.local, [
+        { pipelineId: String(run._id) },
+      ]),
+    /Файл експерименту/
+  );
+
+  assert.equal(await statusOf(experimentId), ExperimentStatus.completed);
+  assert.deepEqual((await runStatuses(experimentId)).statuses, [
+    PipelineStatus.completed,
+    PipelineStatus.idle,
+  ]);
+});

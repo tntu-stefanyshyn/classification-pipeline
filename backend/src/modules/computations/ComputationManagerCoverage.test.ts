@@ -174,6 +174,8 @@ test('ComputationManager.optimize validates workflow and graph prerequisites', a
 });
 test('ComputationManager.enqueueRuns validates graph settings and queues selected runs', async (t) => {
   const manager = new ComputationManager();
+  // Whether the experiment must be reopened first is covered by OptimizationAdmission.mongo.test.ts.
+  stub(t, manager as unknown as Record<string, unknown>, 'prepareToQueue', async () => undefined);
   const experimentId = new Types.ObjectId();
   const pipelineId = new Types.ObjectId();
   const calls: any[] = [];

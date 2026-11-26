@@ -67,6 +67,8 @@ test('ComputationManager.enqueueRuns respects local-only computation mode', asyn
 
 test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
   const manager = new ComputationManager();
+  // Whether the experiment must be reopened first is covered by OptimizationAdmission.mongo.test.ts.
+  stub(t, manager as unknown as Record<string, unknown>, 'prepareToQueue', async () => undefined);
   const idlePipelineId = new Types.ObjectId();
   const completedPipelineId = new Types.ObjectId();
   const queueCalls: any[] = [];
@@ -127,6 +129,8 @@ test('ComputationManager.enqueueRuns queues only idle pipelines', async (t) => {
 
 test('ComputationManager.queueRunsByIds returns only the confirmed runs it really queued', async (t) => {
   const manager = new ComputationManager();
+  // Whether the experiment must be reopened first is covered by OptimizationAdmission.mongo.test.ts.
+  stub(t, manager as unknown as Record<string, unknown>, 'prepareToQueue', async () => undefined);
   const [first, claimed, queuedByAnother, restarted] = [
     new Types.ObjectId(),
     new Types.ObjectId(),

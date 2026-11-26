@@ -14,10 +14,12 @@ import { WorkflowModel } from '../../workflow/model/WorkflowModel';
 import { PipelineStatus } from '../enums';
 import { ChangePipelineStatusInput } from '../classes/ChangePipelineStatusInput';
 import { PipelineManager } from '../services/PipelineManager';
+import { ComputationManager } from '../../../modules/computations/services/ComputationManager';
 
 @Resolver(() => Pipeline)
 export class PipelineResolver {
   private readonly pipelineManager = new PipelineManager();
+  private readonly computations = new ComputationManager();
   private readonly auth = new AuthFlow();
   private readonly access = new ExperimentAccess();
 
@@ -60,7 +62,7 @@ export class PipelineResolver {
   }
 
   // The newest workflow, as `WorkflowManager.getWorkflow` reads it.
-  private findWorkflow(pipelineId: Pipeline['_id']) {
+  private findWorkflow(pipelineId: Pipeline['_id'] | string) {
     return WorkflowModel.findOne({ instanceId: pipelineId, type: WorkflowType.PIPELINE })
       .sort({ createdAt: -1 })
       .lean();
@@ -144,6 +146,14 @@ export class PipelineResolver {
     // Runs start only through claimExperimentRun, which enforces one local run per machine.
     if (input.status === PipelineStatus.running) {
       throw new Error('Запуск можна почати лише через claimExperimentRun');
+    }
+    // Queueing an idle run may first have to reopen its experiment; see `prepareToQueue`.
+    if (
+      input.status === PipelineStatus.queued &&
+      (await this.findWorkflow(input.pipelineId))?.status === PipelineStatus.idle
+    ) {
+      const { experimentId } = await PipelineBaseService.getById(input.pipelineId);
+      await this.computations.prepareToQueue(experimentId);
     }
     return this.pipelineManager.changeStatusFromApi(input);
   }

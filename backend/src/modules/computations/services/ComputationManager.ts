@@ -220,7 +220,7 @@ export class ComputationManager {
       pipelineIds = [pipeline._id];
     }
 
-    await this.queueIdle(pipelineIds);
+    await this.queueIdle(pipelineIds, undefined, experimentId);
   }
 
   /**
@@ -242,7 +242,8 @@ export class ComputationManager {
     }).lean();
     const queued = await this.queueIdle(
       candidates.map((run) => run._id),
-      confirmedExecutions(runs)
+      confirmedExecutions(runs),
+      experimentId
     );
     return PipelineModel.find({ _id: { $in: queued } }).lean();
   }
@@ -298,34 +299,46 @@ export class ComputationManager {
   /**
    * Moves the idle runs among `pipelineIds` to `queued`. A run that changed status since it was
    * read (a worker or another client) is skipped instead of failing the whole action, and with
-   * `executions` so is a run whose execution is no longer the one the user confirmed; the update
-   * checks the execution it read, so a change in between is skipped too. Returns the queued ids.
+   * `executions` so is a run that is no longer the one the user confirmed; the update checks the
+   * execution and admission it read, so a change in between is skipped too. With
+   * `experimentId`, the experiment is first made ready to take them (see `prepareToQueue`); a
+   * re-run admission, which reopened it already under the lock, passes none. Returns the queued ids.
    */
   private async queueIdle(
     pipelineIds: Types.ObjectId[],
-    executions?: ReturnType<typeof confirmedExecutions>
+    executions?: ReturnType<typeof confirmedExecutions>,
+    experimentId?: ObjectIdOrString
   ): Promise<Types.ObjectId[]> {
+    const idle = (
+      await Promise.all(
+        pipelineIds.map(async (pipelineId) => {
+          const workflow = await this.workflowManager.getWorkflow({
+            instanceId: pipelineId,
+            type: WorkflowType.PIPELINE,
+          });
+          if (workflow.status !== PipelineStatus.idle) return null;
+          if (
+            executions &&
+            !isConfirmedExecution(
+              executions,
+              pipelineId,
+              PipelineStatus.idle,
+              workflow.executionId,
+              workflow.admissionId
+            )
+          ) {
+            return null;
+          }
+          return { pipelineId, workflow };
+        })
+      )
+    ).filter((run) => run !== null);
+    if (experimentId && idle.length > 0) await this.prepareToQueue(experimentId);
+
     const queued = await Promise.all(
-      pipelineIds.map(async (nextPipelineId) => {
-        const workflow = await this.workflowManager.getWorkflow({
-          instanceId: nextPipelineId,
-          type: WorkflowType.PIPELINE,
-        });
-        if (workflow.status !== PipelineStatus.idle) return null;
-        if (
-          executions &&
-          !isConfirmedExecution(
-            executions,
-            nextPipelineId,
-            PipelineStatus.idle,
-            workflow.executionId,
-            workflow.admissionId
-          )
-        ) {
-          return null;
-        }
+      idle.map(async ({ pipelineId, workflow }) => {
         try {
-          const input = { pipelineId: nextPipelineId, status: PipelineStatus.queued };
+          const input = { pipelineId, status: PipelineStatus.queued };
           if (executions) {
             await this.pipelineManager.changeStatus(input, undefined, {
               executionId: workflow.executionId ?? null,
@@ -334,7 +347,7 @@ export class ComputationManager {
           } else {
             await this.pipelineManager.changeStatus(input);
           }
-          return nextPipelineId;
+          return pipelineId;
         } catch (error) {
           if (!isLostTransitionRace(error)) throw error;
           return null;
@@ -344,6 +357,30 @@ export class ComputationManager {
     return queued.filter((id): id is Types.ObjectId => id !== null);
   }
 
+  /**
+   * Makes the experiment ready to take an idle run into the queue. An experiment is left
+   * `completed` with an idle run only by a re-run admission that stopped before reopening it, so
+   * whichever action queues that run reopens it first, as the admission would have: under the
+   * experiment lock and with its CSV file checked. Otherwise its result would stay stale, because
+   * the automatic re-optimization only follows an experiment in `computing`.
+   */
+  async prepareToQueue(experimentId: ObjectIdOrString) {
+    const workflow = await WorkflowModel.findOne({
+      instanceId: experimentId,
+      type: WorkflowType.EXPERIMENT,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    // An experiment without a workflow has nothing to reopen.
+    if (workflow?.status !== ExperimentStatus.completed) return;
+    const id = stringIdToObjectId(experimentId);
+    const token = await this.acquireForRerun(id);
+    try {
+      await this.reopenExperiment(id);
+    } finally {
+      await this.experimentLock.release(id, token);
+    }
+  }
   /**
    * Admits a re-run: everything from choosing the run to queueing it happens while this request
    * holds the experiment lock, so a second click waits and then finds the queued run, an
@@ -834,6 +871,7 @@ export class ComputationManager {
     if (runs.length === 0) return [];
 
     const runIds = runs.map((run) => run._id);
+    await this.prepareToQueue(experimentObjectId);
     await Promise.all(
       runIds.map((runId) =>
         this.pipelineManager.changeStatus({ pipelineId: runId, status: PipelineStatus.queued })

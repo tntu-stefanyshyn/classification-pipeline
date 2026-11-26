@@ -441,3 +441,43 @@ test('PipelineResolver.status keeps the run list working for a re-run without a 
   assert.equal(await resolver.status(other as any), PipelineStatus.idle);
   assert.equal(ensured.length, 1);
 });
+
+test('PipelineResolver.changePipelineStatus makes the experiment ready before queueing an idle run', async (t) => {
+  const resolver = new PipelineResolver();
+  const experimentId = new Types.ObjectId();
+  const calls: unknown[] = [];
+  let workflowStatus = PipelineStatus.idle;
+  stub(t, resolver as unknown as Record<string, unknown>, 'auth', {
+    authenticate: async () => ({ kind: 'user' }),
+  } as any);
+  stub(t, resolver as unknown as Record<string, unknown>, 'access', {
+    assertPipelineAccess: async () => undefined,
+  } as any);
+  stub(t, WorkflowModel as unknown as Record<string, unknown>, 'findOne', () => ({
+    sort: () => createLeanResult({ status: workflowStatus }),
+  }));
+  stub(t, PipelineBaseService as unknown as Record<string, unknown>, 'getById', async () => ({
+    experimentId,
+  }));
+  stub(t, resolver as unknown as Record<string, unknown>, 'computations', {
+    prepareToQueue: async (id: unknown) => calls.push(['prepare', id]),
+  } as any);
+  stub(t, resolver as unknown as Record<string, unknown>, 'pipelineManager', {
+    changeStatusFromApi: async () => {
+      calls.push(['queue']);
+      return true;
+    },
+  } as any);
+  const input = { pipelineId: String(new Types.ObjectId()), status: PipelineStatus.queued };
+  const context = { req: { headers: {} } } as any;
+
+  await resolver.changePipelineStatus(input as any, context);
+  assert.deepEqual(calls, [['prepare', experimentId], ['queue']]);
+
+  // A run that is not idle needs no preparation (the status change is refused or a no-op).
+  calls.length = 0;
+  workflowStatus = PipelineStatus.queued;
+  await resolver.changePipelineStatus({ ...input, status: PipelineStatus.idle } as any, context);
+  await resolver.changePipelineStatus(input as any, context);
+  assert.deepEqual(calls, [['queue'], ['queue']]);
+});

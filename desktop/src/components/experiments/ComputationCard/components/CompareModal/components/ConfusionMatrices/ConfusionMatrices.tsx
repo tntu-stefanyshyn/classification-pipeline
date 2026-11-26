@@ -3,7 +3,11 @@ import { useI18n } from '../../../../../../../i18n';
 import { highlight, matricesOf, matrixCellDiffers, rowPercent } from '../../utils/compare';
 import type { ConfusionMatricesProps } from './ConfusionMatrices.types';
 
-/** The confusion matrices of one run, per fold, as row percentages. */
+/**
+ * The confusion matrices of one run, per fold, as row percentages. A matrix is a grid, not a list
+ * of records, so it uses the confusion-table markup rather than DataTable (see the Tables section
+ * of docs/architecture/desktop-components.md).
+ */
 const ConfusionMatrices: FC<ConfusionMatricesProps> = ({ run, other }) => {
   const { messages } = useI18n();
   const otherMatrices = matricesOf(other);

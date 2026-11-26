@@ -216,6 +216,7 @@ const ComputationCard: FC = () => {
       .map((run) => ({
         pipelineId: run._id,
         executionId: run.executionId ?? null,
+        admissionId: run.admissionId ?? null,
         status: run.status,
       }));
     const m = messages.computationCard;
@@ -364,7 +365,11 @@ const ComputationCard: FC = () => {
         return (
           <div className="table-actions">
             {canRun && (
-              <ChangePipelineStatusButton status={PipelineStatus.queued} pipelineId={_id}>
+              <ChangePipelineStatusButton
+                status={PipelineStatus.queued}
+                pipelineId={_id}
+                label={messages.computationCard.queueRun}
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M8 6l10 6-10 6V6z" fill="currentColor" />
                 </svg>
@@ -398,6 +403,8 @@ const ComputationCard: FC = () => {
                 className="icon"
                 onClick={() => stopRun({ variables: { input: { runId: _id } } })}
                 loading={stopping}
+                title={messages.computationCard.stop}
+                aria-label={messages.computationCard.stop}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="7" y="7" width="10" height="10" fill="currentColor" />

@@ -8,7 +8,7 @@ import { PipelineModel } from '../../core/pipeline/models/PipelineModel';
 import { WorkflowType } from '../../core/workflow/enums';
 import { WorkflowModel } from '../../core/workflow/model/WorkflowModel';
 import { ClassificationStage } from '../experiments/classes/ClassificationStage';
-import { ExperimentOperation } from '../experiments/classes/ExperimentOperationLock';
+import { ExperimentOperation } from '../experiments/enums';
 import { ExperimentStatus } from '../experiments/classes/ExperimentStatus';
 import { OptimizationStatus } from '../experiments/classes/OptimizationStatus';
 import { ExperimentModel } from '../experiments/models/ExperimentModel';
@@ -504,3 +504,114 @@ test('a lock left by a dead backend blocks until its lease expires', { skip }, a
   await manager.optimize(experimentId);
   assert.equal(starts.count, 1);
 });
+
+test(
+  'a repeated click whose running run completes during the admission still gets the optimization',
+  {
+    skip,
+  },
+  async (t) => {
+    await useDatabase(t);
+    const { experimentId, source } = await seed(ExperimentStatus.computing);
+    const running = await PipelineModel.create({
+      experimentId,
+      graphStructureId: source.graphStructureId,
+      queue: source.queue,
+      pathNodeIds: source.pathNodeIds,
+      rerunOf: source._id,
+    });
+    await WorkflowModel.create({
+      type: WorkflowType.PIPELINE,
+      instanceId: running._id,
+      status: PipelineStatus.running,
+    });
+    const admitter = createManager();
+    const late = createManager();
+    const starts = { count: 0 };
+    runner(admitter, starts);
+    runner(late, starts);
+    // The click reuses the running run; it completes while the admission holds the lock, and its
+    // callback finds the lock busy and leaves.
+    const reopen = admitter.reopenExperiment.bind(admitter);
+    admitter.reopenExperiment = async (id: Types.ObjectId) => {
+      await WorkflowModel.updateOne(
+        { instanceId: running._id, type: WorkflowType.PIPELINE },
+        { $set: { status: PipelineStatus.completed } }
+      );
+      await late.reoptimizeAfterRerun(running._id);
+      assert.equal(starts.count, 0);
+      return reopen(id);
+    };
+
+    await admitter.enqueueRuns(rerun(experimentId, source) as any);
+
+    await waitFor(async () => (await statusOf(experimentId)) === ExperimentStatus.completed);
+    assert.equal(starts.count, 1);
+  }
+);
+
+// Stop all with the admission and execution the user saw, read back through the run list.
+const confirm = async (pipelineId: Types.ObjectId) => {
+  const pipeline = (await PipelineModel.findById(pipelineId))!.toObject({ getters: true });
+  const resolver = new PipelineResolver();
+  return {
+    pipelineId: String(pipelineId),
+    executionId: pipeline.executionId === undefined ? null : String(pipeline.executionId),
+    status: await resolver.status(pipeline),
+    admissionId: await resolver.admissionId(pipeline),
+  };
+};
+
+test(
+  'stop all skips a confirmed queued run that was stopped and queued again',
+  { skip },
+  async (t) => {
+    await useDatabase(t);
+    const { experimentId, source } = await seed(ExperimentStatus.computing);
+    const manager = createManager();
+    const pipelines = manager.pipelineManager;
+    await WorkflowModel.updateOne(
+      { instanceId: source._id },
+      { $set: { status: PipelineStatus.idle } }
+    );
+    await pipelines.changeStatus({ pipelineId: source._id, status: PipelineStatus.queued });
+    const seen = await confirm(source._id);
+    // Another client stops it and queues it again: same execution, new admission.
+    await pipelines.changeStatus({ pipelineId: source._id, status: PipelineStatus.idle });
+    await pipelines.changeStatus({ pipelineId: source._id, status: PipelineStatus.queued });
+
+    const stopped = await manager.pauseExperimentRuns(experimentId, undefined, [seen]);
+
+    assert.deepEqual(stopped, []);
+    assert.deepEqual((await runStatuses(experimentId)).statuses, [PipelineStatus.queued]);
+  }
+);
+
+test(
+  'stop all still stops a confirmed queued run that a worker took in the same admission',
+  {
+    skip,
+  },
+  async (t) => {
+    await useDatabase(t);
+    const { experimentId, source } = await seed(ExperimentStatus.computing);
+    const manager = createManager();
+    await WorkflowModel.updateOne(
+      { instanceId: source._id },
+      { $set: { status: PipelineStatus.idle } }
+    );
+    await manager.pipelineManager.changeStatus({
+      pipelineId: source._id,
+      status: PipelineStatus.queued,
+    });
+    const seen = await confirm(source._id);
+    // A worker takes it: a new execution, but the same admission.
+    const claimed = await manager.claimNextRun(ComputationQueue.local, { hostname: 'worker-1' });
+    assert.equal(String(claimed?._id), String(source._id));
+
+    const stopped = await manager.pauseExperimentRuns(experimentId, undefined, [seen]);
+
+    assert.equal(stopped.length, 1);
+    assert.deepEqual((await runStatuses(experimentId)).statuses, [PipelineStatus.idle]);
+  }
+);

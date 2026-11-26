@@ -167,6 +167,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
             pathNodes: [],
             status: 'running',
             executionId: '4',
+            admissionId: 'A',
             queue: 'local',
             createdAt: '2026-04-10T10:00:00Z',
             updatedAt: '2026-04-10T10:00:00Z',
@@ -259,7 +260,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
       variables: {
         experimentId: 'exp-1',
         queue: 'local',
-        runs: [{ pipelineId: 'run-2', executionId: null, status: 'idle' }],
+        runs: [{ pipelineId: 'run-2', executionId: null, admissionId: null, status: 'idle' }],
       },
     },
   ]);
@@ -269,7 +270,7 @@ test('ComputationCard runs bulk and re-run actions, renders table actions, and p
         experimentId: 'exp-1',
         queue: 'local',
         // The execution the user saw goes with each run, so a restarted run is skipped.
-        runs: [{ pipelineId: 'run-3', executionId: '4', status: 'running' }],
+        runs: [{ pipelineId: 'run-3', executionId: '4', admissionId: 'A', status: 'running' }],
       },
     },
   ]);

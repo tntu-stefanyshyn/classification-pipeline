@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { ExperimentModel } from '../../experiments/models/ExperimentModel';
-import { ExperimentOperation } from '../../experiments/classes/ExperimentOperationLock';
+import { ExperimentOperation } from '../../experiments/enums';
 import { ObjectIdOrString } from '../../../types/context';
 
 export type ExperimentLockResult =

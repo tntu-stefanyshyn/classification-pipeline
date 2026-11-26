@@ -52,6 +52,7 @@ erDiagram
         ObjectId fileId
         array computationHosts
         object optimization
+        object operationLock
     }
     graph_structures {
         ObjectId _id
@@ -85,6 +86,8 @@ erDiagram
         string status
         array history
         string machineHostname
+        string admissionId
+        boolean rerun
         number executionId
     }
     uploaded_files {
@@ -145,5 +148,7 @@ erDiagram
 - TTL indexes remove `sessions` and `refresh_tokens` documents once their `expiresAt` has passed; `refresh_tokens.familyId` is indexed.
 - Plain indexes: `experiments.createdById`, `experiments.fileId` (the experiments that use a file, checked before it is deleted), `pipelines.experimentId`, `pipelines.graphStructureId` and `uploaded_files` (`uploadedById`, `uploadedAt`, for the newest-first list of a user's files).
 - `workflows` has a unique partial index on `machineHostname` for `PIPELINE` workflows in `running`: at most one running `local` run per machine. The backend awaits `WorkflowModel.init()` on startup and fails if the index cannot be built.
+- `workflows` also has a unique partial index on `instanceId` for workflows flagged `rerun: true` (the workflows of re-runs): one workflow per re-run, whoever creates it. `pipelines` has a unique partial index on `rerunOf`: each run can be re-run once. The backend awaits both models' `init()` on startup.
+- `experiments.operationLock` is the experiment lock (`token`, `operation`, `expiresAt`) that serializes optimization attempts and re-run admissions; see [Experiment lock](../domain/experiments.md#experiment-lock).
 - Two read indexes on `workflows`, (`instanceId`, `type`) for status reads and (`type`, `status`) for the claim aggregation, are built in the background by `createWorkflowReadIndexes` after startup, so they never delay it; until they exist the queries scan the collection. They are not unique, because `getWorkflow` sorts by `createdAt` and a unique build would fail on a database that already holds duplicates.
 - Migrations (`backend/src/migrations`) run once each: `runMigrations()` records the name of a finished migration in `applied_migrations` and skips recorded names on the next start. One backend at a time runs them: it holds a lease in the single-document `migration_lock` collection (5 minutes, renewed by its owner), and the others wait. A migration that crashed halfway is not recorded and runs again, so every migration must still change nothing on a second run. Current migrations: `pipeline-legacy-statuses-to-idle` (old statuses become `idle`) and `pipeline-history-missing-status-to-running` (fills in the missing `status` of pipeline history entries). See [Database conventions](database-conventions.md#migrations).

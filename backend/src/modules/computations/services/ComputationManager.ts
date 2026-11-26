@@ -48,7 +48,7 @@ import {
 import { ConfirmedRunInput } from '../classes/ConfirmedRunInput';
 import { confirmedExecutions, isConfirmedExecution } from '../utils/confirmedExecutions';
 import { ExperimentLock } from './ExperimentLock';
-import { ExperimentOperation } from '../../experiments/classes/ExperimentOperationLock';
+import { ExperimentOperation } from '../../experiments/enums';
 import { isLostTransitionRace } from '../utils/isLostTransitionRace';
 
 export class ComputationManager {
@@ -318,7 +318,8 @@ export class ComputationManager {
             executions,
             nextPipelineId,
             PipelineStatus.idle,
-            workflow.executionId
+            workflow.executionId,
+            workflow.admissionId
           )
         ) {
           return null;
@@ -328,6 +329,7 @@ export class ComputationManager {
           if (executions) {
             await this.pipelineManager.changeStatus(input, undefined, {
               executionId: workflow.executionId ?? null,
+              admissionId: workflow.admissionId ?? null,
             });
           } else {
             await this.pipelineManager.changeStatus(input);
@@ -350,15 +352,15 @@ export class ComputationManager {
    */
   private async admitRerun(source: Pipeline) {
     const token = await this.acquireForRerun(source.experimentId);
-    let admitted = false;
     try {
       const runId = await this.prepareRerun(source);
       await this.queueIdle([runId]);
-      admitted = true;
     } finally {
       await this.experimentLock.release(source.experimentId, token);
-      // A run that completed while the lock was held left the optimization to the holder.
-      if (!admitted) void this.reoptimizeIfReady(source.experimentId);
+      // A run that completed while the lock was held left the optimization to the holder. That
+      // can happen after a successful admission too: a repeated click reuses a running run that
+      // then completes before the lock is let go.
+      void this.reoptimizeIfReady(source.experimentId);
     }
   }
 
@@ -760,22 +762,29 @@ export class ComputationManager {
   // Queued and running runs both go back to idle, so no worker can claim them after the pause.
   // If a worker claims the run while it is being paused, re-read the status and stop it instead.
   // Returns whether this call moved the run to idle. With `confirmed`, only the run the user saw
-  // is stopped: one that was stopped and started again meanwhile is a new run and is skipped. The
-  // status change is conditional on the execution read, so a restart in between is skipped too.
+  // is stopped: one that was queued again or restarted meanwhile is a new request and is skipped.
+  // The status change is conditional on the execution and admission read, so a change in between
+  // is skipped too.
   private async pauseRun(
     pipelineId: Types.ObjectId,
     confirmed?: ReturnType<typeof confirmedExecutions>
   ): Promise<boolean> {
     // queued -> running is the only change a worker can make first, so two retries suffice.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const { status, executionId } = await this.workflowManager.getWorkflow({
+      const { status, executionId, admissionId } = await this.workflowManager.getWorkflow({
         instanceId: pipelineId,
         type: WorkflowType.PIPELINE,
       });
       if (status !== PipelineStatus.queued && status !== PipelineStatus.running) return false;
       if (
         confirmed &&
-        !isConfirmedExecution(confirmed, pipelineId, status as PipelineStatus, executionId)
+        !isConfirmedExecution(
+          confirmed,
+          pipelineId,
+          status as PipelineStatus,
+          executionId,
+          admissionId
+        )
       ) {
         return false;
       }
@@ -784,7 +793,9 @@ export class ComputationManager {
         await this.pipelineManager.changeStatus(
           { pipelineId, status: PipelineStatus.idle, message: 'Обчислення зупинено' },
           undefined,
-          { executionId: executionId ?? null }
+          confirmed
+            ? { executionId: executionId ?? null, admissionId: admissionId ?? null }
+            : { executionId: executionId ?? null }
         );
         return true;
       } catch (error) {

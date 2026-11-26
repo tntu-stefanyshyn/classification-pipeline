@@ -405,6 +405,8 @@ const en = {
     startError: 'Run error',
     stopError: 'Stop error',
     queueAllIdle: 'Queue all idle',
+    queueRun: 'Queue the pipeline',
+    stop: 'Stop the pipeline',
     stopAll: 'Stop all',
     queueAllConfirm: 'Queue all idle pipelines?',
     stopAllConfirm: 'Stop all queued and running pipelines?',

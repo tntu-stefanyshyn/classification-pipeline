@@ -1,9 +1,5 @@
 import { prop } from '@typegoose/typegoose';
-
-export enum ExperimentOperation {
-  optimization = 'optimization',
-  rerun = 'rerun',
-}
+import { ExperimentOperation } from '../enums';
 
 /**
  * The one operation that may change the runs and the status of an experiment at a time: an

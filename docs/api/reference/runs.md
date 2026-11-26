@@ -36,6 +36,7 @@ A **pipeline** (also called a run) is the computation of one graph path in one q
 | `computingResult`        | ComputationResultPayload | The result of a completed run.                                             |
 | `optimizationScores`     | [Float!]                 | Scores from the optimization.                                              |
 | `executionId`            | ID                       | Number of the current execution; see [Executions](#executions).            |
+| `admissionId`            | ID                       | Id of the current queue admission: new on every queueing, kept by a claim. |
 | `createdAt`, `updatedAt` | Date!                    | Times.                                                                     |
 
 The result has one value per cross-validation fold: `accuracyScores`, `f1Scores`, `rocAucScores`, `optimizationIntermediateScores`, `confusionMatrixes`, `predictionSampleCounts`, plus `sampleCount`, `duration` (seconds), `channelNames` (the class labels), `predictionDataPercent`, `cvDuration` (seconds spent in the folds), `completedFoldCount` and `eegProcessing` (JSON text that describes the EEG processing).
@@ -87,7 +88,7 @@ mutation Enqueue($input: EnqueueExperimentRunsInput!) {
 - `stopExperimentRun(input: { runId: ID! }): Pipeline!` stops a `running` pipeline and returns it to `idle` with the message "Зупинено користувачем" ("Stopped by the user"). Any other status is returned unchanged. A cloud job is cancelled first.
 - `queueExperimentRuns(experimentId: ID!, queue: ComputationQueue!, runs: [ConfirmedRunInput!]!): [Pipeline!]!` queues the confirmed `idle` pipelines of that queue and returns the ones it really queued; a pipeline that changed status or execution since the user confirmed it is skipped. It makes the same checks as `enqueueExperimentRuns`.
 - `pauseExperimentRuns(experimentId: ID!, queue: ComputationQueue, runs: [ConfirmedRunInput!]): [Pipeline!]!` returns the `queued` and `running` pipelines of the experiment to `idle` (only of `queue` when given) and returns the ones it really stopped. With `runs`, only those pipelines, and each only while it is still the run the user saw: a pipeline that was stopped and started again meanwhile is skipped.
-- `ConfirmedRunInput` is `{ pipelineId: ID!, executionId: ID, status: PipelineStatus }`: the pipeline as the user saw it. A pipeline seen `queued` may since have been taken by a worker (its next execution); any other change of execution counts as a different run.
+- `ConfirmedRunInput` is `{ pipelineId: ID!, admissionId: ID, executionId: ID, status: PipelineStatus }`: the pipeline as the user saw it. A pipeline queued again since then (a new `admissionId`) is a different request; within the same admission, a pipeline seen `queued` may since have been taken by a worker (its next execution), and any other change of execution counts as a different run. Without `admissionId` (older clients) only the execution is compared.
 - `resumeExperimentRuns(experimentId: ID!): [Pipeline!]!` queues the `idle` pipelines again.
 
 ```graphql

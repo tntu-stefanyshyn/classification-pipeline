@@ -204,8 +204,8 @@ test('ComputationManager.queueRunsByIds returns only the confirmed runs it reall
     result.map((run) => String(run._id)),
     [String(first)]
   );
-  // The update is conditional on the execution the user saw.
-  assert.deepEqual(conditions[0], { executionId: 1 });
+  // The update is conditional on the execution and admission it read.
+  assert.deepEqual(conditions[0], { executionId: 1, admissionId: null });
 });
 test('ComputationManager.enqueueRuns rejects graphs without classification in every path', async (t) => {
   const manager = new ComputationManager();

@@ -15,6 +15,13 @@ export class ConfirmedRunInput {
   })
   executionId?: string | null;
 
+  @Field(() => ID, {
+    nullable: true,
+    description:
+      'The `admissionId` the user saw. When sent, a pipeline queued again since then is a different request and is skipped, while a worker taking the same admission is not.',
+  })
+  admissionId?: string | null;
+
   @Field(() => PipelineStatus, {
     nullable: true,
     description:

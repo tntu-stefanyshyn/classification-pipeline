@@ -224,6 +224,11 @@ input ComputationResultPayloadInput {
 A pipeline the user confirmed for a bulk action, as they saw it, so a pipeline that was stopped and restarted meanwhile is skipped instead of acted on.
 """
 input ConfirmedRunInput {
+  """
+  The `admissionId` the user saw. When sent, a pipeline queued again since then is a different request and is skipped, while a worker taking the same admission is not.
+  """
+  admissionId: ID
+
   """The `executionId` the user saw; empty for a pipeline that never ran."""
   executionId: ID
 
@@ -821,6 +826,11 @@ One run: the computation of one path of an experiment's graph in one queue.
 type Pipeline {
   """Id of the pipeline (run)."""
   _id: ID!
+
+  """
+  Id of the current queue admission: new every time the pipeline is queued and kept when a worker takes it. A bulk action sends it back with the pipelines the user confirmed.
+  """
+  admissionId: ID
 
   """Result of the completed run (metrics per cross-validation fold)."""
   computingResult: ComputationResultPayload

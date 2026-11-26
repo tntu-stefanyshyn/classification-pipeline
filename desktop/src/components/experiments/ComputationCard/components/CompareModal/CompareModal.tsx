@@ -4,22 +4,9 @@ import { Modal } from '../../../../ui/Modal';
 import { DataTable } from '../../../../ui/DataTable';
 import { useI18n } from '../../../../../i18n';
 import { usePipelineInfoQuery } from './graphql';
-import type {
-  CompareModalProps,
-  CompareRow,
-  CompareRun,
-  MetricCompareRow,
-} from './CompareModal.types';
-import {
-  buildMetricRows,
-  buildSettingsRows,
-  formatDelta,
-  formatScore,
-  matricesOf,
-  rowPercent,
-} from './utils/compare';
-
-const highlight = (differs: boolean) => (differs ? 'compare-diff' : undefined);
+import type { CompareModalProps, CompareRow, MetricCompareRow } from './CompareModal.types';
+import { ConfusionMatrices, FoldScores } from './components';
+import { buildMetricRows, buildSettingsRows, formatDelta, highlight } from './utils/compare';
 
 const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
   const { messages } = useI18n();
@@ -95,33 +82,29 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
     [m]
   );
   const metricColumns = useMemo<ColumnDef<MetricCompareRow>[]>(() => {
-    // Every fold is shown, and highlighted where the other run differs: equal means can hide
-    // folds that changed.
-    const scoreCell = (mean: number | null, folds: number[], differs: boolean[]) => (
-      <>
-        {formatScore(mean)}
-        <div className="muted small compare-folds">
-          {folds.map((fold, index) => (
-            <span key={index} className={highlight(differs[index] ?? false)}>
-              {formatScore(fold)}
-            </span>
-          ))}
-        </div>
-      </>
-    );
     return [
       { header: messages.resultView.metric, accessorKey: 'label' },
       {
         header: m.compareRun('A'),
         id: 'a',
-        cell: ({ row }) =>
-          scoreCell(row.original.meanA, row.original.foldsA, row.original.foldDiffers),
+        cell: ({ row }) => (
+          <FoldScores
+            mean={row.original.meanA}
+            folds={row.original.foldsA}
+            differs={row.original.foldDiffers}
+          />
+        ),
       },
       {
         header: m.compareRun('B'),
         id: 'b',
-        cell: ({ row }) =>
-          scoreCell(row.original.meanB, row.original.foldsB, row.original.foldDiffers),
+        cell: ({ row }) => (
+          <FoldScores
+            mean={row.original.meanB}
+            folds={row.original.foldsB}
+            differs={row.original.foldDiffers}
+          />
+        ),
       },
       {
         header: m.compareDelta,
@@ -134,38 +117,6 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
       },
     ];
   }, [m, messages.resultView.metric]);
-
-  const renderMatrices = (run: CompareRun, other: CompareRun) =>
-    matricesOf(run).map((matrix, foldIndex) => (
-      <div className="result-confusion" key={foldIndex}>
-        <table className="confusion-table">
-          <thead>
-            <tr>
-              <th
-                colSpan={matrix[0]?.length ?? 1}
-              >{`${messages.resultView.fold} ${foldIndex + 1}`}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.map((matrixRow, rowIndex) => (
-              <tr key={rowIndex}>
-                {matrixRow.map((cell, columnIndex) => {
-                  const mine = rowPercent(cell, matrixRow);
-                  const otherRow = matricesOf(other)[foldIndex]?.[rowIndex];
-                  const theirs = otherRow ? rowPercent(otherRow[columnIndex], otherRow) : null;
-                  const differs = theirs === null || Math.abs(mine - theirs) >= 0.01;
-                  return (
-                    <td key={columnIndex} className={highlight(differs)}>
-                      {mine.toFixed(2)}%
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    ));
 
   return (
     <Modal open title={m.compareTitle} className="modal-wide" onClose={onClose}>
@@ -195,11 +146,11 @@ const CompareModal: FC<CompareModalProps> = ({ ids, onClose }) => {
             <div className="compare-grid">
               <div>
                 <p className="item-title">{m.compareRun('A')}</p>
-                {renderMatrices(a, b)}
+                <ConfusionMatrices run={a} other={b} />
               </div>
               <div>
                 <p className="item-title">{m.compareRun('B')}</p>
-                {renderMatrices(b, a)}
+                <ConfusionMatrices run={b} other={a} />
               </div>
             </div>
           </div>

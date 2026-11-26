@@ -168,7 +168,12 @@ export class PipelineManager {
       transitions,
       type: WorkflowType.PIPELINE,
       message: normalizedMessage,
-      fields,
+      // Every move to `queued` is a new admission, with a new id; a worker's claim keeps it, so a
+      // confirmed bulk action can tell the request the user saw from one queued again since.
+      fields:
+        status === PipelineStatus.queued
+          ? { ...fields, admissionId: new Types.ObjectId().toHexString() }
+          : fields,
       expected,
     });
 

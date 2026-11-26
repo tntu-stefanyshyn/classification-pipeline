@@ -194,6 +194,24 @@ test('an admission that failed lets go of the lock and checks readiness again', 
   assert.deepEqual(calls, [['release', 'token'], ['recheck']]);
 });
 
+test('an admission that succeeded checks readiness again too', async (t) => {
+  // A repeated click reused a running run that completed while the lock was held.
+  const manager = new ComputationManager() as any;
+  const calls: unknown[] = [];
+  stub(t, manager, 'acquireForRerun', async () => 'token');
+  stub(t, manager, 'prepareRerun', async () => new Types.ObjectId());
+  stub(t, manager, 'queueIdle', async () => []);
+  stub(t, manager.experimentLock, 'release', async () => {
+    calls.push('release');
+  });
+  stub(t, manager, 'reoptimizeIfReady', async () => {
+    calls.push('recheck');
+  });
+
+  await manager.admitRerun({ experimentId: new Types.ObjectId() });
+
+  assert.deepEqual(calls, ['release', 'recheck']);
+});
 const readiness = (
   t: TestContext,
   experiment: { optimization?: { bestPipelineId?: Types.ObjectId } },

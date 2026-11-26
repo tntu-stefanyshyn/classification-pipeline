@@ -42,17 +42,29 @@ export class PipelineResolver {
 
   @FieldResolver(() => PipelineStatus, { description: 'Current status of the pipeline.' })
   async status(@Root() { _id, rerunOf }: Pipeline) {
-    // The newest workflow, as `WorkflowManager.getWorkflow` reads it.
-    const workflow = await WorkflowModel.findOne({ instanceId: _id, type: WorkflowType.PIPELINE })
-      .sort({ createdAt: -1 })
-      .lean();
+    const workflow = await this.findWorkflow(_id);
     if (workflow) return workflow.status;
     // A re-run whose admission stopped between creating it and its workflow: finish it here, so
     // the run list keeps working and the run can be queued again from the desktop.
     if (rerunOf) await this.pipelineManager.ensureRerunWorkflow(_id);
     return PipelineStatus.idle;
   }
-  // #endregion FieldResolver
+
+  @FieldResolver(() => ID, {
+    nullable: true,
+    description:
+      'Id of the current queue admission: new every time the pipeline is queued and kept when a worker takes it. A bulk action sends it back with the pipelines the user confirmed.',
+  })
+  async admissionId(@Root() { _id }: Pipeline) {
+    return (await this.findWorkflow(_id))?.admissionId ?? null;
+  }
+
+  // The newest workflow, as `WorkflowManager.getWorkflow` reads it.
+  private findWorkflow(pipelineId: Pipeline['_id']) {
+    return WorkflowModel.findOne({ instanceId: pipelineId, type: WorkflowType.PIPELINE })
+      .sort({ createdAt: -1 })
+      .lean();
+  } // #endregion FieldResolver
 
   // #region Query
   @Query(() => [Pipeline], {

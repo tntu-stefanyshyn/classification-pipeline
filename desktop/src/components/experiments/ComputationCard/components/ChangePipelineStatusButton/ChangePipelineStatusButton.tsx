@@ -9,6 +9,7 @@ const ChangePipelineStatusButton: FC<ChangePipelineStatusButtonProps> = ({
   children,
   status,
   pipelineId,
+  label,
 }) => {
   const { messages } = useI18n();
   const [changeExperimentStatus, { loading }] = useChangePipelineStatusMutation({
@@ -22,7 +23,13 @@ const ChangePipelineStatusButton: FC<ChangePipelineStatusButtonProps> = ({
   });
 
   return (
-    <Button className="icon" onClick={() => changeExperimentStatus()} loading={loading}>
+    <Button
+      className="icon"
+      onClick={() => changeExperimentStatus()}
+      loading={loading}
+      title={label}
+      aria-label={label}
+    >
       {children}
     </Button>
   );

@@ -59,6 +59,10 @@ export class Workflow extends TimeStamps {
   @prop({ type: () => Boolean })
   rerun?: boolean;
 
+  /** Id of the pipeline's current queue admission: new on every move to `queued`. */
+  @prop({ type: () => String })
+  admissionId?: string;
+
   /** Number of the pipeline's current execution, set by the claim that starts it. */
   @prop({ type: () => Number })
   executionId?: number;

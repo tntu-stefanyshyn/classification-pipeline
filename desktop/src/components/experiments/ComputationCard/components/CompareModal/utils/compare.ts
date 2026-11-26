@@ -125,3 +125,22 @@ export const buildMetricRows = (
   metric(names.f1, a.computingResult?.f1Scores, b.computingResult?.f1Scores),
   metric(names.rocAuc, a.computingResult?.rocAucScores, b.computingResult?.rocAucScores),
 ];
+
+/** The class that highlights a value which differs between the two runs. */
+export const highlight = (differs: boolean) => (differs ? 'compare-diff' : undefined);
+
+/**
+ * Whether a confusion-matrix cell differs from the same cell of the other run, compared as the
+ * shown row percentages; a cell the other run does not have differs.
+ */
+export const matrixCellDiffers = (
+  matrix: number[][],
+  other: number[][] | undefined,
+  rowIndex: number,
+  columnIndex: number
+) => {
+  const otherRow = other?.[rowIndex];
+  if (!otherRow) return true;
+  const mine = rowPercent(matrix[rowIndex][columnIndex], matrix[rowIndex]);
+  return Math.abs(mine - rowPercent(otherRow[columnIndex], otherRow)) >= 0.01;
+};
